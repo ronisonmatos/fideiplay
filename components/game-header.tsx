@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { C, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 interface GameHeaderProps {
@@ -16,7 +16,7 @@ export function GameHeader({ title, subtitle, right }: GameHeaderProps) {
   const theme = useTheme();
 
   return (
-    <ThemedView style={[styles.header, { borderBottomColor: theme.backgroundElement }]}>
+    <ThemedView style={[styles.header, { borderBottomColor: C.border }]}>
       <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
         <ThemedText style={styles.backArrow}>←</ThemedText>
       </Pressable>
@@ -26,8 +26,11 @@ export function GameHeader({ title, subtitle, right }: GameHeaderProps) {
           {title}
         </ThemedText>
         {subtitle ? (
-          <ThemedText themeColor="textSecondary" style={styles.subtitle} numberOfLines={1}>
-            {subtitle}
+          <ThemedText
+            themeColor="textSecondary"
+            style={styles.subtitle}
+            numberOfLines={1}>
+            {subtitle.toUpperCase()}
           </ThemedText>
         ) : null}
       </View>
@@ -43,19 +46,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     gap: Spacing.two,
-    minHeight: 52,
+    minHeight: 56,
   },
   backBtn: {
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: C.radius.sm,
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  backArrow: { fontSize: 22 },
-  titleBox: { flex: 1, gap: 1 },
-  title: { fontSize: 16 },
-  subtitle: { fontSize: 12 },
-  rightBox: { width: 60, alignItems: 'flex-end' },
+  backArrow: { fontSize: 20 },
+  titleBox: { flex: 1, gap: 2 },
+  title: { fontSize: 16, letterSpacing: 0.2 },
+  subtitle: { fontSize: 11, letterSpacing: 1.1 },
+  rightBox: { width: 64, alignItems: 'flex-end' },
 });

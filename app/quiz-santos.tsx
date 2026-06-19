@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -135,7 +135,7 @@ export default function QuizSantosScreen() {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Quiz dos Santos" subtitle="Conhecimento" />
+          <GameHeader title="Quiz dos Santos" subtitle="CONHECIMENTO" />
           <View style={[styles.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <ThemedText style={styles.bigEmoji}>🏆</ThemedText>
             <ThemedText type="subtitle" style={styles.textCenter}>
@@ -145,7 +145,7 @@ export default function QuizSantosScreen() {
               {QUESTIONS.length} perguntas sobre a vida dos santos.{'\n'}Teste seu conhecimento!
             </ThemedText>
             <TouchableOpacity style={styles.primaryBtn} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.primaryBtnText}>Começar</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>COMEÇAR</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -167,7 +167,7 @@ export default function QuizSantosScreen() {
               {resultMsg}
             </ThemedText>
             <TouchableOpacity style={styles.primaryBtn} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.primaryBtnText}>Jogar Novamente</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>JOGAR NOVAMENTE</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -181,7 +181,7 @@ export default function QuizSantosScreen() {
         <GameHeader
           title="Quiz dos Santos"
           right={
-            <ThemedText type="smallBold" style={{ color: '#208AEF' }}>
+            <ThemedText type="smallBold" style={{ color: C.purple }}>
               {score} pts
             </ThemedText>
           }
@@ -217,10 +217,11 @@ export default function QuizSantosScreen() {
 
               let bg: string = theme.backgroundElement;
               let textColor: string = theme.text;
+              let borderColor: string = C.border;
 
               if (revealed) {
-                if (isCorrect) { bg = '#22C55E'; textColor = '#fff'; }
-                else if (isSelected) { bg = '#EF4444'; textColor = '#fff'; }
+                if (isCorrect) { bg = C.green; textColor = '#fff'; borderColor = C.green; }
+                else if (isSelected) { bg = C.red; textColor = '#fff'; borderColor = C.red; }
               }
 
               return (
@@ -228,7 +229,7 @@ export default function QuizSantosScreen() {
                   key={i}
                   onPress={() => handleSelect(i)}
                   activeOpacity={0.75}
-                  style={[styles.option, { backgroundColor: bg }]}>
+                  style={[styles.option, { backgroundColor: bg, borderColor }]}>
                   <ThemedText style={[styles.optLetter, { color: textColor }]}>
                     {String.fromCharCode(65 + i)}
                   </ThemedText>
@@ -241,7 +242,7 @@ export default function QuizSantosScreen() {
           {selected !== null && (
             <TouchableOpacity style={styles.nextBtn} onPress={next} activeOpacity={0.8}>
               <ThemedText style={styles.primaryBtnText}>
-                {index + 1 === QUESTIONS.length ? 'Ver Resultado' : 'Próxima →'}
+                {index + 1 === QUESTIONS.length ? 'VER RESULTADO' : 'PRÓXIMA →'}
               </ThemedText>
             </TouchableOpacity>
           )}
@@ -264,22 +265,26 @@ const styles = StyleSheet.create({
   desc: { fontSize: 15, lineHeight: 22 },
   bigEmoji: { fontSize: 64 },
   primaryBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: C.purple,
     paddingHorizontal: Spacing.five,
-    paddingVertical: Spacing.three,
-    borderRadius: 99,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
     marginTop: Spacing.two,
+    alignItems: 'center',
+    alignSelf: 'stretch',
   },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
   playScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
   progressBar: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: 6, backgroundColor: '#208AEF', borderRadius: 3 },
+  progressFill: { height: 6, backgroundColor: C.purple, borderRadius: 3 },
   progressLabel: { fontSize: 13, textAlign: 'right', marginTop: -Spacing.one },
   saintBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
-    borderRadius: 99,
+    borderRadius: C.radius.pill,
+    borderWidth: 1,
+    borderColor: C.border,
   },
   saintBadgeText: { fontSize: 13 },
   questionText: { fontSize: 18, lineHeight: 26, fontWeight: '600' },
@@ -288,15 +293,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.three,
-    borderRadius: Spacing.two,
+    borderRadius: C.radius.md,
+    borderWidth: 1,
     gap: Spacing.two,
   },
   optLetter: { fontSize: 14, fontWeight: '700', width: 22 },
   optText: { flex: 1, fontSize: 15 },
   nextBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: C.purple,
     padding: Spacing.three,
-    borderRadius: 99,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
     alignItems: 'center',
     marginTop: Spacing.one,
   },

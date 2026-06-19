@@ -10,15 +10,16 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
 import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 
-const BRAND = '#F97316';
+const BRAND = '#EF9F27';
 const TIMER_DURATION = 90;
 
 const CATEGORIES = [
@@ -134,7 +135,6 @@ export default function StopCatolicoScreen() {
     setTimeLeft(TIMER_DURATION);
 
     const LC = LETTERS.length;
-    // slot-machine slow-down: starts fast, gradually slows
     const phases = [
       { count: 10, ms: 60 },
       { count: 8, ms: 110 },
@@ -142,7 +142,6 @@ export default function StopCatolicoScreen() {
       { count: 3, ms: 380 },
     ];
     const totalSteps = phases.reduce((s, p) => s + p.count, 0);
-    // compute start index so the sequence ends exactly on targetIdx
     const startIdx = ((targetIdx - (totalSteps - 1)) % LC + LC) % LC;
 
     let idx = startIdx;
@@ -168,7 +167,6 @@ export default function StopCatolicoScreen() {
       }
     }
 
-    // landing: big bounce when the target letter appears
     refs.push(setTimeout(() => {
       setSpinDone(true);
       Animated.sequence([
@@ -194,13 +192,13 @@ export default function StopCatolicoScreen() {
   }, [answers, letter]);
 
   const timerPct = (timeLeft / TIMER_DURATION) * 100;
-  const timerColor = timeLeft > 30 ? '#22C55E' : timeLeft > 15 ? '#F59E0B' : '#EF4444';
+  const timerColor = timeLeft > 30 ? C.green : timeLeft > 15 ? C.gold : C.red;
 
   if (phase === 'spinning') {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Stop Católico" subtitle="Vocabulário" />
+          <GameHeader title="Stop Católico" subtitle="VOCABULÁRIO" />
           <TouchableOpacity style={styles.spinScreen} onPress={skipSpin} activeOpacity={1}>
             <ThemedText themeColor="textSecondary" style={styles.spinLabel}>
               {spinDone ? 'Sua letra é:' : 'Sorteando...'}
@@ -224,7 +222,7 @@ export default function StopCatolicoScreen() {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Stop Católico" subtitle="Vocabulário" />
+          <GameHeader title="Stop Católico" subtitle="VOCABULÁRIO" />
           <ScrollView contentContainerStyle={[styles.idleScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <ThemedText style={styles.heroEmoji}>🛑</ThemedText>
             <ThemedText type="subtitle" style={styles.center}>Stop Católico</ThemedText>
@@ -240,13 +238,31 @@ export default function StopCatolicoScreen() {
               ))}
             </ThemedView>
             <ThemedView type="backgroundElement" style={styles.rulesBox}>
-              <ThemedText type="smallBold">Pontuação</ThemedText>
+              <ThemedText type="smallBold" style={styles.rulesTitle}>PONTUAÇÃO</ThemedText>
               <ThemedText themeColor="textSecondary" style={styles.ruleItem}>✅  +10 pts por resposta válida</ThemedText>
               <ThemedText themeColor="textSecondary" style={styles.ruleItem}>🌟  +20 pts bônus ao completar tudo</ThemedText>
             </ThemedView>
-            <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: BRAND }]} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.btnText}>🎲  Sortear Letra e Jogar</ThemedText>
-            </TouchableOpacity>
+
+            {/* ── Seleção de Modo ── */}
+            <ThemedText themeColor="textSecondary" style={styles.modeLabel}>ESCOLHA O MODO</ThemedText>
+            <View style={styles.modeRow}>
+              <TouchableOpacity
+                style={[styles.modeCard, { backgroundColor: BRAND }]}
+                onPress={start}
+                activeOpacity={0.8}>
+                <ThemedText style={styles.modeEmoji}>🎲</ThemedText>
+                <ThemedText style={styles.modeTitle}>Jogar Solo</ThemedText>
+                <ThemedText style={styles.modeDesc}>Contra o sistema</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeCard, { backgroundColor: C.purple }]}
+                onPress={() => router.push('/stop-online')}
+                activeOpacity={0.8}>
+                <ThemedText style={styles.modeEmoji}>🌐</ThemedText>
+                <ThemedText style={styles.modeTitle}>Jogar Online</ThemedText>
+                <ThemedText style={styles.modeDesc}>Com outros jogadores</ThemedText>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </SafeAreaView>
       </ThemedView>
@@ -285,7 +301,7 @@ export default function StopCatolicoScreen() {
                     <ThemedText type="smallBold" style={{ flex: 1 }}>{c.label}</ThemedText>
                     <ThemedText style={{ fontSize: 20 }}>{valid ? '✅' : '❌'}</ThemedText>
                   </View>
-                  <ThemedText style={[styles.resultAnswer, { color: valid ? '#22C55E' : theme.textSecondary }]}>
+                  <ThemedText style={[styles.resultAnswer, { color: valid ? C.green : theme.textSecondary }]}>
                     {answer || '(sem resposta)'}
                   </ThemedText>
                   {!valid && hint ? (
@@ -295,7 +311,7 @@ export default function StopCatolicoScreen() {
               );
             })}
             <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: BRAND }]} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.btnText}>🎲  Nova Letra</ThemedText>
+              <ThemedText style={styles.btnText}>🎲  NOVA LETRA</ThemedText>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -372,38 +388,85 @@ const styles = StyleSheet.create({
   heroEmoji: { fontSize: 64, textAlign: 'center' },
   desc: { fontSize: 15, lineHeight: 22 },
   idleScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.four, gap: Spacing.three, alignItems: 'center' },
-  catList: { alignSelf: 'stretch', borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
+  catList: {
+    alignSelf: 'stretch',
+    borderRadius: C.radius.lg,
+    padding: Spacing.three,
+    gap: Spacing.two,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   catRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   catEmoji: { fontSize: 22, width: 32, textAlign: 'center' },
-  rulesBox: { alignSelf: 'stretch', borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.one },
+  rulesBox: {
+    alignSelf: 'stretch',
+    borderRadius: C.radius.lg,
+    padding: Spacing.three,
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  rulesTitle: { letterSpacing: 1.1 },
   ruleItem: { fontSize: 14, marginTop: 2 },
-  primaryBtn: { paddingHorizontal: Spacing.five, paddingVertical: Spacing.three, borderRadius: 99, alignItems: 'center', alignSelf: 'stretch' },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  modeLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3 },
+  modeRow: { flexDirection: 'row', gap: Spacing.two, alignSelf: 'stretch' },
+  modeCard: {
+    flex: 1,
+    borderRadius: C.radius.lg,
+    padding: Spacing.three,
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  modeEmoji: { fontSize: 32 },
+  modeTitle: { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  modeDesc:  { color: 'rgba(255,255,255,0.75)', fontSize: 11, textAlign: 'center' },
+  primaryBtn: {
+    paddingHorizontal: Spacing.five,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  btnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
   playScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.two, gap: Spacing.two },
   timerBar: { height: 8, borderRadius: 4, overflow: 'hidden' },
   timerFill: { height: 8, borderRadius: 4 },
   letterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
   letterCard: { width: 76, height: 76, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   letterCardText: { fontSize: 52, fontWeight: '900', color: '#fff', lineHeight: 60 },
-  inputCard: { flexDirection: 'row', alignItems: 'center', borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.two },
+  inputCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: C.radius.md,
+    padding: Spacing.two,
+    gap: Spacing.two,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   inputGroup: { flex: 1, gap: 3 },
   catLabel: { fontSize: 12, opacity: 0.65 },
   input: {
     borderWidth: 1.5,
-    borderRadius: 8,
+    borderRadius: C.radius.sm,
     paddingHorizontal: Spacing.two,
     paddingVertical: Platform.OS === 'ios' ? 8 : 6,
     fontSize: 15,
     fontWeight: '500',
   },
-  stopBtn: { paddingVertical: Spacing.three, borderRadius: 99, alignItems: 'center', marginTop: Spacing.one },
+  stopBtn: { paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', marginTop: Spacing.one },
   stopBtnText: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1.5 },
   resultScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.two },
   resultSummary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, marginBottom: Spacing.one },
   resultSummaryText: { gap: 2 },
   letterCircle: { width: 64, height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   letterCircleText: { fontSize: 42, fontWeight: '900', color: '#fff' },
-  resultCard: { borderRadius: Spacing.two, padding: Spacing.two, gap: 4 },
+  resultCard: {
+    borderRadius: C.radius.md,
+    padding: Spacing.two,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   resultCardTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   resultAnswer: { fontSize: 15, fontWeight: '600', paddingLeft: 40 },
   hintLine: { fontSize: 12, paddingLeft: 40, fontStyle: 'italic' },
@@ -412,7 +475,7 @@ const styles = StyleSheet.create({
   spinCircle: {
     width: 180, height: 180, borderRadius: 45,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#F97316', shadowOffset: { width: 0, height: 0 },
+    shadowColor: '#EF9F27', shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 24, elevation: 24,
   },
   spinLetterText: { fontSize: 110, fontWeight: '900', color: '#fff', lineHeight: 118 },

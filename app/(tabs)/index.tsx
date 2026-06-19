@@ -1,63 +1,125 @@
-import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState, useEffect } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Colors, Spacing } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const CATEGORIES = [
+const FILTER_TAGS = ['Todos', 'Quiz', 'Bíblia', 'Aventura', 'Vocabulário', 'Liturgia'];
+
+const GAMES = [
   {
     emoji: '🏆',
     title: 'Quiz dos Santos',
-    description: 'Perguntas sobre a vida dos santos, com ranking e conquistas.',
-    tag: 'Conhecimento',
-    tagColor: '#F59E0B',
+    tag: 'Quiz',
+    tagColor: C.gold,
+    xp: 340,
+    desc: '10 perguntas · Santos e suas histórias',
     route: '/quiz-santos' as const,
   },
   {
     emoji: '📖',
     title: 'Versículo Misterioso',
-    description: 'Descubra o trecho bíblico a partir de dicas progressivas.',
     tag: 'Bíblia',
-    tagColor: '#8B5CF6',
+    tagColor: C.purple,
+    xp: 250,
+    desc: '5 versículos · Descubra progressivamente',
     route: '/versiculo-misterioso' as const,
   },
   {
     emoji: '🗺️',
     title: 'Peregrinação Virtual',
-    description: 'Percorra santuários do mundo respondendo perguntas para avançar.',
     tag: 'Aventura',
-    tagColor: '#10B981',
+    tagColor: C.green,
+    xp: 400,
+    desc: '5 santuários · Perguntas por etapa',
     route: '/peregrinacao' as const,
   },
   {
     emoji: '🔤',
     title: 'Palavras da Fé',
-    description: 'Caça-palavras temático: liturgia, orações e sacramentos.',
     tag: 'Vocabulário',
     tagColor: '#3B82F6',
+    xp: 200,
+    desc: '5 palavras · Caça-palavras bíblico',
     route: '/palavras-fe' as const,
   },
   {
     emoji: '⏱️',
     title: 'Desafio Litúrgico',
-    description: 'Identifique cores e rituais da missa contra o relógio.',
     tag: 'Liturgia',
-    tagColor: '#EF4444',
+    tagColor: C.red,
+    xp: 300,
+    desc: '10 questões · 60 segundos',
     route: '/desafio-liturgico' as const,
   },
   {
     emoji: '🛑',
     title: 'Stop Católico',
-    description: 'Preencha as categorias com palavras da fé que começam com a letra sorteada.',
     tag: 'Vocabulário',
-    tagColor: '#F97316',
+    tagColor: C.gold,
+    xp: 280,
+    desc: '6 categorias · Letra sorteada',
     route: '/stop-catolico' as const,
   },
 ] as const;
 
+const MISSION = GAMES[0];
+const STREAK = 7;
+
+function useCountdown() {
+  const [time, setTime] = useState('');
+
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 0);
+      const diff = midnight.getTime() - now.getTime();
+      const h = Math.floor(diff / 3_600_000).toString().padStart(2, '0');
+      const m = Math.floor((diff % 3_600_000) / 60_000).toString().padStart(2, '0');
+      const s = Math.floor((diff % 60_000) / 1_000).toString().padStart(2, '0');
+      setTime(`${h}:${m}:${s}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return time;
+}
+
+function chunkArray<T>(arr: readonly T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push([...arr.slice(i, i + size)]);
+  }
+  return result;
+}
+
 export default function HomeScreen() {
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+  const { width } = useWindowDimensions();
+  const countdown = useCountdown();
+  const [activeTag, setActiveTag] = useState('Todos');
+
+  const cardBorder = scheme === 'dark' ? C.border : 'rgba(0,0,0,0.08)';
+  const streakBg   = scheme === 'dark' ? '#2E1A08' : C.gold + '22';
+
+  const filtered = activeTag === 'Todos' ? GAMES : GAMES.filter(g => g.tag === activeTag);
+  const rows = chunkArray(filtered, 2);
+  const cardWidth = (width - Spacing.four * 2 - Spacing.two) / 2;
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -67,51 +129,116 @@ export default function HomeScreen() {
             styles.scroll,
             { paddingBottom: BottomTabInset + Spacing.five },
           ]}>
-          <View style={styles.hero}>
-            <Image
-              source={require('@/assets/images/logo_fideiplay.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <ThemedText themeColor="textSecondary" style={styles.tagline}>
-              Jogos Católicos para toda a família
-            </ThemedText>
+
+          {/* ── Header: saudação + streak + sino ── */}
+          <View style={styles.header}>
+            <View>
+              <ThemedText style={[styles.greeting, { color: colors.textSecondary }]}>Olá 👋</ThemedText>
+              <ThemedText style={[styles.appName, { color: colors.text }]}>FideiPlay</ThemedText>
+            </View>
+            <View style={styles.headerRight}>
+              <View style={[styles.streakBadge, { backgroundColor: streakBg }]}>
+                <ThemedText style={styles.streakText}>🔥 {STREAK}</ThemedText>
+              </View>
+              <TouchableOpacity style={styles.bellWrap} activeOpacity={0.7}>
+                <ThemedText style={styles.bellIcon}>🔔</ThemedText>
+                <View style={styles.notifDot} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.section}>
-            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
-              ESCOLHA UM JOGO
-            </ThemedText>
-
-            {CATEGORIES.map(cat => (
-              <TouchableOpacity
-                key={cat.title}
-                onPress={() => router.push(cat.route)}
-                activeOpacity={0.75}>
-                <ThemedView type="backgroundElement" style={styles.card}>
-                  <ThemedText style={styles.cardEmoji}>{cat.emoji}</ThemedText>
-                  <View style={styles.cardBody}>
-                    <View style={styles.cardTitleRow}>
-                      <ThemedText type="smallBold" style={styles.cardTitle}>
-                        {cat.title}
-                      </ThemedText>
-                      <View style={[styles.tag, { backgroundColor: cat.tagColor + '22' }]}>
-                        <ThemedText style={[styles.tagText, { color: cat.tagColor }]}>
-                          {cat.tag}
-                        </ThemedText>
-                      </View>
-                    </View>
-                    <ThemedText themeColor="textSecondary" style={styles.cardDesc}>
-                      {cat.description}
+          {/* ── MISSÃO DO DIA ── */}
+          <View>
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>MISSÃO DO DIA</ThemedText>
+            <TouchableOpacity
+              onPress={() => router.push(MISSION.route)}
+              activeOpacity={0.85}
+              style={[styles.missionCard, { backgroundColor: colors.backgroundSelected }]}>
+              {/* left: info */}
+              <View style={styles.missionInfo}>
+                <View style={styles.missionTagRow}>
+                  <View style={[styles.missionTag, { backgroundColor: MISSION.tagColor + '33' }]}>
+                    <ThemedText style={[styles.missionTagText, { color: MISSION.tagColor }]}>
+                      {MISSION.tag.toUpperCase()}
                     </ThemedText>
                   </View>
-                  <ThemedText themeColor="textSecondary" style={styles.arrow}>
-                    ›
-                  </ThemedText>
-                </ThemedView>
-              </TouchableOpacity>
+                  <View style={styles.countdownPill}>
+                    <ThemedText style={styles.countdownText}>{countdown}</ThemedText>
+                  </View>
+                </View>
+                <ThemedText style={[styles.missionTitle, { color: colors.text }]}>{MISSION.title}</ThemedText>
+                <ThemedText style={[styles.missionDesc, { color: colors.textSecondary }]}>{MISSION.desc}</ThemedText>
+                <TouchableOpacity
+                  onPress={() => router.push(MISSION.route)}
+                  style={styles.missionBtn}
+                  activeOpacity={0.8}>
+                  <ThemedText style={styles.missionBtnText}>JOGAR</ThemedText>
+                </TouchableOpacity>
+              </View>
+              {/* right: emoji */}
+              <ThemedText style={styles.missionEmoji}>{MISSION.emoji}</ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── JOGOS ── */}
+          <View>
+            {/* chips */}
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary, marginBottom: Spacing.two }]}>JOGOS</ThemedText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chips}
+              style={{ marginBottom: Spacing.three }}>
+              {FILTER_TAGS.map(tag => {
+                const active = tag === activeTag;
+                return (
+                  <TouchableOpacity
+                    key={tag}
+                    onPress={() => setActiveTag(tag)}
+                    style={[
+                      styles.chip,
+                      active
+                        ? { backgroundColor: C.purple }
+                        : {
+                            backgroundColor: colors.backgroundElement,
+                            borderWidth: 1,
+                            borderColor: C.border,
+                          },
+                    ]}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.chipText, { color: active ? '#fff' : colors.text }]}>
+                      {tag}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* grid */}
+            {rows.map((row, ri) => (
+              <View key={ri} style={styles.gridRow}>
+                {row.map(game => (
+                  <TouchableOpacity
+                    key={game.title}
+                    onPress={() => router.push(game.route)}
+                    activeOpacity={0.82}
+                    style={[styles.gridCard, { width: cardWidth, backgroundColor: colors.backgroundElement, borderColor: cardBorder }]}>
+                    {/* emoji top */}
+                    <View style={styles.gridEmojiWrap}>
+                      <ThemedText style={styles.gridEmoji}>{game.emoji}</ThemedText>
+                    </View>
+                    {/* info bottom */}
+                    <View style={styles.gridInfo}>
+                      <ThemedText style={[styles.gridTitle, { color: colors.text }]}>{game.title}</ThemedText>
+                      <ThemedText style={styles.gridXp}>+{game.xp} XP</ThemedText>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                {row.length === 1 && <View style={{ width: cardWidth }} />}
+              </View>
             ))}
           </View>
+
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -121,30 +248,130 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  scroll: { paddingHorizontal: Spacing.four, gap: Spacing.five },
-  hero: { alignItems: 'center', paddingTop: Spacing.four, gap: Spacing.one },
-  logo: { width: 200, height: 120 },
-  tagline: { fontSize: 15, textAlign: 'center', marginTop: Spacing.one },
-  section: { gap: Spacing.two },
-  sectionLabel: { letterSpacing: 1.1, marginBottom: Spacing.one },
-  card: {
-    borderRadius: Spacing.three,
+  scroll: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.three,
+    gap: Spacing.four,
+  },
+
+  /* ── Header ── */
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  greeting: { fontSize: 13, fontWeight: '500' },
+  appName: { fontSize: 26, fontWeight: '800', letterSpacing: 0.2 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginTop: 4 },
+  streakBadge: {
+    borderRadius: C.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: C.gold + '55',
+  },
+  streakText: { fontSize: 14, fontWeight: '700', color: C.gold },
+  bellWrap: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  bellIcon: { fontSize: 22 },
+  notifDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.red,
+  },
+
+  /* ── Section label ── */
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.3,
+  },
+
+  /* ── Missão do Dia ── */
+  missionCard: {
+    borderRadius: C.radius.lg,
+    padding: Spacing.four,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: C.purple + '55',
+    minHeight: 170,
+    shadowColor: C.purple,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  missionInfo: { flex: 1, gap: Spacing.two },
+  missionTagRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  missionTag: {
+    alignSelf: 'flex-start',
+    borderRadius: C.radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  missionTagText: { fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  countdownPill: {
+    backgroundColor: C.green + '22',
+    borderRadius: C.radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: C.green + '55',
+  },
+  countdownText: {
+    color: C.green,
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.3,
+  },
+  missionTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 24,
+  },
+  missionDesc: { fontSize: 12, lineHeight: 16 },
+  missionBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: C.purple,
+    borderRadius: C.radius.pill,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    shadowColor: C.purple,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  missionBtnText: { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
+  missionEmoji: { fontSize: 56, marginLeft: Spacing.two },
+
+  /* ── Chips ── */
+  chips: { gap: Spacing.two, paddingVertical: 2 },
+  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: C.radius.pill },
+  chipText: { fontSize: 13, fontWeight: '600' },
+
+  /* ── Game Grid ── */
+  gridRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
+  },
+  gridCard: {
+    borderRadius: C.radius.lg,
     padding: Spacing.three,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
+    minHeight: 148,
+    justifyContent: 'space-between',
+    borderWidth: 1,
   },
-  cardEmoji: { fontSize: 32, width: 44, textAlign: 'center' },
-  cardBody: { flex: 1, gap: Spacing.half },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    flexWrap: 'wrap',
-  },
-  cardTitle: { fontSize: 15 },
-  tag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 99 },
-  tagText: { fontSize: 11, fontWeight: '600' },
-  cardDesc: { fontSize: 13, lineHeight: 18 },
-  arrow: { fontSize: 24, marginRight: 2 },
+  gridEmojiWrap: { height: 52, justifyContent: 'center' },
+  gridEmoji: { fontSize: 40, lineHeight: 48 },
+  gridInfo: { gap: 2 },
+  gridTitle: { fontSize: 13, fontWeight: '700', lineHeight: 17 },
+  gridXp: { color: C.gold, fontSize: 12, fontWeight: '700' },
 });

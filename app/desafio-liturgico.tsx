@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -106,21 +106,21 @@ export default function DesafioLiturgicoScreen() {
   }, [index, timeLeft, endGame]);
 
   const timerPct = (timeLeft / TOTAL_TIME) * 100;
-  const timerColor = timeLeft > 20 ? '#10B981' : timeLeft > 10 ? '#F59E0B' : '#EF4444';
+  const timerColor = timeLeft > 20 ? C.green : timeLeft > 10 ? C.gold : C.red;
 
   if (phase === 'idle') {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Desafio Litúrgico" subtitle="Liturgia" />
+          <GameHeader title="Desafio Litúrgico" subtitle="LITURGIA" />
           <View style={[styles.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <ThemedText style={styles.bigEmoji}>⏱️</ThemedText>
             <ThemedText type="subtitle" style={styles.textCenter}>Desafio Litúrgico</ThemedText>
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               {QUESTIONS.length} perguntas sobre o calendário litúrgico.{'\n'}Você tem {TOTAL_TIME} segundos!
             </ThemedText>
-            <TouchableOpacity style={styles.redBtn} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.btnText}>Iniciar Desafio</ThemedText>
+            <TouchableOpacity style={styles.primaryBtn} onPress={start} activeOpacity={0.8}>
+              <ThemedText style={styles.btnText}>INICIAR DESAFIO</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -141,8 +141,8 @@ export default function DesafioLiturgicoScreen() {
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               {pct >= 80 ? 'Excelente! Você domina a liturgia!' : pct >= 50 ? 'Bom resultado! Continue aprendendo.' : 'Estude mais sobre o calendário litúrgico!'}
             </ThemedText>
-            <TouchableOpacity style={styles.redBtn} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.btnText}>Jogar Novamente</ThemedText>
+            <TouchableOpacity style={styles.primaryBtn} onPress={start} activeOpacity={0.8}>
+              <ThemedText style={styles.btnText}>JOGAR NOVAMENTE</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -173,7 +173,7 @@ export default function DesafioLiturgicoScreen() {
             <ThemedText themeColor="textSecondary" style={styles.smallText}>
               {index + 1}/{QUESTIONS.length}
             </ThemedText>
-            <ThemedText style={{ color: '#EF4444', fontWeight: '600', fontSize: 13 }}>
+            <ThemedText style={{ color: C.red, fontWeight: '600', fontSize: 13 }}>
               {score} acertos
             </ThemedText>
           </View>
@@ -185,16 +185,17 @@ export default function DesafioLiturgicoScreen() {
               const isSelected = i === selected;
               let bg: string = theme.backgroundElement;
               let textColor: string = theme.text;
+              let borderColor: string = C.border;
               if (revealed) {
-                if (isCorrect) { bg = '#22C55E'; textColor = '#fff'; }
-                else if (isSelected) { bg = '#EF4444'; textColor = '#fff'; }
+                if (isCorrect) { bg = C.green; textColor = '#fff'; borderColor = C.green; }
+                else if (isSelected) { bg = C.red; textColor = '#fff'; borderColor = C.red; }
               }
               return (
                 <TouchableOpacity
                   key={i}
                   onPress={() => handleSelect(i)}
                   activeOpacity={0.75}
-                  style={[styles.option, { backgroundColor: bg }]}>
+                  style={[styles.option, { backgroundColor: bg, borderColor }]}>
                   <ThemedText style={[styles.optLetter, { color: textColor }]}>
                     {String.fromCharCode(65 + i)}
                   </ThemedText>
@@ -206,12 +207,12 @@ export default function DesafioLiturgicoScreen() {
           {selected !== null && (
             <>
               <ThemedView type="backgroundElement" style={styles.hintBox}>
-                <ThemedText themeColor="textSecondary" style={styles.hintLabel}>💡 Dica:</ThemedText>
+                <ThemedText themeColor="textSecondary" style={styles.hintLabel}>💡 DICA</ThemedText>
                 <ThemedText style={styles.hintText}>{q.hint}</ThemedText>
               </ThemedView>
-              <TouchableOpacity style={styles.redBtn} onPress={next} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.primaryBtn} onPress={next} activeOpacity={0.8}>
                 <ThemedText style={styles.btnText}>
-                  {index + 1 === QUESTIONS.length ? 'Ver Resultado' : 'Próxima →'}
+                  {index + 1 === QUESTIONS.length ? 'VER RESULTADO' : 'PRÓXIMA →'}
                 </ThemedText>
               </TouchableOpacity>
             </>
@@ -228,16 +229,16 @@ const styles = StyleSheet.create({
   textCenter: { textAlign: 'center' },
   bigEmoji: { fontSize: 64 },
   desc: { fontSize: 15, lineHeight: 22 },
-  redBtn: {
-    backgroundColor: '#EF4444',
+  primaryBtn: {
+    backgroundColor: C.red,
     paddingHorizontal: Spacing.five,
-    paddingVertical: Spacing.three,
-    borderRadius: 99,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
     alignItems: 'center',
     alignSelf: 'stretch',
     marginTop: Spacing.one,
   },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  btnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
   playScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
   timerBar: { height: 8, borderRadius: 4, overflow: 'hidden' },
   timerFill: { height: 8, borderRadius: 4 },
@@ -245,10 +246,23 @@ const styles = StyleSheet.create({
   smallText: { fontSize: 13 },
   questionText: { fontSize: 18, lineHeight: 26, fontWeight: '600' },
   options: { gap: Spacing.two },
-  option: { flexDirection: 'row', alignItems: 'center', padding: Spacing.three, borderRadius: Spacing.two, gap: Spacing.two },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.three,
+    borderRadius: C.radius.md,
+    borderWidth: 1,
+    gap: Spacing.two,
+  },
   optLetter: { fontSize: 14, fontWeight: '700', width: 22 },
   optText: { flex: 1, fontSize: 15 },
-  hintBox: { borderRadius: Spacing.two, padding: Spacing.three, gap: 4 },
-  hintLabel: { fontSize: 12 },
+  hintBox: {
+    borderRadius: C.radius.md,
+    padding: Spacing.three,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  hintLabel: { fontSize: 11, letterSpacing: 1.1 },
   hintText: { fontSize: 14, fontStyle: 'italic' },
 });

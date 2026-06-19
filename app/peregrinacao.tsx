@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -155,7 +155,7 @@ export default function PeregrinacaoScreen() {
               <ThemedText themeColor="textSecondary" style={styles.smallText}>
                 Pergunta {qIndex + 1} de {sanctuary.questions.length}
               </ThemedText>
-              <ThemedText style={{ color: '#10B981', fontWeight: '600', fontSize: 13 }}>
+              <ThemedText style={{ color: C.green, fontWeight: '600', fontSize: 13 }}>
                 {correct} corretas
               </ThemedText>
             </View>
@@ -167,16 +167,17 @@ export default function PeregrinacaoScreen() {
                 const isSelected = i === selected;
                 let bg: string = theme.backgroundElement;
                 let textColor: string = theme.text;
+                let borderColor: string = C.border;
                 if (revealed) {
-                  if (isCorrect) { bg = '#22C55E'; textColor = '#fff'; }
-                  else if (isSelected) { bg = '#EF4444'; textColor = '#fff'; }
+                  if (isCorrect) { bg = C.green; textColor = '#fff'; borderColor = C.green; }
+                  else if (isSelected) { bg = C.red; textColor = '#fff'; borderColor = C.red; }
                 }
                 return (
                   <TouchableOpacity
                     key={i}
                     onPress={() => handleSelect(i)}
                     activeOpacity={0.75}
-                    style={[styles.option, { backgroundColor: bg }]}>
+                    style={[styles.option, { backgroundColor: bg, borderColor }]}>
                     <ThemedText style={[styles.optLetter, { color: textColor }]}>
                       {String.fromCharCode(65 + i)}
                     </ThemedText>
@@ -188,7 +189,7 @@ export default function PeregrinacaoScreen() {
             {selected !== null && (
               <TouchableOpacity style={styles.greenBtn} onPress={nextQ} activeOpacity={0.8}>
                 <ThemedText style={styles.btnText}>
-                  {qIndex + 1 === sanctuary.questions.length ? 'Ver resultado' : 'Próxima →'}
+                  {qIndex + 1 === sanctuary.questions.length ? 'VER RESULTADO' : 'PRÓXIMA →'}
                 </ThemedText>
               </TouchableOpacity>
             )}
@@ -212,7 +213,7 @@ export default function PeregrinacaoScreen() {
             <ThemedText
               style={[
                 styles.textCenter,
-                { fontSize: 16, color: passed ? '#22C55E' : '#EF4444', fontWeight: '700' },
+                { fontSize: 16, color: passed ? C.green : C.red, fontWeight: '700' },
               ]}>
               {correct}/{sanctuary.questions.length} acertos
             </ThemedText>
@@ -224,7 +225,7 @@ export default function PeregrinacaoScreen() {
                 : 'Acerte pelo menos 2 perguntas para avançar.'}
             </ThemedText>
             <TouchableOpacity style={styles.greenBtn} onPress={finishSanctuary} activeOpacity={0.8}>
-              <ThemedText style={styles.btnText}>Voltar ao mapa</ThemedText>
+              <ThemedText style={styles.btnText}>VOLTAR AO MAPA</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -235,7 +236,7 @@ export default function PeregrinacaoScreen() {
   return (
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top']}>
-        <GameHeader title="Peregrinação Virtual" subtitle="Aventura" />
+        <GameHeader title="Peregrinação Virtual" subtitle="AVENTURA" />
         <ScrollView
           contentContainerStyle={[
             styles.mapScroll,
@@ -255,7 +256,7 @@ export default function PeregrinacaoScreen() {
                       <View
                         style={[
                           styles.connectorLine,
-                          { backgroundColor: isUnlocked ? '#10B981' : theme.backgroundElement },
+                          { backgroundColor: isUnlocked ? C.green : theme.backgroundElement },
                         ]}
                       />
                     </View>
@@ -320,13 +321,15 @@ const styles = StyleSheet.create({
   connector: { alignItems: 'center', height: 28, justifyContent: 'center', marginLeft: 36 },
   connectorLine: { width: 2, flex: 1 },
   sanctuaryCard: {
-    borderRadius: Spacing.three,
+    borderRadius: C.radius.lg,
     padding: Spacing.three,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  completedCard: { borderWidth: 1.5, borderColor: '#22C55E44' },
+  completedCard: { borderWidth: 1, borderColor: C.green + '55' },
   lockedCard: { opacity: 0.6 },
   sanctuaryEmoji: { fontSize: 32, width: 44, textAlign: 'center' },
   sanctuaryInfo: { flex: 1, gap: 2 },
@@ -340,18 +343,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.three,
-    borderRadius: Spacing.two,
+    borderRadius: C.radius.md,
+    borderWidth: 1,
     gap: Spacing.two,
   },
   optLetter: { fontSize: 14, fontWeight: '700', width: 22 },
   optText: { flex: 1, fontSize: 15 },
   greenBtn: {
-    backgroundColor: '#10B981',
+    backgroundColor: C.green,
     padding: Spacing.three,
-    borderRadius: 99,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
     alignItems: 'center',
     marginTop: Spacing.one,
     alignSelf: 'stretch',
   },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  btnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
 });

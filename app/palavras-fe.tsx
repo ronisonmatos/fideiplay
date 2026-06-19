@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -151,9 +151,9 @@ export default function PalavrasFeScreen() {
       <SafeAreaView style={styles.fill} edges={['top']}>
         <GameHeader
           title="Palavras da Fé"
-          subtitle="Vocabulário"
+          subtitle="VOCABULÁRIO"
           right={
-            <ThemedText type="smallBold" style={{ color: '#3B82F6' }}>
+            <ThemedText type="smallBold" style={{ color: C.purple }}>
               {foundWords.length}/{WORDS.length}
             </ThemedText>
           }
@@ -171,7 +171,7 @@ export default function PalavrasFeScreen() {
             <ThemedView style={styles.winBanner}>
               <ThemedText style={styles.winText}>🎉 Você encontrou todas as palavras!</ThemedText>
               <TouchableOpacity onPress={reset} style={styles.resetBtn} activeOpacity={0.8}>
-                <ThemedText style={styles.resetBtnText}>Jogar Novamente</ThemedText>
+                <ThemedText style={styles.resetBtnText}>JOGAR NOVAMENTE</ThemedText>
               </TouchableOpacity>
             </ThemedView>
           )}
@@ -189,9 +189,9 @@ export default function PalavrasFeScreen() {
                   let textColor: string = theme.text;
                   let borderColor = 'transparent';
 
-                  if (found) { bg = '#3B82F633'; borderColor = '#3B82F6'; textColor = '#3B82F6'; }
-                  else if (sel) { bg = '#3B82F6'; textColor = '#fff'; }
-                  else if (prev) { bg = '#3B82F644'; textColor = theme.text; }
+                  if (found) { bg = C.purple + '33'; borderColor = C.purple; textColor = C.purple; }
+                  else if (sel) { bg = C.purple; textColor = '#fff'; borderColor = C.purple; }
+                  else if (prev) { bg = C.purple + '44'; textColor = theme.text; borderColor = C.purple + '88'; }
 
                   return (
                     <TouchableOpacity
@@ -214,7 +214,7 @@ export default function PalavrasFeScreen() {
 
           <View style={styles.wordList}>
             <ThemedText type="smallBold" style={styles.wordListTitle}>
-              Palavras para encontrar:
+              PALAVRAS PARA ENCONTRAR
             </ThemedText>
             <View style={styles.wordChips}>
               {WORDS.map(w => {
@@ -225,13 +225,13 @@ export default function PalavrasFeScreen() {
                     style={[
                       styles.chip,
                       found
-                        ? { backgroundColor: '#3B82F622', borderColor: '#3B82F6', borderWidth: 1 }
-                        : { backgroundColor: theme.backgroundElement },
+                        ? { backgroundColor: C.purple + '22', borderColor: C.purple, borderWidth: 1 }
+                        : { backgroundColor: theme.backgroundElement, borderWidth: 1, borderColor: C.border },
                     ]}>
                     <ThemedText
                       style={[
                         styles.chipText,
-                        found ? { color: '#3B82F6', textDecorationLine: 'line-through' } : {},
+                        found ? { color: C.purple, textDecorationLine: 'line-through' } : {},
                       ]}>
                       {w.word}
                     </ThemedText>
@@ -252,24 +252,29 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
   winBanner: {
     alignSelf: 'stretch',
-    backgroundColor: '#3B82F622',
+    backgroundColor: C.purple + '22',
     borderWidth: 1.5,
-    borderColor: '#3B82F6',
-    borderRadius: Spacing.two,
+    borderColor: C.purple,
+    borderRadius: C.radius.md,
     padding: Spacing.three,
     alignItems: 'center',
     gap: Spacing.two,
   },
-  winText: { fontSize: 16, fontWeight: '700', color: '#3B82F6' },
-  resetBtn: { backgroundColor: '#3B82F6', paddingHorizontal: Spacing.four, paddingVertical: Spacing.two, borderRadius: 99 },
-  resetBtnText: { color: '#fff', fontWeight: '700' },
+  winText: { fontSize: 16, fontWeight: '700', color: C.purple },
+  resetBtn: {
+    backgroundColor: C.purple,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
+  },
+  resetBtnText: { color: '#fff', fontWeight: '700', letterSpacing: 1.1 },
   grid: { gap: Spacing.one },
   row: { flexDirection: 'row', gap: Spacing.one },
-  cell: { borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  cell: { borderRadius: C.radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   cellLetter: { fontSize: 14, fontWeight: '700' },
   wordList: { alignSelf: 'stretch', gap: Spacing.two },
-  wordListTitle: {},
+  wordListTitle: { letterSpacing: 1.1 },
   wordChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
-  chip: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.one, borderRadius: 99 },
+  chip: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.one, borderRadius: C.radius.pill },
   chipText: { fontSize: 14, fontWeight: '600' },
 });

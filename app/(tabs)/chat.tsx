@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 interface Message {
@@ -88,10 +88,10 @@ export default function ChatScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ThemedView style={[styles.header, { borderBottomColor: theme.backgroundElement }]}>
-          <ThemedText type="subtitle">Chat</ThemedText>
+        <ThemedView style={[styles.header, { borderBottomColor: C.border }]}>
+          <ThemedText style={styles.headerTitle}>Chat</ThemedText>
           <ThemedText themeColor="textSecondary" style={styles.headerSubtitle}>
-            Comunidade FideiPlay
+            COMUNIDADE FIDEIPLAY
           </ThemedText>
         </ThemedView>
 
@@ -128,7 +128,11 @@ export default function ChatScreen() {
                       styles.bubble,
                       isUser
                         ? styles.bubbleUser
-                        : [styles.bubbleOther, { backgroundColor: theme.backgroundElement }],
+                        : [styles.bubbleOther, {
+                            backgroundColor: theme.backgroundElement,
+                            borderWidth: 1,
+                            borderColor: C.border,
+                          }],
                     ]}>
                     <Text
                       style={[
@@ -140,9 +144,7 @@ export default function ChatScreen() {
                     <Text
                       style={[
                         styles.timestamp,
-                        {
-                          color: isUser ? 'rgba(255,255,255,0.65)' : theme.textSecondary,
-                        },
+                        { color: isUser ? 'rgba(255,255,255,0.6)' : theme.textSecondary },
                       ]}>
                       {item.timestamp}
                     </Text>
@@ -157,7 +159,10 @@ export default function ChatScreen() {
             type="backgroundElement"
             style={[
               styles.inputBar,
-              { paddingBottom: BottomTabInset > 0 ? Spacing.two : Spacing.three },
+              {
+                paddingBottom: BottomTabInset > 0 ? Spacing.two : Spacing.three,
+                borderTopColor: C.border,
+              },
             ]}>
             <TextInput
               style={[
@@ -165,7 +170,7 @@ export default function ChatScreen() {
                 {
                   backgroundColor: theme.background,
                   color: theme.text,
-                  borderColor: theme.backgroundSelected,
+                  borderColor: C.border,
                 },
               ]}
               value={inputText}
@@ -198,10 +203,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
     paddingBottom: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     gap: Spacing.half,
   },
-  headerSubtitle: { fontSize: 14 },
+  headerTitle: { fontSize: 22, fontWeight: '700', letterSpacing: 0.2 },
+  headerSubtitle: { fontSize: 11, letterSpacing: 1.2 },
   messageList: { padding: Spacing.three, gap: Spacing.two },
   messageRow: { gap: 2 },
   messageRowUser: { alignItems: 'flex-end' },
@@ -209,13 +215,13 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 12, marginBottom: 2, marginLeft: Spacing.two },
   bubble: {
     maxWidth: '78%',
-    borderRadius: 18,
+    borderRadius: C.radius.lg,
     paddingHorizontal: Spacing.three,
     paddingTop: Spacing.two,
     paddingBottom: Spacing.one,
     gap: 4,
   },
-  bubbleUser: { backgroundColor: '#208AEF', borderBottomRightRadius: 4 },
+  bubbleUser: { backgroundColor: C.purple, borderBottomRightRadius: 4 },
   bubbleOther: { borderBottomLeftRadius: 4 },
   messageText: { fontSize: 16, lineHeight: 22 },
   timestamp: { fontSize: 11, alignSelf: 'flex-end' },
@@ -225,8 +231,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.two,
     gap: Spacing.two,
     alignItems: 'flex-end',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(0,0,0,0.08)',
+    borderTopWidth: 1,
   },
   input: {
     flex: 1,
@@ -241,9 +246,14 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#208AEF',
+    backgroundColor: C.purple,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: C.purple,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
   sendIcon: { color: '#ffffff', fontSize: 18, marginLeft: 2 },
 });

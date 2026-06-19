@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -121,7 +121,7 @@ export default function VersiculoMisteriosoScreen() {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Versículo Misterioso" subtitle="Bíblia" />
+          <GameHeader title="Versículo Misterioso" subtitle="BÍBLIA" />
           <View style={[styles.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <ThemedText style={styles.bigEmoji}>📖</ThemedText>
             <ThemedText type="subtitle" style={styles.textCenter}>
@@ -130,14 +130,14 @@ export default function VersiculoMisteriosoScreen() {
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               Descubra o versículo a partir de dicas progressivas.{'\n'}Quanto menos palavras revelar, mais pontos!
             </ThemedText>
-            <View style={styles.rulesBox}>
-              <ThemedText type="smallBold">Pontuação por rodada:</ThemedText>
+            <ThemedView type="backgroundElement" style={styles.rulesBox}>
+              <ThemedText type="smallBold">PONTUAÇÃO POR RODADA</ThemedText>
               <ThemedText themeColor="textSecondary" style={styles.ruleItem}>⚡ 1–2 palavras → 5 pontos</ThemedText>
               <ThemedText themeColor="textSecondary" style={styles.ruleItem}>📘 3–5 palavras → 3 pontos</ThemedText>
               <ThemedText themeColor="textSecondary" style={styles.ruleItem}>📚 6+ palavras → 1 ponto</ThemedText>
-            </View>
+            </ThemedView>
             <TouchableOpacity style={styles.primaryBtn} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.primaryBtnText}>Começar</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>COMEÇAR</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -162,7 +162,7 @@ export default function VersiculoMisteriosoScreen() {
                   : 'Continue lendo a Bíblia para melhorar!'}
             </ThemedText>
             <TouchableOpacity style={styles.primaryBtn} onPress={start} activeOpacity={0.8}>
-              <ThemedText style={styles.primaryBtnText}>Jogar Novamente</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>JOGAR NOVAMENTE</ThemedText>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -176,7 +176,7 @@ export default function VersiculoMisteriosoScreen() {
         <GameHeader
           title="Versículo Misterioso"
           right={
-            <ThemedText type="smallBold" style={{ color: '#8B5CF6' }}>
+            <ThemedText type="smallBold" style={{ color: C.purple }}>
               {score} pts
             </ThemedText>
           }
@@ -190,7 +190,7 @@ export default function VersiculoMisteriosoScreen() {
             <ThemedText themeColor="textSecondary" style={styles.smallText}>
               Versículo {verseIdx + 1} de {VERSES.length}
             </ThemedText>
-            <ThemedText style={{ color: '#8B5CF6', fontWeight: '600', fontSize: 13 }}>
+            <ThemedText style={{ color: C.purple, fontWeight: '600', fontSize: 13 }}>
               {calcPoints()} pts possíveis
             </ThemedText>
           </View>
@@ -216,10 +216,10 @@ export default function VersiculoMisteriosoScreen() {
             <>
               {canRevealMore && (
                 <TouchableOpacity
-                  style={[styles.hintBtn, { borderColor: '#8B5CF6' }]}
+                  style={[styles.hintBtn, { borderColor: C.purple }]}
                   onPress={revealMore}
                   activeOpacity={0.75}>
-                  <ThemedText style={{ color: '#8B5CF6', fontWeight: '600' }}>
+                  <ThemedText style={{ color: C.purple, fontWeight: '600' }}>
                     💡 Revelar mais ({revealed}/{totalWords} palavras)
                   </ThemedText>
                 </TouchableOpacity>
@@ -247,13 +247,13 @@ export default function VersiculoMisteriosoScreen() {
                 style={[
                   styles.resultCard,
                   {
-                    backgroundColor: selected === verse.reference ? '#22C55E22' : '#EF444422',
-                    borderColor: selected === verse.reference ? '#22C55E' : '#EF4444',
+                    backgroundColor: selected === verse.reference ? C.green + '22' : C.red + '22',
+                    borderColor: selected === verse.reference ? C.green : C.red,
                   },
                 ]}>
                 <ThemedText
                   style={{
-                    color: selected === verse.reference ? '#22C55E' : '#EF4444',
+                    color: selected === verse.reference ? C.green : C.red,
                     fontWeight: '700',
                     fontSize: 15,
                   }}>
@@ -268,14 +268,14 @@ export default function VersiculoMisteriosoScreen() {
                   Versículo completo:
                 </ThemedText>
                 <ThemedText style={styles.fullVerseText}>{verse.words.join(' ')}</ThemedText>
-                <ThemedText style={{ color: '#8B5CF6', fontWeight: '600', marginTop: Spacing.one }}>
+                <ThemedText style={{ color: C.purple, fontWeight: '600', marginTop: Spacing.one }}>
                   — {verse.reference}
                 </ThemedText>
               </ThemedView>
 
               <TouchableOpacity style={styles.primaryBtn} onPress={next} activeOpacity={0.8}>
                 <ThemedText style={styles.primaryBtnText}>
-                  {verseIdx + 1 === VERSES.length ? 'Ver Resultado' : 'Próximo →'}
+                  {verseIdx + 1 === VERSES.length ? 'VER RESULTADO' : 'PRÓXIMO →'}
                 </ThemedText>
               </TouchableOpacity>
             </>
@@ -298,38 +298,66 @@ const styles = StyleSheet.create({
   textCenter: { textAlign: 'center' },
   desc: { fontSize: 15, lineHeight: 22 },
   bigEmoji: { fontSize: 64 },
-  rulesBox: { alignSelf: 'stretch', gap: Spacing.one, paddingHorizontal: Spacing.four },
+  rulesBox: {
+    alignSelf: 'stretch',
+    borderRadius: C.radius.lg,
+    padding: Spacing.three,
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   ruleItem: { fontSize: 14, marginTop: 2 },
   primaryBtn: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: C.purple,
     paddingHorizontal: Spacing.five,
-    paddingVertical: Spacing.three,
-    borderRadius: 99,
+    paddingVertical: 14,
+    borderRadius: C.radius.pill,
     alignItems: 'center',
     marginTop: Spacing.two,
     alignSelf: 'stretch',
   },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
   playScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   smallText: { fontSize: 13 },
-  verseCard: { borderRadius: Spacing.three, padding: Spacing.three },
+  verseCard: {
+    borderRadius: C.radius.lg,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   wordsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, rowGap: 8 },
   word: { fontSize: 16 },
   wordVisible: { fontWeight: '500' },
   wordHidden: { borderRadius: 4, paddingHorizontal: 2, color: 'transparent', overflow: 'hidden' },
   hintBtn: {
     borderWidth: 1.5,
-    borderRadius: 99,
+    borderRadius: C.radius.pill,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
   },
   guessLabel: { marginTop: Spacing.one },
   options: { gap: Spacing.two },
-  option: { padding: Spacing.three, borderRadius: Spacing.two },
+  option: {
+    padding: Spacing.three,
+    borderRadius: C.radius.md,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   optText: { fontSize: 15 },
-  resultCard: { borderWidth: 1.5, borderRadius: Spacing.two, padding: Spacing.three, alignItems: 'center' },
-  fullVerseCard: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.one },
+  resultCard: {
+    borderWidth: 1.5,
+    borderRadius: C.radius.md,
+    padding: Spacing.three,
+    alignItems: 'center',
+  },
+  fullVerseCard: {
+    borderRadius: C.radius.lg,
+    padding: Spacing.three,
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   fullVerseText: { fontSize: 15, lineHeight: 22, fontStyle: 'italic' },
 });

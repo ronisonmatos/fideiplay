@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Text, useColorScheme } from 'react-native';
 
-import { Colors } from '@/constants/theme';
+import { C, Colors } from '@/constants/theme';
 
 function TabIcon({ emoji }: { emoji: string }) {
   return <Text style={{ fontSize: 20 }}>{emoji}</Text>;
@@ -15,16 +15,17 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#208AEF',
+        tabBarActiveTintColor: C.purple,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: colors.background,
-          borderTopColor: colors.backgroundElement,
+          backgroundColor: colors.backgroundElement,
+          borderTopColor: C.border,
+          borderTopWidth: 1,
         },
       }}>
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home', tabBarIcon: () => <TabIcon emoji="🏠" /> }}
+        options={{ title: 'Jogos', tabBarIcon: () => <TabIcon emoji="🎮" /> }}
       />
       <Tabs.Screen
         name="chat"
