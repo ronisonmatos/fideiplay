@@ -1,0 +1,67 @@
+- Competição online / Sistema de Rank Geral ou de um jogo específico
+
+- Stop competir com outro jogadores
+
+- Jogo igual o que a esposa joga 
+
+- Jogo da memória
+
+- Jogo quem é? ou sobre arte católica
+
+
+
+
+Funcionalidades extras:
+
+Clãs paroquiais
+Times por paróquia competindo em torneios
+
+Desafio diário
+Sequência de dias jogados com recompensas
+
+Modo catequese
+Trilhas para crianças em preparação para sacramentos
+
+
+===================================================================
+Boa pergunta de arquitetura. Depende do estágio do projeto:
+
+---
+Agora (fase inicial): dados no app está correto
+
+Para o que o FideiPlay é hoje — conteúdo fixo, sem usuários reais, sem backend — manter as perguntas hardcoded no app é a escolha certa. É simples, funciona offline, sem custo.
+
+---
+Quando crescer: separar conteúdo do código
+
+As boas práticas dizem que conteúdo que muda com frequência não deve morar no código. Perguntas de quiz são conteúdo, não lógica. Quando isso se torna problema:
+
+- Adicionar 10 perguntas novas exige publicar um novo APK
+- Traduzir o app vira um pesadelo
+- Não dá para corrigir uma pergunta errada sem atualizar o app
+
+Opção recomendada para vocês: Supabase
+
+É gratuito no tier inicial, tem banco PostgreSQL, API REST automática e autenticação pronta.
+
+tabela: quiz_questions
+  id, game_id, question, options (json), correct_index, saint, active
+
+tabela: stop_categories
+  id, label, emoji, hints (json)
+
+tabela: bible_verses
+  id, words (json), reference, options (json)
+
+O app busca as perguntas na inicialização e cacheia localmente com AsyncStorage. Se não tiver internet, usa o cache. Se não tiver cache, usa um fallback hardcoded mínimo.
+
+---
+Caminho incremental (sem reescrever tudo agora)
+
+Fase 1 (hoje)     → dados no app, funciona offline, zero custo
+Fase 2 (crescendo) → mover perguntas para JSON em CDN ou Supabase
+                     app busca na abertura + cache local
+Fase 3 (escala)   → autenticação real, ranking online, perfil salvo
+
+---
+Recomendação prática: por ora fica como está. Quando você quiser adicionar um novo pacote de perguntas sem publicar APK, aí vale migrar para Supabase. O código dos jogos não muda quase nada — só troca o array hardcoded por um fetch.
