@@ -1,5 +1,6 @@
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Appearance,
   Image,
@@ -21,7 +22,8 @@ import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
-import { getWeeklyRanking, claimDailyReward, RankingEntry } from '@/lib/score-events';
+import { supabase } from '@/lib/supabase';
+import { getWeeklyRanking, RankingEntry } from '@/lib/score-events';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -70,9 +72,16 @@ export default function ContaScreen() {
 
   const [ranking,      setRanking]      = useState<RankingEntry[]>([]);
   const [rankingLoad,  setRankingLoad]  = useState(false);
-  const [rewardCoins,  setRewardCoins]  = useState<number | null>(null); // null=não verificado, -1=indisponível, >0=disponível
+  const [justClaimed,  setJustClaimed]  = useState(false);
   const [claiming,     setClaiming]     = useState(false);
-  const rewardOpacity = useRef(new Animated.Value(0)).current;
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
+  const TWO_HOURS   = 2 * 60 * 60 * 1000;
+  const lastReward  = profile?.last_coin_reward ? new Date(profile.last_coin_reward) : null;
+  const eligible    = !lastReward || (Date.now() - lastReward.getTime()) >= TWO_HOURS;
+  const msLeft      = lastReward && !eligible ? TWO_HOURS - (Date.now() - lastReward.getTime()) : 0;
+  const hoursLeft   = Math.floor(msLeft / (60 * 60 * 1000));
+  const minutesLeft = Math.ceil((msLeft % (60 * 60 * 1000)) / 60000);
 
   const toggleTheme = () => Appearance.setColorScheme(isDark ? 'light' : 'dark');
 
@@ -84,35 +93,35 @@ export default function ContaScreen() {
   }, []);
 
   const showRewardToast = useCallback(() => {
+    toastOpacity.setValue(0);
     Animated.sequence([
-      Animated.timing(rewardOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
       Animated.delay(3500),
-      Animated.timing(rewardOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-    ]).start(() => setRewardCoins(-1));
-  }, [rewardOpacity]);
+      Animated.timing(toastOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => setJustClaimed(false));
+  }, [toastOpacity]);
 
   const claimReward = useCallback(async () => {
     if (claiming || !user) return;
     setClaiming(true);
-    const result = await claimDailyReward(user.id);
-    setRewardCoins(result);
-    if (result > 0) {
+    const { data, error } = await supabase.rpc('claim_daily_reward', { p_user_id: user.id });
+    const result = typeof data === 'number' ? data : -1;
+    if (!error && result > 0) {
       await refreshProfile();
+      setJustClaimed(true);
       showRewardToast();
+    } else {
+      Alert.alert(
+        'Erro ao resgatar',
+        error?.message ?? 'Não foi possível resgatar. Verifique se o SQL foi executado no Supabase (ranking-schema.sql).',
+      );
     }
     setClaiming(false);
   }, [claiming, user, refreshProfile, showRewardToast]);
 
-  // On focus: reload ranking and check if reward is available (does NOT claim automatically)
   useFocusEffect(useCallback(() => {
     loadRanking();
-    // Check eligibility without claiming: if last_coin_reward is null or >2h ago, show card
-    if (user && profile) {
-      const last = profile.last_coin_reward ? new Date(profile.last_coin_reward) : null;
-      const eligible = !last || (Date.now() - last.getTime()) >= 2 * 60 * 60 * 1000;
-      setRewardCoins(eligible ? 0 : -1); // 0 = available (not yet claimed), -1 = too soon
-    }
-  }, [loadRanking, user, profile]));
+  }, [loadRanking]));
 
   if (loading) {
     return (
@@ -163,28 +172,30 @@ export default function ContaScreen() {
             </ThemedView>
 
             {/* Daily reward toast */}
-            {rewardCoins !== null && rewardCoins > 0 && (
-              <Animated.View style={[styles.rewardToast, { opacity: rewardOpacity }]}>
-                <ThemedText style={styles.rewardToastText}>🪙 +5 moedas! Bônus de 2 horas resgatado</ThemedText>
+            {justClaimed && (
+              <Animated.View style={[styles.rewardToast, { opacity: toastOpacity }]}>
+                <ThemedText style={styles.rewardToastText}>🪙 +5 moedas resgatadas!</ThemedText>
               </Animated.View>
             )}
 
-            {/* Daily reward card (available but not yet claimed) */}
-            {rewardCoins === 0 && user && (
-              <TouchableOpacity
-                style={styles.rewardCard}
-                onPress={claimReward}
-                activeOpacity={0.8}
-                disabled={claiming}>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.rewardTitle}>🪙 Bônus de 2 horas disponível!</ThemedText>
-                  <ThemedText style={styles.rewardSub}>Toque para resgatar +5 moedas</ThemedText>
-                </View>
-                <View style={styles.rewardBtn}>
-                  <ThemedText style={styles.rewardBtnText}>{claiming ? '...' : 'RESGATAR'}</ThemedText>
-                </View>
-              </TouchableOpacity>
-            )}
+            {/* Daily reward card — always visible; dimmed when not yet eligible */}
+            <TouchableOpacity
+              style={[styles.rewardCard, !eligible && { opacity: 0.4 }]}
+              onPress={claimReward}
+              activeOpacity={0.8}
+              disabled={!eligible || claiming}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.rewardTitle}>🪙 Bônus de 2 horas</ThemedText>
+                <ThemedText style={styles.rewardSub}>
+                  {eligible
+                    ? 'Toque para resgatar +5 moedas'
+                    : `Disponível em ${hoursLeft}h ${minutesLeft}min`}
+                </ThemedText>
+              </View>
+              <View style={styles.rewardBtn}>
+                <ThemedText style={styles.rewardBtnText}>{claiming ? '...' : 'RESGATAR'}</ThemedText>
+              </View>
+            </TouchableOpacity>
 
             {/* Score */}
             <ThemedText style={styles.sectionLabel}>PONTUAÇÃO</ThemedText>

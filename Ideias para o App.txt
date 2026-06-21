@@ -65,3 +65,77 @@ Fase 3 (escala)   → autenticação real, ranking online, perfil salvo
 
 ---
 Recomendação prática: por ora fica como está. Quando você quiser adicionar um novo pacote de perguntas sem publicar APK, aí vale migrar para Supabase. O código dos jogos não muda quase nada — só troca o array hardcoded por um fetch.
+
+
+
+
+
+
+Para um Stop Católico, dá para criar categorias divertidas misturando conhecimento, criatividade e fé. Algumas ideias:
+
+Categorias sobre pessoas
+Meu padre é... (ex.: paciente, alegre, sábio)
+Um santo que começa com...
+Grandes santos
+Santos jovens
+Santas mulheres
+Papa que começa com...
+Personagem bíblico
+Apóstolo
+Profeta
+Mártir
+
+Doutor da Igreja
+Fundador de uma ordem religiosa
+Igreja e fé
+Coisas da Santa Missa
+Objetos da igreja
+Coisas que encontramos na sacristia
+Partes da igreja
+Veste litúrgica
+Símbolo católico
+Oração
+Virtude cristã
+Pecado
+Mandamento
+Fruto do Espírito Santo
+Dom do Espírito Santo
+Obra de misericórdia
+
+Bíblia
+Livro da Bíblia
+Mulher da Bíblia
+Homem da Bíblia
+Milagre de Jesus
+Parábola de Jesus
+Lugar bíblico
+Animal da Bíblia
+Objeto bíblico
+Mais engraçadas (estilo Stop)
+Coisas que um santo faria
+Coisas que um coroinha sabe
+Desculpa para chegar atrasado na Missa
+Coisa que tem na mochila de um católico
+Frase que um padre poderia falar
+Coisa que acontece depois da Missa
+Coisa que um catequista diria
+Coisa que não pode faltar no altar
+Coisa que um jovem católico leva para o encontro
+Nome de grupo de jovens
+
+Desafio maior
+Encíclica
+Documento da Igreja
+Concílio
+Ordem religiosa
+Aparição mariana
+Título de Nossa Senhora
+Relíquia de santo
+Santuário católico
+Milagre eucarístico
+
+Algumas categorias dariam até para colocar pontuação diferente no jogo, por exemplo:
+
+"Santo" = 1 ponto
+"Doutor da Igreja" = 3 pontos
+"Encíclica" = 5 pontos

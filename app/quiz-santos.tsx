@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -137,7 +137,7 @@ export default function QuizSantosScreen() {
         <SafeAreaView style={styles.fill} edges={['top']}>
           <GameHeader title="Quiz dos Santos" subtitle="CONHECIMENTO" />
           <View style={[styles.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
-            <ThemedText style={styles.bigEmoji}>🏆</ThemedText>
+            <Image source={require('@/assets/images/quiz.png')} style={styles.gameIcon} resizeMode="contain" />
             <ThemedText type="subtitle" style={styles.textCenter}>
               Quiz dos Santos
             </ThemedText>
@@ -264,6 +264,7 @@ const styles = StyleSheet.create({
   textCenter: { textAlign: 'center' },
   desc: { fontSize: 15, lineHeight: 22 },
   bigEmoji: { fontSize: 64 },
+  gameIcon: { width: 96, height: 96 },
   primaryBtn: {
     backgroundColor: C.purple,
     paddingHorizontal: Spacing.five,

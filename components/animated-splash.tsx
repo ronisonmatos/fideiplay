@@ -14,7 +14,7 @@ export function AnimatedSplashOverlay() {
   return (
     <View style={styles.overlay}>
       <Image
-        source={require('@/assets/images/logo_fideiplay.png')}
+        source={require('@/assets/images/logo_SantosPlay.png')}
         style={styles.logo}
         resizeMode="contain"
       />

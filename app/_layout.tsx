@@ -9,7 +9,7 @@ import { AuthProvider, useAuth } from '@/context/auth-context';
 Appearance.setColorScheme('dark');
 
 function AuthGate() {
-  const { user, loading } = useAuth();
+  const { user, loading, isGuest } = useAuth();
   const segments = useSegments();
 
   useEffect(() => {
@@ -17,12 +17,12 @@ function AuthGate() {
 
     const inAuth = segments[0] === '(auth)';
 
-    if (!user && !inAuth) {
+    if (!user && !inAuth && !isGuest) {
       router.replace('/(auth)/register');
     } else if (user && inAuth) {
       router.replace('/(tabs)');
     }
-  }, [user, loading, segments]);
+  }, [user, loading, segments, isGuest]);
 
   return null;
 }

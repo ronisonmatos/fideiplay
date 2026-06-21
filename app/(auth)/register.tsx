@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -21,7 +22,7 @@ const AVATARS = ['🙏', '✝️', '📖', '🕊️', '⭐', '🏆', '👼', '�
 
 export default function RegisterScreen() {
   const theme = useTheme();
-  const { signUp } = useAuth();
+  const { signUp, setGuest } = useAuth();
 
   const [name,     setName]     = useState('');
   const [email,    setEmail]    = useState('');
@@ -64,8 +65,7 @@ export default function RegisterScreen() {
 
             {/* Logo */}
             <View style={s.logoBlock}>
-              <ThemedText style={s.logoEmoji}>✝️</ThemedText>
-              <ThemedText style={s.appName}>FideiPlay</ThemedText>
+              <Image source={require('@/assets/images/logo_SantosPlay.png')} style={s.logo} resizeMode="contain" />
               <ThemedText style={[s.subtitle, { color: theme.textSecondary }]}>
                 Crie sua conta e comece a jogar
               </ThemedText>
@@ -164,6 +164,16 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Skip auth */}
+            <TouchableOpacity
+              style={s.skipBtn}
+              onPress={() => { setGuest(true); router.replace('/(tabs)'); }}
+              activeOpacity={0.6}>
+              <ThemedText style={[s.skipTxt, { color: theme.textSecondary }]}>
+                Cadastrar depois
+              </ThemedText>
+            </TouchableOpacity>
+
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -175,8 +185,7 @@ const s = StyleSheet.create({
   fill:       { flex: 1 },
   scroll:     { paddingHorizontal: Spacing.four, paddingTop: Spacing.five, paddingBottom: Spacing.five, gap: Spacing.three },
   logoBlock:  { alignItems: 'center', gap: Spacing.one, marginBottom: Spacing.two },
-  logoEmoji:  { fontSize: 48 },
-  appName:    { fontSize: 30, fontWeight: '900', letterSpacing: 0.5, color: C.purple },
+  logo:       { width: 140, height: 140 },
   subtitle:   { fontSize: 14, textAlign: 'center' },
   section:    { gap: Spacing.one },
   label:      { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
@@ -204,4 +213,6 @@ const s = StyleSheet.create({
   btnTxt:    { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 1.2 },
   footer:    { flexDirection: 'row', justifyContent: 'center', paddingTop: Spacing.one },
   footerTxt: { fontSize: 14 },
+  skipBtn:   { alignItems: 'center', paddingTop: Spacing.one },
+  skipTxt:   { fontSize: 13 },
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -114,7 +114,7 @@ export default function DesafioLiturgicoScreen() {
         <SafeAreaView style={styles.fill} edges={['top']}>
           <GameHeader title="Desafio Litúrgico" subtitle="LITURGIA" />
           <View style={[styles.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
-            <ThemedText style={styles.bigEmoji}>⏱️</ThemedText>
+            <Image source={require('@/assets/images/desafio_calendário_liturgico.png')} style={styles.gameIcon} resizeMode="contain" />
             <ThemedText type="subtitle" style={styles.textCenter}>Desafio Litúrgico</ThemedText>
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               {QUESTIONS.length} perguntas sobre o calendário litúrgico.{'\n'}Você tem {TOTAL_TIME} segundos!
@@ -228,6 +228,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
   textCenter: { textAlign: 'center' },
   bigEmoji: { fontSize: 64 },
+  gameIcon: { width: 96, height: 96 },
   desc: { fontSize: 15, lineHeight: 22 },
   primaryBtn: {
     backgroundColor: C.red,

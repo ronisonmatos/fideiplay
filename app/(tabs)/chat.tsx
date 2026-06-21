@@ -27,9 +27,9 @@ interface Message {
 const INITIAL_MESSAGES: Message[] = [
   {
     id: '1',
-    text: 'Bem-vindo ao FideiPlay! 🙏 Conecte-se com outros jogadores e compartilhe sua fé.',
+    text: 'Bem-vindo ao SantosPlay! 🙏 Conecte-se com outros jogadores e compartilhe sua fé.',
     sender: 'other',
-    senderName: 'FideiPlay',
+    senderName: 'SantosPlay',
     timestamp: '09:00',
   },
   {
@@ -91,7 +91,7 @@ export default function ChatScreen() {
         <ThemedView style={[styles.header, { borderBottomColor: C.border }]}>
           <ThemedText style={styles.headerTitle}>Chat</ThemedText>
           <ThemedText themeColor="textSecondary" style={styles.headerSubtitle}>
-            COMUNIDADE FIDEIPLAY
+            COMUNIDADE SANTOSPLAY
           </ThemedText>
         </ThemedView>
 

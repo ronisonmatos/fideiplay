@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Image,
   KeyboardAvoidingView,
@@ -24,6 +25,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { recordScoreEvent } from '@/lib/score-events';
 import { supabase } from '@/lib/supabase';
+import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 
 const BRAND        = '#EF9F27';
 const TIMER_DURATION = 90;
@@ -35,7 +37,7 @@ type AnswerMap = Partial<Record<string, string>>;
 
 export default function StopCatolicoScreen() {
   const theme   = useTheme();
-  const { user } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { reportResult } = useGameStore();
 
   const [phase,       setPhase]       = useState<Phase>('idle');
@@ -46,6 +48,8 @@ export default function StopCatolicoScreen() {
   const [timeLeft,    setTimeLeft]    = useState(TIMER_DURATION);
   const [bankMap,     setBankMap]     = useState<Partial<Record<string, BankResult>>>({});
   const [aiLoading,   setAiLoading]   = useState(false);
+  const [hints,       setHints]       = useState<HintMap>({});
+  const [loadingHint, setLoadingHint] = useState<string | null>(null);
 
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRefs        = useRef<Partial<Record<string, TextInput | null>>>({});
@@ -140,6 +144,13 @@ export default function StopCatolicoScreen() {
 
   useEffect(() => {
     if (phase !== 'playing') return;
+    setHints({});
+    loadBankHints(letter, activeCategories).then(setHints);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'playing') return;
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) { stopTimer(); setPhase('result'); return 0; }
@@ -162,6 +173,40 @@ export default function StopCatolicoScreen() {
       return next;
     });
   }, []);
+
+  const handleShuffle = useCallback(async () => {
+    if (!user || !profile || profile.coins < 1) return;
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
+    setSelectedKeys(randomDefaultKeys(6));
+    refreshProfile();
+  }, [user, profile, refreshProfile]);
+
+  const handleHint = useCallback(async (cat: StopCategory) => {
+    if (!user || !profile) return;
+    if (profile.coins < 2) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 2 🪙 para usar uma dica.');
+      return;
+    }
+    if (loadingHint) return;
+    setLoadingHint(cat.key);
+
+    let word: string | null = hints[cat.key] ?? null;
+    if (!word) {
+      word = await getAIHint(letter, cat.key, cat.label);
+      if (word) setHints(prev => ({ ...prev, [cat.key]: word! }));
+    }
+
+    if (!word) {
+      Alert.alert('Dica indisponível', 'Não encontramos sugestão para essa categoria com essa letra.');
+      setLoadingHint(null);
+      return;
+    }
+
+    setAnswer(cat.key, word.slice(0, 3));
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -2 });
+    refreshProfile();
+    setLoadingHint(null);
+  }, [user, profile, hints, loadingHint, letter, setAnswer, refreshProfile]);
 
   const startGame = useCallback((cats: StopCategory[]) => {
     clearSpinTimeouts();
@@ -292,6 +337,14 @@ export default function StopCatolicoScreen() {
             <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
               Selecione pelo menos {MIN_CATS}. Selecionadas: {numSelected}
             </ThemedText>
+
+            <TouchableOpacity
+              style={[s.shuffleBtn, profile && profile.coins < 1 && { opacity: 0.4 }]}
+              onPress={handleShuffle}
+              disabled={!profile || profile.coins < 1}
+              activeOpacity={0.8}>
+              <ThemedText style={s.shuffleBtnText}>🔀  Novas categorias  −1 🪙</ThemedText>
+            </TouchableOpacity>
 
             <View style={s.catGrid}>
               {ALL_STOP_CATEGORIES.map(cat => {
@@ -491,7 +544,18 @@ export default function StopCatolicoScreen() {
             {activeCategories.map((cat, i) => (
               <ThemedView key={cat.key} type="backgroundElement" style={s.inputCard}>
                 <View style={s.inputGroup}>
-                  <ThemedText style={s.catLabel}>{cat.label}</ThemedText>
+                  <View style={s.inputHeader}>
+                    <ThemedText style={s.catLabel}>{cat.label}</ThemedText>
+                    <TouchableOpacity
+                      onPress={() => handleHint(cat)}
+                      disabled={!profile || profile.coins < 2 || !!loadingHint}
+                      style={[s.hintBtn, (!profile || profile.coins < 2) && { opacity: 0.35 }]}
+                      activeOpacity={0.7}>
+                      <ThemedText style={s.hintBtnText}>
+                        {loadingHint === cat.key ? '...' : '🪙 Dica −2'}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
                   <TextInput
                     ref={ref => { inputRefs.current[cat.key] = ref; }}
                     style={[s.input, { color: theme.text, borderColor: theme.backgroundSelected, backgroundColor: theme.background }]}
@@ -589,8 +653,13 @@ const s = StyleSheet.create({
   letterCardText: { fontSize: 52, fontWeight: '900', color: '#fff', lineHeight: 60 },
   inputCard:   { flexDirection: 'row', alignItems: 'center', borderRadius: C.radius.md, padding: Spacing.two, gap: Spacing.two, borderWidth: 1, borderColor: C.border },
   inputGroup:  { flex: 1, gap: 3 },
+  inputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   catLabel:    { fontSize: 12, opacity: 0.65 },
   catEmoji:    { fontSize: 22, width: 32, textAlign: 'center' },
+  hintBtn:     { backgroundColor: C.gold + '22', borderRadius: C.radius.pill, paddingVertical: 3, paddingHorizontal: 8 },
+  hintBtnText: { fontSize: 11, fontWeight: '800', color: C.gold },
+  shuffleBtn:  { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 10, alignItems: 'center' as const, alignSelf: 'stretch' as const, marginBottom: -4 },
+  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 13, letterSpacing: 0.5 },
   input: {
     borderWidth: 1.5, borderRadius: C.radius.sm,
     paddingHorizontal: Spacing.two,

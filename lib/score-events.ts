@@ -23,7 +23,3 @@ export async function getWeeklyRanking(): Promise<RankingEntry[]> {
   return (data ?? []) as RankingEntry[];
 }
 
-export async function claimDailyReward(userId: string): Promise<number> {
-  const { data } = await supabase.rpc('claim_daily_reward', { p_user_id: userId });
-  return typeof data === 'number' ? data : -1;
-}

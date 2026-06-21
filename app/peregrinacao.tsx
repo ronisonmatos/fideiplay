@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -242,6 +242,7 @@ export default function PeregrinacaoScreen() {
             styles.mapScroll,
             { paddingBottom: BottomTabInset + Spacing.four },
           ]}>
+          <Image source={require('@/assets/images/peregrinacao.png')} style={styles.mapIcon} resizeMode="contain" />
           <ThemedText themeColor="textSecondary" style={styles.mapSubtitle}>
             Percorra santuários respondendo perguntas para avançar no mapa.
           </ThemedText>
@@ -313,6 +314,7 @@ const styles = StyleSheet.create({
   },
   textCenter: { textAlign: 'center' },
   bigEmoji: { fontSize: 64 },
+  mapIcon: { width: 72, height: 72, alignSelf: 'center' },
   desc: { fontSize: 15, lineHeight: 22 },
   mapScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
   mapSubtitle: { fontSize: 14, lineHeight: 20 },

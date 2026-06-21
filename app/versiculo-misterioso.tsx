@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -123,7 +123,7 @@ export default function VersiculoMisteriosoScreen() {
         <SafeAreaView style={styles.fill} edges={['top']}>
           <GameHeader title="Versículo Misterioso" subtitle="BÍBLIA" />
           <View style={[styles.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
-            <ThemedText style={styles.bigEmoji}>📖</ThemedText>
+            <Image source={require('@/assets/images/frase_misteriosa.png')} style={styles.gameIcon} resizeMode="contain" />
             <ThemedText type="subtitle" style={styles.textCenter}>
               Versículo Misterioso
             </ThemedText>
@@ -298,6 +298,7 @@ const styles = StyleSheet.create({
   textCenter: { textAlign: 'center' },
   desc: { fontSize: 15, lineHeight: 22 },
   bigEmoji: { fontSize: 64 },
+  gameIcon: { width: 96, height: 96 },
   rulesBox: {
     alignSelf: 'stretch',
     borderRadius: C.radius.lg,

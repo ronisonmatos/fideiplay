@@ -1,4 +1,4 @@
--- FideiPlay — Perfis de usuário
+-- SantosPlay — Perfis de usuário
 -- Execute no SQL Editor do Supabase APÓS criar o projeto
 
 -- 1. Tabela de perfis (vinculada ao Supabase Auth)
@@ -7,6 +7,7 @@ create table if not exists profiles (
   name         text not null,
   avatar_emoji text not null default '🙏',
   total_score  int  not null default 0,
+  coins        int  not null default 100,   -- moedas do jogador (começa com 100)
   created_at   timestamptz default now()
 );
 
@@ -29,6 +30,19 @@ begin
   )
   on conflict (id) do nothing;
   return new;
+end;
+$$;
+
+-- 4. Função para adicionar/remover moedas de forma atômica (nunca abaixo de 0)
+create or replace function add_coins(p_user_id uuid, p_amount int)
+returns int language plpgsql security definer as $$
+declare new_coins int;
+begin
+  update profiles
+    set coins = greatest(0, coins + p_amount)
+    where id = p_user_id
+    returning coins into new_coins;
+  return coalesce(new_coins, 0);
 end;
 $$;
 

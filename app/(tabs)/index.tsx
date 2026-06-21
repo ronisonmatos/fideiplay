@@ -1,4 +1,5 @@
 import {
+  Image,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -13,12 +14,14 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/context/auth-context';
 
 const FILTER_TAGS = ['Todos', 'Quiz', 'Bíblia', 'Aventura', 'Vocabulário', 'Liturgia'];
 
 const GAMES = [
   {
-    emoji: '🏆',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/quiz.png') as number,
     title: 'Quiz dos Santos',
     tag: 'Quiz',
     tagColor: C.gold,
@@ -27,7 +30,8 @@ const GAMES = [
     route: '/quiz-santos' as const,
   },
   {
-    emoji: '📖',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/frase_misteriosa.png') as number,
     title: 'Versículo Misterioso',
     tag: 'Bíblia',
     tagColor: C.purple,
@@ -36,7 +40,8 @@ const GAMES = [
     route: '/versiculo-misterioso' as const,
   },
   {
-    emoji: '🗺️',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/peregrinacao.png') as number,
     title: 'Peregrinação Virtual',
     tag: 'Aventura',
     tagColor: C.green,
@@ -45,7 +50,8 @@ const GAMES = [
     route: '/peregrinacao' as const,
   },
   {
-    emoji: '🔤',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/palavra_cruzada.png') as number,
     title: 'Palavras da Fé',
     tag: 'Vocabulário',
     tagColor: '#3B82F6',
@@ -54,7 +60,8 @@ const GAMES = [
     route: '/palavras-fe' as const,
   },
   {
-    emoji: '⏱️',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/desafio_calendário_liturgico.png') as number,
     title: 'Desafio Litúrgico',
     tag: 'Liturgia',
     tagColor: C.red,
@@ -63,7 +70,8 @@ const GAMES = [
     route: '/desafio-liturgico' as const,
   },
   {
-    emoji: '🛑',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/stop.png') as number,
     title: 'Stop Católico',
     tag: 'Vocabulário',
     tagColor: C.gold,
@@ -71,7 +79,7 @@ const GAMES = [
     desc: '6 categorias · Letra sorteada',
     route: '/stop-catolico' as const,
   },
-] as const;
+];
 
 const MISSION = GAMES[0];
 const STREAK = 7;
@@ -112,6 +120,7 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const countdown = useCountdown();
   const [activeTag, setActiveTag] = useState('Todos');
+  const { user, profile } = useAuth();
 
   const cardBorder = scheme === 'dark' ? C.border : 'rgba(0,0,0,0.08)';
   const streakBg   = scheme === 'dark' ? '#2E1A08' : C.gold + '22';
@@ -133,15 +142,17 @@ export default function HomeScreen() {
           {/* ── Header: saudação + streak + sino ── */}
           <View style={styles.header}>
             <View>
-              <ThemedText style={[styles.greeting, { color: colors.textSecondary }]}>Olá 👋</ThemedText>
-              <ThemedText style={[styles.appName, { color: colors.text }]}>FideiPlay</ThemedText>
+              <ThemedText style={[styles.greeting, { color: colors.textSecondary }]}>
+                {user && profile ? `Olá, ${profile.name}! 👋` : 'Olá 👋'}
+              </ThemedText>
+              <ThemedText style={[styles.appName, { color: colors.text }]}>Salve Maria! 🕊️</ThemedText>
             </View>
             <View style={styles.headerRight}>
               <View style={[styles.streakBadge, { backgroundColor: streakBg }]}>
                 <ThemedText style={styles.streakText}>🔥 {STREAK}</ThemedText>
               </View>
               <TouchableOpacity style={styles.bellWrap} activeOpacity={0.7}>
-                <ThemedText style={styles.bellIcon}>🔔</ThemedText>
+                <Image source={require('@/assets/images/sino.png')} style={styles.bellIcon} resizeMode="contain" />
                 <View style={styles.notifDot} />
               </TouchableOpacity>
             </View>
@@ -175,8 +186,8 @@ export default function HomeScreen() {
                   <ThemedText style={styles.missionBtnText}>JOGAR</ThemedText>
                 </TouchableOpacity>
               </View>
-              {/* right: emoji */}
-              <ThemedText style={styles.missionEmoji}>{MISSION.emoji}</ThemedText>
+              {/* right: icon */}
+              <Image source={MISSION.image} style={styles.missionEmoji} resizeMode="contain" />
             </TouchableOpacity>
           </View>
 
@@ -223,9 +234,9 @@ export default function HomeScreen() {
                     onPress={() => router.push(game.route)}
                     activeOpacity={0.82}
                     style={[styles.gridCard, { width: cardWidth, backgroundColor: colors.backgroundElement, borderColor: cardBorder }]}>
-                    {/* emoji top */}
+                    {/* icon top */}
                     <View style={styles.gridEmojiWrap}>
-                      <ThemedText style={styles.gridEmoji}>{game.emoji}</ThemedText>
+                      <Image source={game.image} style={styles.gridImg} resizeMode="contain" />
                     </View>
                     {/* info bottom */}
                     <View style={styles.gridInfo}>
@@ -272,7 +283,7 @@ const styles = StyleSheet.create({
   },
   streakText: { fontSize: 14, fontWeight: '700', color: C.gold },
   bellWrap: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  bellIcon: { fontSize: 22 },
+  bellIcon: { width: 22, height: 22 },
   notifDot: {
     position: 'absolute',
     top: 4,
@@ -349,7 +360,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   missionBtnText: { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
-  missionEmoji: { fontSize: 56, marginLeft: Spacing.two },
+  missionEmoji: { width: 88, height: 88, marginLeft: Spacing.two },
 
   /* ── Chips ── */
   chips: { gap: Spacing.two, paddingVertical: 2 },
@@ -365,12 +376,12 @@ const styles = StyleSheet.create({
   gridCard: {
     borderRadius: C.radius.lg,
     padding: Spacing.three,
-    minHeight: 148,
+    minHeight: 160,
     justifyContent: 'space-between',
     borderWidth: 1,
   },
-  gridEmojiWrap: { height: 52, justifyContent: 'center' },
-  gridEmoji: { fontSize: 40, lineHeight: 48 },
+  gridEmojiWrap: { height: 72, justifyContent: 'center' },
+  gridImg: { width: 64, height: 64 },
   gridInfo: { gap: 2 },
   gridTitle: { fontSize: 13, fontWeight: '700', lineHeight: 17 },
   gridXp: { color: C.gold, fontSize: 12, fontWeight: '700' },

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "FideiPlay",
+    "name": "SantosPlay",
     "slug": "fideiplay",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo_fideiplay.png",
+    "icon": "./assets/images/logo_SantosPlay.png",
     "scheme": "fideiplay",
     "userInterfaceStyle": "automatic",
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo_fideiplay.png",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#208AEF"
       },
       "predictiveBackGestureEnabled": false
@@ -26,7 +26,7 @@
         {
           "backgroundColor": "#208AEF",
           "android": {
-            "image": "./assets/images/logo_fideiplay.png",
+            "image": "./assets/images/logo_SantosPlay.png",
             "imageWidth": 200
           }
         }
