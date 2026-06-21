@@ -21,6 +21,7 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
 import { supabase } from '@/lib/supabase';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
+import { recordScoreEvent } from '@/lib/score-events';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -602,13 +603,22 @@ export default function StopOnlineScreen() {
       setOppResult({ answers: pending.oppAnswers, score: oppS, validCount: oppVC });
 
       if (!pending.skipCoins) {
-        const isAS = gameModeRef.current === 'async';
+        const isAS  = gameModeRef.current === 'async';
         const delta = myS > oppS
           ? (isAS ? COINS.WIN_AS  : COINS.WIN_RT)
           : myS === oppS
             ? (isAS ? COINS.DRAW_AS : COINS.DRAW_RT)
             : (isAS ? COINS.LOSE_AS : COINS.LOSE_RT);
         awardCoinsRef.current(delta);
+
+        // +1 moeda bônus por jogo perfeito (todas categorias corretas)
+        const perfectGame = cats.length > 0 && myVC === cats.length;
+        if (perfectGame) awardCoinsRef.current(1);
+
+        // Registra evento de pontuação para o ranking semanal
+        if (myS > 0 && myId) {
+          recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
+        }
       }
 
       setPhase('result');

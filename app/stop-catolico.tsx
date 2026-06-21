@@ -19,8 +19,11 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
 import { useGameStore } from '@/context/game-store';
+import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
+import { recordScoreEvent } from '@/lib/score-events';
+import { supabase } from '@/lib/supabase';
 
 const BRAND        = '#EF9F27';
 const TIMER_DURATION = 90;
@@ -32,6 +35,7 @@ type AnswerMap = Partial<Record<string, string>>;
 
 export default function StopCatolicoScreen() {
   const theme   = useTheme();
+  const { user } = useAuth();
   const { reportResult } = useGameStore();
 
   const [phase,       setPhase]       = useState<Phase>('idle');
@@ -90,7 +94,18 @@ export default function StopCatolicoScreen() {
       score: bankScore,
       allStopFilled: bankValidCount === activeCategories.length,
     });
-  }, [phase, bankScore, bankValidCount, activeCategories.length, reportResult]);
+
+    const uid = user?.id;
+    if (uid && bankScore > 0) {
+      // Ranking semanal
+      recordScoreEvent(uid, bankScore, 'stop_solo').catch(() => {});
+      // +1 moeda bônus por jogo perfeito
+      const perfect = activeCategories.length > 0 && bankValidCount === activeCategories.length;
+      if (perfect) {
+        void supabase.rpc('add_coins', { p_user_id: uid, p_amount: 1 });
+      }
+    }
+  }, [phase, bankScore, bankValidCount, activeCategories.length, reportResult, user?.id]);
 
   useEffect(() => {
     if (phase !== 'result') return;

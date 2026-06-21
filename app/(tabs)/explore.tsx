@@ -1,32 +1,27 @@
-import { useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
   Appearance,
-  KeyboardAvoidingView,
-  Platform,
+  Image,
   ScrollView,
   StyleSheet,
   Switch,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
-
-interface User {
-  name: string;
-  email: string;
-  totalScore: number;
-  gamesPlayed: number;
-}
-
-type AuthView = 'main' | 'login' | 'register';
+import { getWeeklyRanking, claimDailyReward, RankingEntry } from '@/lib/score-events';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -37,171 +32,165 @@ const ACHIEVEMENTS = [
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
 
-function getInitials(name: string) {
-  return name.split(' ').slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
+function PrefsCard({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
+  return (
+    <>
+      <ThemedText style={styles.sectionLabel}>PREFERÊNCIAS</ThemedText>
+      <ThemedView type="backgroundElement" style={styles.prefCard}>
+        <View style={styles.prefRow}>
+          <View style={styles.prefLeft}>
+            <ThemedText style={{ fontSize: 20 }}>{isDark ? '🌙' : '☀️'}</ThemedText>
+            <View>
+              <ThemedText type="smallBold">Tema</ThemedText>
+              <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
+                {isDark ? 'Modo escuro ativo' : 'Modo claro ativo'}
+              </ThemedText>
+            </View>
+          </View>
+          <Switch
+            value={isDark}
+            onValueChange={onToggle}
+            trackColor={{ false: '#3a3a5c', true: C.purple }}
+            thumbColor="#ffffff"
+          />
+        </View>
+      </ThemedView>
+    </>
+  );
 }
 
-function validateEmail(email: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
+const MEDAL = ['🥇', '🥈', '🥉'];
 
 export default function ContaScreen() {
-  const theme = useTheme();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme        = useTheme();
+  const colorScheme  = useColorScheme();
+  const isDark       = colorScheme === 'dark';
   const { totalScore, gamesPlayed, unlockedAchievements } = useGameStore();
+  const { user, profile, refreshProfile, signOut, loading } = useAuth();
 
-  const [view, setView] = useState<AuthView>('main');
-  const [user, setUser] = useState<User | null>(null);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [ranking,      setRanking]      = useState<RankingEntry[]>([]);
+  const [rankingLoad,  setRankingLoad]  = useState(false);
+  const [rewardCoins,  setRewardCoins]  = useState<number | null>(null); // null=não verificado, -1=indisponível, >0=disponível
+  const [claiming,     setClaiming]     = useState(false);
+  const rewardOpacity = useRef(new Animated.Value(0)).current;
 
-  const resetForm = () => { setName(''); setEmail(''); setPassword(''); setConfirmPassword(''); setError(''); };
-  const goTo = (v: AuthView) => { resetForm(); setView(v); };
+  const toggleTheme = () => Appearance.setColorScheme(isDark ? 'light' : 'dark');
 
-  const handleLogin = () => {
-    if (!validateEmail(email)) { setError('E-mail inválido.'); return; }
-    if (password.length < 6) { setError('Senha deve ter no mínimo 6 caracteres.'); return; }
-    setUser({ name: email.split('@')[0], email, totalScore: 0, gamesPlayed: 0 });
-    resetForm(); setView('main');
-  };
+  const loadRanking = useCallback(async () => {
+    setRankingLoad(true);
+    const data = await getWeeklyRanking();
+    setRanking(data);
+    setRankingLoad(false);
+  }, []);
 
-  const handleRegister = () => {
-    if (!name.trim()) { setError('Informe seu nome.'); return; }
-    if (!validateEmail(email)) { setError('E-mail inválido.'); return; }
-    if (password.length < 6) { setError('Senha deve ter no mínimo 6 caracteres.'); return; }
-    if (password !== confirmPassword) { setError('As senhas não coincidem.'); return; }
-    setUser({ name: name.trim(), email, totalScore: 0, gamesPlayed: 0 });
-    resetForm(); setView('main');
-  };
+  const showRewardToast = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(rewardOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(3500),
+      Animated.timing(rewardOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => setRewardCoins(-1));
+  }, [rewardOpacity]);
 
-  const handleLogout = () => { setUser(null); setView('main'); };
-  const toggleTheme = () => { Appearance.setColorScheme(isDark ? 'light' : 'dark'); };
+  const claimReward = useCallback(async () => {
+    if (claiming || !user) return;
+    setClaiming(true);
+    const result = await claimDailyReward(user.id);
+    setRewardCoins(result);
+    if (result > 0) {
+      await refreshProfile();
+      showRewardToast();
+    }
+    setClaiming(false);
+  }, [claiming, user, refreshProfile, showRewardToast]);
 
-  const inputStyle = [
-    styles.input,
-    {
-      color: theme.text,
-      borderColor: C.border,
-      backgroundColor: theme.backgroundElement,
-    },
-  ];
+  // On focus: reload ranking and check if reward is available (does NOT claim automatically)
+  useFocusEffect(useCallback(() => {
+    loadRanking();
+    // Check eligibility without claiming: if last_coin_reward is null or >2h ago, show card
+    if (user && profile) {
+      const last = profile.last_coin_reward ? new Date(profile.last_coin_reward) : null;
+      const eligible = !last || (Date.now() - last.getTime()) >= 2 * 60 * 60 * 1000;
+      setRewardCoins(eligible ? 0 : -1); // 0 = available (not yet claimed), -1 = too soon
+    }
+  }, [loadRanking, user, profile]));
 
-  if (view === 'login') {
+  if (loading) {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <ScrollView
-              contentContainerStyle={[styles.formScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
-              keyboardShouldPersistTaps="handled">
-              <TouchableOpacity onPress={() => goTo('main')} style={styles.backRow}>
-                <ThemedText style={styles.backArrow}>←</ThemedText>
-                <ThemedText themeColor="textSecondary">Voltar</ThemedText>
-              </TouchableOpacity>
-              <ThemedText type="subtitle">Entrar</ThemedText>
-              <ThemedText themeColor="textSecondary" style={styles.formDesc}>
-                Acesse sua conta para salvar seus pontos e conquistas.
-              </ThemedText>
-              <View style={styles.fields}>
-                <View style={styles.fieldGroup}>
-                  <ThemedText style={styles.fieldLabel}>E-MAIL</ThemedText>
-                  <TextInput style={inputStyle} value={email} onChangeText={setEmail} placeholder="seu@email.com" placeholderTextColor={theme.textSecondary} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <ThemedText style={styles.fieldLabel}>SENHA</ThemedText>
-                  <TextInput style={inputStyle} value={password} onChangeText={setPassword} placeholder="Mínimo 6 caracteres" placeholderTextColor={theme.textSecondary} secureTextEntry autoCapitalize="none" />
-                </View>
-                {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
-                <TouchableOpacity style={styles.primaryBtn} onPress={handleLogin} activeOpacity={0.8}>
-                  <ThemedText style={styles.primaryBtnText}>ENTRAR</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => goTo('register')} style={styles.linkRow}>
-                  <ThemedText themeColor="textSecondary" style={styles.linkText}>
-                    Não tem conta? <ThemedText style={styles.link}>Criar conta</ThemedText>
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
+          <View style={styles.centerFlex}>
+            <ActivityIndicator color={C.purple} size="large" />
+          </View>
         </SafeAreaView>
       </ThemedView>
     );
   }
 
-  if (view === 'register') {
-    return (
-      <ThemedView style={styles.fill}>
-        <SafeAreaView style={styles.fill} edges={['top']}>
-          <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <ScrollView
-              contentContainerStyle={[styles.formScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
-              keyboardShouldPersistTaps="handled">
-              <TouchableOpacity onPress={() => goTo('main')} style={styles.backRow}>
-                <ThemedText style={styles.backArrow}>←</ThemedText>
-                <ThemedText themeColor="textSecondary">Voltar</ThemedText>
-              </TouchableOpacity>
-              <ThemedText type="subtitle">Criar conta</ThemedText>
-              <ThemedText themeColor="textSecondary" style={styles.formDesc}>
-                Registre-se para salvar seus pontos e competir no ranking.
-              </ThemedText>
-              <View style={styles.fields}>
-                <View style={styles.fieldGroup}>
-                  <ThemedText style={styles.fieldLabel}>NOME</ThemedText>
-                  <TextInput style={inputStyle} value={name} onChangeText={setName} placeholder="Seu nome" placeholderTextColor={theme.textSecondary} autoCapitalize="words" autoCorrect={false} />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <ThemedText style={styles.fieldLabel}>E-MAIL</ThemedText>
-                  <TextInput style={inputStyle} value={email} onChangeText={setEmail} placeholder="seu@email.com" placeholderTextColor={theme.textSecondary} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <ThemedText style={styles.fieldLabel}>SENHA</ThemedText>
-                  <TextInput style={inputStyle} value={password} onChangeText={setPassword} placeholder="Mínimo 6 caracteres" placeholderTextColor={theme.textSecondary} secureTextEntry autoCapitalize="none" />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <ThemedText style={styles.fieldLabel}>CONFIRMAR SENHA</ThemedText>
-                  <TextInput style={inputStyle} value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Repita a senha" placeholderTextColor={theme.textSecondary} secureTextEntry autoCapitalize="none" />
-                </View>
-                {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
-                <TouchableOpacity style={styles.primaryBtn} onPress={handleRegister} activeOpacity={0.8}>
-                  <ThemedText style={styles.primaryBtnText}>CRIAR CONTA</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => goTo('login')} style={styles.linkRow}>
-                  <ThemedText themeColor="textSecondary" style={styles.linkText}>
-                    Já tem conta? <ThemedText style={styles.link}>Entrar</ThemedText>
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </ThemedView>
-    );
-  }
-
-  if (user) {
-    const initials = getInitials(user.name);
+  // ── Logged in ─────────────────────────────────────────────────────────────
+  if (user && profile) {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
           <ScrollView contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
+
+            {/* Profile header */}
             <View style={styles.profileHeader}>
-              <View style={[styles.avatar, { backgroundColor: C.purple }]}>
-                <ThemedText style={styles.avatarText}>{initials}</ThemedText>
+              <View style={[styles.avatarCircle, { backgroundColor: C.purple }]}>
+                <ThemedText style={styles.avatarEmoji}>{profile.avatar_emoji}</ThemedText>
               </View>
               <View style={styles.profileInfo}>
-                <ThemedText type="subtitle" style={{ fontSize: 22 }}>{user.name}</ThemedText>
+                <ThemedText type="subtitle" style={{ fontSize: 22 }}>{profile.name}</ThemedText>
                 <ThemedText themeColor="textSecondary" style={{ fontSize: 13 }}>{user.email}</ThemedText>
               </View>
             </View>
 
+            {/* Moedas */}
+            <ThemedView type="backgroundElement" style={styles.coinCard}>
+              <View style={styles.coinLeft}>
+                <Image source={require('@/assets/images/moedas.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />
+                <View>
+                  <ThemedText type="smallBold" style={{ fontSize: 11, letterSpacing: 1, color: '#9B97D4' }}>
+                    SUAS MOEDAS
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 36, fontWeight: '900', color: C.gold, lineHeight: 42 }}>
+                    {profile.coins ?? 0}
+                  </ThemedText>
+                </View>
+              </View>
+              <ThemedText themeColor="textSecondary" style={{ fontSize: 12, textAlign: 'right', maxWidth: 120 }}>
+                Ganhe jogando,{'\n'}gaste em itens
+              </ThemedText>
+            </ThemedView>
+
+            {/* Daily reward toast */}
+            {rewardCoins !== null && rewardCoins > 0 && (
+              <Animated.View style={[styles.rewardToast, { opacity: rewardOpacity }]}>
+                <ThemedText style={styles.rewardToastText}>🪙 +5 moedas! Bônus de 2 horas resgatado</ThemedText>
+              </Animated.View>
+            )}
+
+            {/* Daily reward card (available but not yet claimed) */}
+            {rewardCoins === 0 && user && (
+              <TouchableOpacity
+                style={styles.rewardCard}
+                onPress={claimReward}
+                activeOpacity={0.8}
+                disabled={claiming}>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.rewardTitle}>🪙 Bônus de 2 horas disponível!</ThemedText>
+                  <ThemedText style={styles.rewardSub}>Toque para resgatar +5 moedas</ThemedText>
+                </View>
+                <View style={styles.rewardBtn}>
+                  <ThemedText style={styles.rewardBtnText}>{claiming ? '...' : 'RESGATAR'}</ThemedText>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* Score */}
             <ThemedText style={styles.sectionLabel}>PONTUAÇÃO</ThemedText>
             <View style={styles.scoreRow}>
               <ThemedView type="backgroundElement" style={styles.scoreCard}>
-                <ThemedText style={styles.scoreEmoji}>🏆</ThemedText>
+                <Image source={require('@/assets/images/trofeu.png')} style={styles.scoreImg} resizeMode="contain" />
                 <ThemedText type="subtitle" style={[styles.scoreValue, { color: C.gold }]}>{totalScore}</ThemedText>
                 <ThemedText themeColor="textSecondary" style={styles.scoreSmall}>Pontos totais</ThemedText>
               </ThemedView>
@@ -215,18 +204,53 @@ export default function ContaScreen() {
               <ThemedText themeColor="textSecondary" style={styles.emptyScore}>Jogue para acumular pontos! 🙏</ThemedText>
             )}
 
+            {/* Weekly ranking */}
+            <ThemedText style={styles.sectionLabel}>RANKING SEMANAL</ThemedText>
+            <ThemedView type="backgroundElement" style={styles.rankCard}>
+              {rankingLoad ? (
+                <ActivityIndicator color={C.purple} style={{ paddingVertical: 16 }} />
+              ) : ranking.length === 0 ? (
+                <ThemedText themeColor="textSecondary" style={styles.rankEmpty}>
+                  Nenhuma pontuação essa semana ainda.{'\n'}Jogue o Stop para aparecer aqui! 🛑
+                </ThemedText>
+              ) : (
+                ranking.map((entry, i) => {
+                  const isMe = entry.user_id === user?.id;
+                  return (
+                    <View
+                      key={entry.user_id}
+                      style={[
+                        styles.rankRow,
+                        isMe && styles.rankRowMe,
+                        i < ranking.length - 1 && styles.rankRowBorder,
+                      ]}>
+                      <ThemedText style={styles.rankPos}>
+                        {i < 3 ? MEDAL[i] : `${i + 1}.`}
+                      </ThemedText>
+                      <ThemedText style={styles.rankAvatar}>{entry.avatar_emoji}</ThemedText>
+                      <ThemedText style={[styles.rankName, isMe && { color: C.purple, fontWeight: '800' }]}
+                        numberOfLines={1}>
+                        {entry.name}{isMe ? ' (você)' : ''}
+                      </ThemedText>
+                      <ThemedText style={[styles.rankScore, i === 0 && { color: C.gold }]}>
+                        {entry.weekly_score} pts
+                      </ThemedText>
+                    </View>
+                  );
+                })
+              )}
+            </ThemedView>
+
+            {/* Achievements */}
             <ThemedText style={styles.sectionLabel}>CONQUISTAS</ThemedText>
             <View style={styles.achievementGrid}>
               {ACHIEVEMENTS.map(a => {
                 const unlocked = unlockedAchievements.includes(a.id);
                 return (
                   <ThemedView
-                    key={a.title}
+                    key={a.id}
                     type="backgroundElement"
-                    style={[
-                      styles.achievementCard,
-                      unlocked && { borderWidth: 1, borderColor: C.purple + '55' },
-                    ]}>
+                    style={[styles.achievementCard, unlocked && { borderColor: C.purple + '55' }]}>
                     <ThemedText style={[styles.achievementEmoji, !unlocked && styles.locked]}>{a.emoji}</ThemedText>
                     <ThemedText type="smallBold" style={[styles.achievementTitle, !unlocked && styles.locked]}>{a.title}</ThemedText>
                     <ThemedText themeColor="textSecondary" style={styles.achievementDesc}>{a.desc}</ThemedText>
@@ -236,22 +260,9 @@ export default function ContaScreen() {
               })}
             </View>
 
-            <ThemedText style={styles.sectionLabel}>PREFERÊNCIAS</ThemedText>
-            <ThemedView type="backgroundElement" style={styles.prefCard}>
-              <View style={styles.prefRow}>
-                <View style={styles.prefLeft}>
-                  <ThemedText style={{ fontSize: 20 }}>{isDark ? '🌙' : '☀️'}</ThemedText>
-                  <View>
-                    <ThemedText type="smallBold">Tema</ThemedText>
-                    <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                      {isDark ? 'Modo escuro ativo' : 'Modo claro ativo'}
-                    </ThemedText>
-                  </View>
-                </View>
-                <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#3a3a5c', true: C.purple }} thumbColor="#ffffff" />
-              </View>
-            </ThemedView>
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.75}>
+            <PrefsCard isDark={isDark} onToggle={toggleTheme} />
+
+            <TouchableOpacity style={styles.logoutBtn} onPress={signOut} activeOpacity={0.75}>
               <ThemedText style={styles.logoutText}>Sair da conta</ThemedText>
             </TouchableOpacity>
           </ScrollView>
@@ -260,10 +271,12 @@ export default function ContaScreen() {
     );
   }
 
+  // ── Guest / not logged in ─────────────────────────────────────────────────
   return (
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top']}>
         <ScrollView contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
+
           <View style={styles.loggedOutHero}>
             <View style={[styles.heroLogo, { backgroundColor: C.purple }]}>
               <ThemedText style={styles.heroLogoText}>✝</ThemedText>
@@ -273,30 +286,17 @@ export default function ContaScreen() {
               Entre ou crie uma conta para salvar seus pontos, conquistas e competir no ranking.
             </ThemedText>
           </View>
+
           <View style={styles.authButtons}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => goTo('login')} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/(auth)/login')} activeOpacity={0.8}>
               <ThemedText style={styles.primaryBtnText}>ENTRAR</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => goTo('register')} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/(auth)/register')} activeOpacity={0.8}>
               <ThemedText style={styles.secondaryBtnText}>CRIAR CONTA</ThemedText>
             </TouchableOpacity>
           </View>
 
-          <ThemedText style={styles.sectionLabel}>PREFERÊNCIAS</ThemedText>
-          <ThemedView type="backgroundElement" style={styles.prefCard}>
-            <View style={styles.prefRow}>
-              <View style={styles.prefLeft}>
-                <ThemedText style={{ fontSize: 20 }}>{isDark ? '🌙' : '☀️'}</ThemedText>
-                <View>
-                  <ThemedText type="smallBold">Tema</ThemedText>
-                  <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                    {isDark ? 'Modo escuro ativo' : 'Modo claro ativo'}
-                  </ThemedText>
-                </View>
-              </View>
-              <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#3a3a5c', true: C.purple }} thumbColor="#ffffff" />
-            </View>
-          </ThemedView>
+          <PrefsCard isDark={isDark} onToggle={toggleTheme} />
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -304,119 +304,122 @@ export default function ContaScreen() {
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
-  textCenter: { textAlign: 'center' },
+  fill:         { flex: 1 },
+  centerFlex:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  textCenter:   { textAlign: 'center' },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    color: '#9B97D4',
-    textTransform: 'uppercase',
+    fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
+    color: '#9B97D4', textTransform: 'uppercase',
   },
-  formScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, marginBottom: Spacing.one },
-  backArrow: { fontSize: 20 },
-  formDesc: { fontSize: 14, lineHeight: 20, marginTop: -Spacing.two },
-  fields: { gap: Spacing.two },
-  fieldGroup: { gap: Spacing.one },
-  fieldLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.1, color: '#9B97D4' },
-  input: {
-    borderWidth: 1,
-    borderRadius: C.radius.md,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
-    fontSize: 15,
-  },
-  errorText: { color: C.red, fontSize: 13, textAlign: 'center' },
-  primaryBtn: {
-    backgroundColor: C.purple,
-    paddingVertical: 14,
-    borderRadius: C.radius.pill,
-    alignItems: 'center',
-    marginTop: Spacing.one,
-    shadowColor: C.purple,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1.2 },
-  linkRow: { alignItems: 'center', paddingVertical: Spacing.one },
-  linkText: { fontSize: 14 },
-  link: { color: C.purple, fontWeight: '600' },
   mainScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
+
+  // Profile
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
-  avatar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 24, fontWeight: '700' },
-  profileInfo: { gap: 2 },
+  avatarCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  avatarEmoji:   { fontSize: 32 },
+  profileInfo:   { gap: 2 },
+
+  // Coins
+  coinCard: {
+    borderRadius: C.radius.lg, padding: Spacing.three,
+    borderWidth: 2, borderColor: C.gold + '55',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  coinLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+
+  // Score
   scoreRow: { flexDirection: 'row', gap: Spacing.two },
   scoreCard: {
-    flex: 1,
-    borderRadius: C.radius.lg,
-    padding: Spacing.three,
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: C.border,
+    flex: 1, borderRadius: C.radius.lg, padding: Spacing.three,
+    alignItems: 'center', gap: 4, borderWidth: 1, borderColor: C.border,
   },
   scoreEmoji: { fontSize: 28 },
+  scoreImg:   { width: 32, height: 32 },
   scoreValue: { fontSize: 28 },
   scoreSmall: { fontSize: 12, textAlign: 'center' },
   emptyScore: { fontSize: 13, textAlign: 'center', marginTop: -Spacing.one },
+
+  // Achievements
   achievementGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   achievementCard: {
-    width: '47%',
-    borderRadius: C.radius.md,
-    padding: Spacing.two,
-    gap: 3,
-    borderWidth: 1,
-    borderColor: C.border,
+    width: '47%', borderRadius: C.radius.md, padding: Spacing.two,
+    gap: 3, borderWidth: 1, borderColor: C.border,
   },
   achievementEmoji: { fontSize: 26 },
   achievementTitle: { fontSize: 13 },
-  achievementDesc: { fontSize: 11, lineHeight: 15 },
-  lockIcon: { fontSize: 14, position: 'absolute', top: 8, right: 8 },
-  locked: { opacity: 0.35 },
-  prefCard: {
-    borderRadius: C.radius.lg,
-    padding: Spacing.three,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  prefRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  achievementDesc:  { fontSize: 11, lineHeight: 15 },
+  lockIcon:         { fontSize: 14, position: 'absolute', top: 8, right: 8 },
+  locked:           { opacity: 0.35 },
+
+  // Preferences
+  prefCard: { borderRadius: C.radius.lg, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
+  prefRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   prefLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+
+  // Logout
   logoutBtn: {
-    borderWidth: 1,
-    borderColor: C.red + '88',
-    paddingVertical: 14,
-    borderRadius: C.radius.pill,
-    alignItems: 'center',
-    marginTop: Spacing.one,
+    borderWidth: 1, borderColor: C.red + '88',
+    paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center',
   },
   logoutText: { color: C.red, fontWeight: '700', fontSize: 14, letterSpacing: 0.5 },
+
+  // Daily reward
+  rewardCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.gold + '22', borderRadius: C.radius.lg,
+    borderWidth: 1.5, borderColor: C.gold + '88',
+    padding: Spacing.three, gap: Spacing.two,
+  },
+  rewardTitle:   { fontSize: 14, fontWeight: '800', color: C.gold },
+  rewardSub:     { fontSize: 12, color: C.gold + 'cc', marginTop: 2 },
+  rewardBtn: {
+    backgroundColor: C.gold, borderRadius: C.radius.pill,
+    paddingVertical: 8, paddingHorizontal: 14,
+  },
+  rewardBtnText: { color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 0.8 },
+  rewardToast: {
+    backgroundColor: C.gold, borderRadius: C.radius.lg,
+    padding: Spacing.two, alignItems: 'center',
+  },
+  rewardToastText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+
+  // Ranking
+  rankCard: {
+    borderRadius: C.radius.lg, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border,
+  },
+  rankRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, paddingHorizontal: Spacing.three, gap: Spacing.two,
+  },
+  rankRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
+  rankRowMe:     { backgroundColor: C.purple + '12' },
+  rankPos:       { fontSize: 18, width: 28, textAlign: 'center' },
+  rankAvatar:    { fontSize: 18 },
+  rankName:      { flex: 1, fontSize: 14 },
+  rankScore:     { fontSize: 14, fontWeight: '800', color: C.purple },
+  rankEmpty:     { textAlign: 'center', fontSize: 13, lineHeight: 20, padding: Spacing.three },
+
+  // Guest hero
   loggedOutHero: { alignItems: 'center', paddingTop: Spacing.four, gap: Spacing.two },
   heroLogo: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.one,
-    shadowColor: C.purple,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 10,
+    width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center',
+    marginBottom: Spacing.one, shadowColor: C.purple,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 10,
   },
   heroLogoText: { color: '#fff', fontSize: 32 },
-  heroDesc: { fontSize: 14, lineHeight: 20 },
+  heroDesc:     { fontSize: 14, lineHeight: 20 },
+
   authButtons: { gap: Spacing.two },
+  primaryBtn: {
+    backgroundColor: C.purple, paddingVertical: 14, borderRadius: C.radius.pill,
+    alignItems: 'center', shadowColor: C.purple,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6,
+  },
+  primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1.2 },
   secondaryBtn: {
-    borderWidth: 1.5,
-    borderColor: C.purple + '88',
-    paddingVertical: 14,
-    borderRadius: C.radius.pill,
-    alignItems: 'center',
+    borderWidth: 1.5, borderColor: C.purple + '88',
+    paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center',
   },
   secondaryBtnText: { fontSize: 14, fontWeight: '700', color: C.purple, letterSpacing: 1.0 },
 });

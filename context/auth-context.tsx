@@ -4,10 +4,12 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
 export interface Profile {
-  id:           string;
-  name:         string;
-  avatar_emoji: string;
-  total_score:  number;
+  id:               string;
+  name:             string;
+  avatar_emoji:     string;
+  total_score:      number;
+  coins:            number;
+  last_coin_reward: string | null;
 }
 
 interface AuthCtx {
@@ -15,6 +17,8 @@ interface AuthCtx {
   user:     User    | null;
   profile:  Profile | null;
   loading:  boolean;
+  isGuest:  boolean;
+  setGuest: (v: boolean) => void;
   signUp:   (email: string, password: string, name: string, avatar: string) => Promise<string | null>;
   signIn:   (email: string, password: string) => Promise<string | null>;
   signOut:  () => Promise<void>;
@@ -27,6 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession]   = useState<Session | null>(null);
   const [profile, setProfile]   = useState<Profile | null>(null);
   const [loading, setLoading]   = useState(true);
+  const [isGuest, setGuest]     = useState(false);
+
+  // Reset guest mode when user authenticates
+  useEffect(() => { if (session) setGuest(false); }, [session]);
 
   const loadProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -81,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, loading, signUp, signIn, signOut, refreshProfile }}>
+    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, loading, isGuest, setGuest, signUp, signIn, signOut, refreshProfile }}>
       {children}
     </Ctx.Provider>
   );
