@@ -3,8 +3,22 @@
 -- Execute no SQL Editor do Supabase
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- 1. Coluna para controlar o bônus de 2 horas
+-- 1. Colunas adicionais na tabela profiles
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS coins            int         NOT NULL DEFAULT 100;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_coin_reward timestamptz;
+
+-- Função atômica para adicionar/remover moedas (nunca abaixo de 0)
+CREATE OR REPLACE FUNCTION add_coins(p_user_id uuid, p_amount int)
+RETURNS int LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE new_coins int;
+BEGIN
+  UPDATE profiles
+    SET coins = greatest(0, coins + p_amount)
+    WHERE id = p_user_id
+    RETURNING coins INTO new_coins;
+  RETURN coalesce(new_coins, 0);
+END;
+$$;
 
 -- 2. Tabela de eventos de pontuação (alimenta o ranking semanal)
 CREATE TABLE IF NOT EXISTS score_events (
