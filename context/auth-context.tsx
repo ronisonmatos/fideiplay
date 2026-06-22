@@ -23,6 +23,8 @@ interface AuthCtx {
   signIn:   (email: string, password: string) => Promise<string | null>;
   signOut:  () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  trilhasDesbloqueadas: number[];
+  refreshTrilhas: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -32,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile]   = useState<Profile | null>(null);
   const [loading, setLoading]   = useState(true);
   const [isGuest, setGuest]     = useState(false);
+  const [trilhasDesbloqueadas, setTrilhasDesbloqueadas] = useState<number[]>([]);
 
   // Reset guest mode when user authenticates
   useEffect(() => { if (session) setGuest(false); }, [session]);
@@ -45,25 +48,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(data ?? null);
   }, []);
 
+  const loadTrilhas = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_trilhas')
+      .select('trilha_id')
+      .eq('user_id', userId);
+    if (error) {
+      console.warn('[loadTrilhas] erro:', error.message, error.code);
+    }
+    console.log('[loadTrilhas] data:', JSON.stringify(data));
+    setTrilhasDesbloqueadas(data?.map(r => Number(r.trilha_id)) ?? []);
+  }, []);
+
   const refreshProfile = useCallback(async () => {
     if (session?.user.id) await loadProfile(session.user.id);
   }, [session, loadProfile]);
 
+  const refreshTrilhas = useCallback(async () => {
+    if (session?.user.id) await loadTrilhas(session.user.id);
+  }, [session, loadTrilhas]);
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
-      if (s) await loadProfile(s.user.id);
+      if (s) {
+        await loadProfile(s.user.id);
+        await loadTrilhas(s.user.id);
+      }
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, s) => {
       setSession(s);
-      if (s) await loadProfile(s.user.id);
-      else { setProfile(null); setLoading(false); }
+      if (s) {
+        await loadProfile(s.user.id);
+        await loadTrilhas(s.user.id);
+      } else {
+        setProfile(null);
+        setTrilhasDesbloqueadas([]);
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [loadProfile, loadTrilhas]);
 
   const signUp = useCallback(async (
     email: string,
@@ -89,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, loading, isGuest, setGuest, signUp, signIn, signOut, refreshProfile }}>
+    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, loading, isGuest, setGuest, signUp, signIn, signOut, refreshProfile, trilhasDesbloqueadas, refreshTrilhas }}>
       {children}
     </Ctx.Provider>
   );

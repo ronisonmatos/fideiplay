@@ -43,6 +43,15 @@ export default function TabsLayout() {
         options={{ title: 'Chat', tabBarIcon: ({ focused }) => <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.38 }}>💬</Text> }}
       />
       <Tabs.Screen
+        name="trilhas"
+        options={{
+          title: 'Trilhas',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.38 }}>🎓</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="explore"
         options={{
           title: 'Conta',
