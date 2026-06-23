@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   trilhaLocked: { opacity: 0.7 },
   lockedOpacity: { opacity: 0.5 },
   trilhaTop: { flexDirection: 'row', gap: Spacing.two },
-  trilhaIcon: { fontSize: 36 },
+  trilhaIcon: { fontSize: 36, lineHeight: 44 },
   trilhaInfo: { flex: 1, gap: 3 },
   trilhaTitleRow: {
     flexDirection: 'row',

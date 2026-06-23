@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
   textCenter: { textAlign: 'center' },
-  bigEmoji: { fontSize: 64 },
+  bigEmoji: { fontSize: 64, lineHeight: 76 },
   gameIcon: { width: 96, height: 96 },
   desc: { fontSize: 15, lineHeight: 22 },
   primaryBtn: {

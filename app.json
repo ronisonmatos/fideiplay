@@ -8,9 +8,14 @@
     "scheme": "fideiplay",
     "userInterfaceStyle": "automatic",
     "android": {
+      "package": "com.ronison.santosplay",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#208AEF"
+      },
+      "notification": {
+        "icon": "./assets/images/notification-icon.png",
+        "color": "#208AEF"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -34,6 +39,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a7cd055d-5cfe-4f9f-a8af-37bb94f0dc51"
+      }
+    },
+    "owner": "ronison"
   }
 }

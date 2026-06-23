@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
   },
   textCenter: { textAlign: 'center' },
   desc: { fontSize: 15, lineHeight: 22 },
-  bigEmoji: { fontSize: 64 },
+  bigEmoji: { fontSize: 64, lineHeight: 76 },
   gameIcon: { width: 96, height: 96 },
   primaryBtn: {
     backgroundColor: C.purple,

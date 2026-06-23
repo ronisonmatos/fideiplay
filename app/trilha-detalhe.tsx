@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     alignItems: 'center',
   },
-  headerIcon: { fontSize: 48 },
+  headerIcon: { fontSize: 48, lineHeight: 60 },
   headerTitulo: { fontSize: 24, fontWeight: '900', textAlign: 'center' },
   headerDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   statsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, marginTop: 4 },

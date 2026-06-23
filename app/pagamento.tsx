@@ -31,7 +31,7 @@ export default function PagamentoScreen() {
     preco: string;
   }>();
   const trilha = TRILHAS.find(t => t.id === Number(trilhaId));
-  const preco = parseFloat(precoStr ?? '9.90');
+  const preco = parseFloat(precoStr ?? '1.00');
   const { refreshTrilhas } = useAuth();
   const theme = useTheme();
 
@@ -368,7 +368,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
     padding: Spacing.three, borderRadius: 16, borderWidth: 1,
   },
-  trilhaIcone: { fontSize: 36 },
+  trilhaIcone: { fontSize: 36, lineHeight: 44 },
   trilhaTitulo: { fontSize: 16, fontWeight: '800' },
   preco: { fontSize: 20, fontWeight: '900' },
   tabs: { flexDirection: 'row', borderRadius: 12, padding: 4, borderWidth: 1 },

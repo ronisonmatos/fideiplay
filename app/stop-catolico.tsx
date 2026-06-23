@@ -599,7 +599,7 @@ const s = StyleSheet.create({
   modeLabel:  { fontSize: 11, fontWeight: '700', letterSpacing: 1.3 },
   modeRow:    { flexDirection: 'row', gap: Spacing.two, alignSelf: 'stretch' },
   modeCard:   { flex: 1, borderRadius: C.radius.lg, padding: Spacing.three, alignItems: 'center', gap: Spacing.one },
-  modeEmoji:  { fontSize: 32 },
+  modeEmoji:  { fontSize: 32, lineHeight: 40 },
   modeTitle:  { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   modeDesc:   { color: 'rgba(255,255,255,0.75)', fontSize: 11, textAlign: 'center' },
 
@@ -674,7 +674,7 @@ const s = StyleSheet.create({
   resultSummary:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, marginBottom: Spacing.one },
   resultSummaryText: { gap: 2 },
   letterCircle:      { width: 64, height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  letterCircleText:  { fontSize: 42, fontWeight: '900', color: '#fff' },
+  letterCircleText:  { fontSize: 42, fontWeight: '900', color: '#fff', lineHeight: 52 },
   resultCard:        { borderRadius: C.radius.md, padding: Spacing.two, gap: 4, borderWidth: 1, borderColor: C.border },
   resultCardTop:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   resultCardBottom:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 40, flexWrap: 'wrap' },

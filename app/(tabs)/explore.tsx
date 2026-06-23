@@ -24,6 +24,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { getWeeklyRanking, RankingEntry } from '@/lib/score-events';
+import { scheduleCoinBonusReminder } from '@/lib/notifications';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -110,6 +111,7 @@ export default function ContaScreen() {
       await refreshProfile();
       setJustClaimed(true);
       showRewardToast();
+      scheduleCoinBonusReminder();
     } else {
       Alert.alert(
         'Erro ao resgatar',
@@ -327,7 +329,7 @@ const styles = StyleSheet.create({
   // Profile
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
   avatarCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  avatarEmoji:   { fontSize: 32 },
+  avatarEmoji:   { fontSize: 32, lineHeight: 40 },
   profileInfo:   { gap: 2 },
 
   // Coins
@@ -344,7 +346,7 @@ const styles = StyleSheet.create({
     flex: 1, borderRadius: C.radius.lg, padding: Spacing.three,
     alignItems: 'center', gap: 4, borderWidth: 1, borderColor: C.border,
   },
-  scoreEmoji: { fontSize: 28 },
+  scoreEmoji: { fontSize: 28, lineHeight: 36 },
   scoreImg:   { width: 32, height: 32 },
   scoreValue: { fontSize: 28 },
   scoreSmall: { fontSize: 12, textAlign: 'center' },
@@ -356,7 +358,7 @@ const styles = StyleSheet.create({
     width: '47%', borderRadius: C.radius.md, padding: Spacing.two,
     gap: 3, borderWidth: 1, borderColor: C.border,
   },
-  achievementEmoji: { fontSize: 26 },
+  achievementEmoji: { fontSize: 26, lineHeight: 34 },
   achievementTitle: { fontSize: 13 },
   achievementDesc:  { fontSize: 11, lineHeight: 15 },
   lockIcon:         { fontSize: 14, position: 'absolute', top: 8, right: 8 },

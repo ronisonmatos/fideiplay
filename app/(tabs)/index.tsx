@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   greeting: { fontSize: 13, fontWeight: '500' },
-  appName: { fontSize: 26, fontWeight: '800', letterSpacing: 0.2 },
+  appName: { fontSize: 26, fontWeight: '800', letterSpacing: 0.2, lineHeight: 34 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginTop: 4 },
   streakBadge: {
     borderRadius: C.radius.pill,
