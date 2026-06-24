@@ -4,13 +4,13 @@
     "slug": "fideiplay",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo_SantosPlay.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "fideiplay",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.ronison.santosplay",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#208AEF"
       },
       "notification": {
@@ -26,6 +26,15 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/audio/church_bell.wav",
+            "./assets/audio/chat_beep.wav"
+          ]
+        }
+      ],
       [
         "expo-splash-screen",
         {

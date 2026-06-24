@@ -109,6 +109,16 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Forgot password */}
+            <TouchableOpacity
+              style={{ alignItems: 'flex-end', marginTop: -Spacing.two }}
+              onPress={() => router.push('/(auth)/forgot-password')}
+              activeOpacity={0.7}>
+              <ThemedText style={[s.footerTxt, { color: C.purple }]}>
+                Esqueci minha senha
+              </ThemedText>
+            </TouchableOpacity>
+
             {/* Register link */}
             <View style={s.footer}>
               <ThemedText style={[s.footerTxt, { color: theme.textSecondary }]}>

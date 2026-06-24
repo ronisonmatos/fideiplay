@@ -1,5 +1,6 @@
 import {
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -8,13 +9,15 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 
+import { GuestBanner } from '@/components/guest-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/auth-context';
+import { useNotifications } from '@/context/notifications-context';
 
 const FILTER_TAGS = ['Todos', 'Quiz', 'Bíblia', 'Aventura', 'Vocabulário', 'Liturgia'];
 
@@ -22,21 +25,21 @@ const GAMES = [
   {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     image: require('@/assets/images/quiz.png') as number,
-    title: 'Quiz dos Santos',
+    title: 'Quiz Católico',
     tag: 'Quiz',
     tagColor: C.gold,
-    xp: 340,
-    desc: '10 perguntas · Santos e suas histórias',
+    xp: 100,
+    desc: '45 perguntas · 3 níveis de dificuldade',
     route: '/quiz-santos' as const,
   },
   {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     image: require('@/assets/images/frase_misteriosa.png') as number,
-    title: 'Versículo Misterioso',
+    title: 'Sabedoria Católica',
     tag: 'Bíblia',
     tagColor: C.purple,
-    xp: 250,
-    desc: '5 versículos · Descubra progressivamente',
+    xp: 50,
+    desc: '45 frases · Versículos, santos e papas',
     route: '/versiculo-misterioso' as const,
   },
   {
@@ -45,8 +48,8 @@ const GAMES = [
     title: 'Peregrinação Virtual',
     tag: 'Aventura',
     tagColor: C.green,
-    xp: 400,
-    desc: '5 santuários · Perguntas por etapa',
+    xp: 150,
+    desc: '10 santuários · Perguntas por etapa',
     route: '/peregrinacao' as const,
   },
   {
@@ -55,8 +58,8 @@ const GAMES = [
     title: 'Palavras da Fé',
     tag: 'Vocabulário',
     tagColor: '#3B82F6',
-    xp: 200,
-    desc: '5 palavras · Caça-palavras bíblico',
+    xp: 50,
+    desc: '9 temas · 3 níveis de dificuldade',
     route: '/palavras-fe' as const,
   },
   {
@@ -65,8 +68,8 @@ const GAMES = [
     title: 'Desafio Litúrgico',
     tag: 'Liturgia',
     tagColor: C.red,
-    xp: 300,
-    desc: '10 questões · 60 segundos',
+    xp: 100,
+    desc: '45 questões · 3 níveis de dificuldade',
     route: '/desafio-liturgico' as const,
   },
   {
@@ -75,7 +78,7 @@ const GAMES = [
     title: 'Stop Católico',
     tag: 'Vocabulário',
     tagColor: C.gold,
-    xp: 280,
+    xp: 80,
     desc: '6 categorias · Letra sorteada',
     route: '/stop-catolico' as const,
   },
@@ -120,7 +123,15 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const countdown = useCountdown();
   const [activeTag, setActiveTag] = useState('Todos');
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
+  const { unreadCount } = useNotifications();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshProfile().catch(() => {});
+    setRefreshing(false);
+  }, [refreshProfile]);
 
   const cardBorder = scheme === 'dark' ? C.border : 'rgba(0,0,0,0.08)';
   const streakBg   = scheme === 'dark' ? '#2E1A08' : C.gold + '22';
@@ -132,12 +143,13 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <GuestBanner />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.scroll,
-            { paddingBottom: BottomTabInset + Spacing.five },
-          ]}>
+          contentContainerStyle={[styles.scroll, { paddingBottom: BottomTabInset + Spacing.five }]}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />
+          }>
 
           {/* ── Header: saudação + streak + sino ── */}
           <View style={styles.header}>
@@ -151,9 +163,18 @@ export default function HomeScreen() {
               <View style={[styles.streakBadge, { backgroundColor: streakBg }]}>
                 <ThemedText style={styles.streakText}>🔥 {STREAK}</ThemedText>
               </View>
-              <TouchableOpacity style={styles.bellWrap} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.bellWrap}
+                activeOpacity={0.7}
+                onPress={() => router.push('/notifications')}>
                 <Image source={require('@/assets/images/sino.png')} style={styles.bellIcon} resizeMode="contain" />
-                <View style={styles.notifDot} />
+                {unreadCount > 0 && (
+                  <View style={styles.notifBadge}>
+                    <ThemedText style={styles.notifBadgeText}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </ThemedText>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -284,14 +305,23 @@ const styles = StyleSheet.create({
   streakText: { fontSize: 14, fontWeight: '700', color: C.gold },
   bellWrap: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   bellIcon: { width: 22, height: 22 },
-  notifDot: {
+  notifBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 0,
+    right: 0,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: C.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 12,
   },
 
   /* ── Section label ── */

@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { GuestBanner } from '@/components/guest-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
@@ -25,16 +26,22 @@ const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 export default function TrilhasScreen() {
   const theme = useTheme();
   const { trilhasDesbloqueadas, refreshTrilhas } = useAuth();
-  const [progresso, setProgresso] = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
+  const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
+  const [refreshing, setRefreshing] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEY).then(raw => {
-        if (raw) setProgresso(JSON.parse(raw));
-      });
-      refreshTrilhas();
-    }, [refreshTrilhas]),
-  );
+  const loadData = useCallback(async () => {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (raw) setProgresso(JSON.parse(raw));
+    await refreshTrilhas().catch(() => {});
+  }, [refreshTrilhas]);
+
+  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   const trilhasAcessiveis = [
     ...TRILHAS_GRATIS,
@@ -52,9 +59,13 @@ export default function TrilhasScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <GuestBanner />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingBottom: BottomTabInset + Spacing.five }]}>
+          contentContainerStyle={[styles.scroll, { paddingBottom: BottomTabInset + Spacing.five }]}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />
+          }>
 
           {/* Header */}
           <View style={styles.header}>

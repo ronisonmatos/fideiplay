@@ -2,6 +2,9 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
+export const NOTIF_CHANNEL      = 'fideiplay';
+export const NOTIF_CHANNEL_CHAT = 'fideiplay_chat';
+
 // Como as notificações aparecem quando o app está aberto
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -21,6 +24,59 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return status === 'granted';
 }
 
+// Cria canais Android com sons customizados — chamar uma vez no startup
+export async function setupNotificationChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL, {
+    name: 'FideiPlay',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'church_bell.wav',
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#7C3AED',
+  });
+  await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL_CHAT, {
+    name: 'FideiPlay — Chat',
+    importance: Notifications.AndroidImportance.DEFAULT,
+    sound: 'chat_beep.wav',
+  });
+}
+
+// Dispara notificação no SO com o church bell (sistema, conquistas, bônus)
+export async function sendOSNotification(title: string, body: string): Promise<void> {
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: 'church_bell.wav',
+      },
+      trigger: Platform.OS === 'android'
+        ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: NOTIF_CHANNEL, repeats: false }
+        : null,
+    });
+  } catch {}
+}
+
+// Dispara notificação no SO com o beep (chat)
+export async function sendChatOSNotification(title: string, body: string): Promise<void> {
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: 'chat_beep.wav',
+      },
+      trigger: Platform.OS === 'android'
+        ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: NOTIF_CHANNEL_CHAT, repeats: false }
+        : null,
+    });
+  } catch {}
+}
+
 // ── Lembrete diário de estudo ─────────────────────────────────────────────────
 
 const DAILY_REMINDER_ID = 'daily-study-reminder';
@@ -37,13 +93,14 @@ export async function scheduleDailyReminder() {
     content: {
       title: '📖 Hora de estudar!',
       body: 'Que tal aprofundar sua fé hoje? Uma lição por dia forma um católico sólido.',
-      sound: true,
-      android: { largeIcon: require('../assets/images/logo_SantosPlay.png') },
+      sound: 'church_bell.wav',
+      android: { largeIcon: require('../assets/images/logo_SantosPlay.png'), channelId: NOTIF_CHANNEL },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour: 8,
       minute: 0,
+      channelId: NOTIF_CHANNEL,
     },
   });
 }
@@ -70,12 +127,13 @@ export async function scheduleCoinBonusReminder() {
     content: {
       title: '🪙 Seu bônus está disponível!',
       body: 'Já faz 2 horas — volte ao FideiPlay para resgatar suas moedas.',
-      sound: true,
-      android: { largeIcon: require('../assets/images/logo_SantosPlay.png') },
+      sound: 'church_bell.wav',
+      android: { largeIcon: require('../assets/images/logo_SantosPlay.png'), channelId: NOTIF_CHANNEL },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: triggerDate,
+      channelId: NOTIF_CHANNEL,
     },
   });
 }
@@ -109,13 +167,16 @@ export async function syncServerNotifications(userId: string) {
       content: {
         title: notif.title,
         body: notif.body,
-        sound: true,
+        sound: 'church_bell.wav',
       },
       trigger: isInPast
-        ? null // dispara imediatamente
+        ? Platform.OS === 'android'
+          ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: NOTIF_CHANNEL, repeats: false }
+          : null
         : {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: scheduledAt,
+            channelId: NOTIF_CHANNEL,
           },
     });
 

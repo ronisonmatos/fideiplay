@@ -306,7 +306,7 @@ export default function PagamentoScreen() {
 
           {fase === 'sucesso' && (
             <View style={s.pixContainer}>
-              <ThemedText style={{ fontSize: 64, textAlign: 'center' }}>🎉</ThemedText>
+              <ThemedText style={{ fontSize: 64, lineHeight: 78, textAlign: 'center' }}>🎉</ThemedText>
               <ThemedText style={[s.abaTitle, { color: C.green, textAlign: 'center' }]}>
                 Trilha Desbloqueada!
               </ThemedText>

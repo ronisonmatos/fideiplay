@@ -2,6 +2,7 @@ import { Image, Text, useColorScheme } from 'react-native';
 import { Tabs } from 'expo-router';
 
 import { C, Colors } from '@/constants/theme';
+import { useNotifications } from '@/context/notifications-context';
 
 function TabIcon({ source, focused }: { source: ReturnType<typeof require>; focused: boolean }) {
   return (
@@ -16,6 +17,7 @@ function TabIcon({ source, focused }: { source: ReturnType<typeof require>; focu
 export default function TabsLayout() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
+  const { unreadCount } = useNotifications();
 
   return (
     <Tabs
@@ -40,7 +42,11 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="chat"
-        options={{ title: 'Chat', tabBarIcon: ({ focused }) => <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.38 }}>💬</Text> }}
+        options={{
+          title: 'Chat',
+          tabBarBadge: unreadCount > 0 ? (unreadCount > 9 ? '9+' : unreadCount) : undefined,
+          tabBarIcon: ({ focused }) => <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.38 }}>💬</Text>,
+        }}
       />
       <Tabs.Screen
         name="trilhas"

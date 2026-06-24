@@ -39,6 +39,24 @@ Deno.serve(async (req: Request) => {
 
     const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
 
+    // Categoria 'padre': apenas verifica se é palavrão/ofensivo
+    if (categoryKey === 'padre') {
+      const msg = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 5,
+        messages: [{
+          role: 'user',
+          content:
+            `A palavra ou expressão "${trimmed}" é um palavrão, xingamento ou conteúdo ofensivo em português brasileiro?\n` +
+            'Responda SOMENTE: true   ou   false\n' +
+            '(true = é ofensivo/palavrão; false = não é ofensivo)',
+        }],
+      });
+      const text = (msg.content[0] as { type: string; text: string }).text.trim().toLowerCase();
+      const isOffensive = text === 'true' || text.startsWith('true');
+      return json({ valid: !isOffensive });
+    }
+
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 5,

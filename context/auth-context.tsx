@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
@@ -10,6 +11,8 @@ export interface Profile {
   total_score:      number;
   coins:            number;
   last_coin_reward: string | null;
+  ad_watches_today: number | null;
+  ad_watches_date:  string | null;
 }
 
 interface AuthCtx {
@@ -114,6 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    await AsyncStorage.multiRemove([
+      '@fideiplay:game_store',
+      '@santosplay:trilhas_progresso',
+    ]).catch(() => {});
   }, []);
 
   return (

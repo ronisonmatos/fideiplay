@@ -1,9 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
   Alert,
   Animated,
   Appearance,
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -19,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
+import type { Profile } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -34,6 +37,52 @@ const ACHIEVEMENTS = [
   { id: 'conhecedor',    emoji: '🏆', title: 'Conhecedor',     desc: 'Acerte 10/10 no Quiz dos Santos' },
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
+
+const AD_MAX_DAILY   = 3;
+const AD_COINS       = 50;
+
+function AdRewardCard({ profile }: { profile: Profile }) {
+  const today      = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  const isToday    = profile.ad_watches_date === today;
+  const watched    = isToday ? (profile.ad_watches_today ?? 0) : 0;
+  const remaining  = Math.max(0, AD_MAX_DAILY - watched);
+  const limitReached = remaining === 0;
+
+  return (
+    <>
+      <ThemedText style={styles.sectionLabel}>GANHAR MOEDAS</ThemedText>
+      <TouchableOpacity
+        style={[styles.adCard, limitReached && { opacity: 0.5 }]}
+        onPress={() => router.push('/ad-reward')}
+        activeOpacity={0.82}
+        disabled={limitReached}>
+        <View style={styles.adCardLeft}>
+          <ThemedText style={{ fontSize: 28, lineHeight: 36 }}>📺</ThemedText>
+          <View style={{ gap: 2, flex: 1 }}>
+            <ThemedText style={styles.adCardTitle} numberOfLines={2}>
+              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${AD_COINS} 🪙`}
+            </ThemedText>
+            <ThemedText style={styles.adCardSub}>
+              {limitReached
+                ? 'Volte amanhã para mais moedas'
+                : `${watched}/${AD_MAX_DAILY} vídeos assistidos hoje`}
+            </ThemedText>
+          </View>
+        </View>
+        {!limitReached && (
+          <View style={styles.adCardDots}>
+            {Array.from({ length: AD_MAX_DAILY }).map((_, i) => (
+              <View
+                key={i}
+                style={[styles.adDot, i < watched && { backgroundColor: C.gold }]}
+              />
+            ))}
+          </View>
+        )}
+      </TouchableOpacity>
+    </>
+  );
+}
 
 function PrefsCard({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
   return (
@@ -84,7 +133,11 @@ export default function ContaScreen() {
   const hoursLeft   = Math.floor(msLeft / (60 * 60 * 1000));
   const minutesLeft = Math.ceil((msLeft % (60 * 60 * 1000)) / 60000);
 
-  const toggleTheme = () => Appearance.setColorScheme(isDark ? 'light' : 'dark');
+  const toggleTheme = () => {
+    const next = isDark ? 'light' : 'dark';
+    Appearance.setColorScheme(next);
+    AsyncStorage.setItem('@fideiplay:theme', next).catch(() => {});
+  };
 
   const loadRanking = useCallback(async () => {
     setRankingLoad(true);
@@ -125,6 +178,17 @@ export default function ContaScreen() {
     loadRanking();
   }, [loadRanking]));
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refreshProfile().catch(() => {}),
+      loadRanking(),
+    ]);
+    setRefreshing(false);
+  }, [refreshProfile, loadRanking]);
+
   if (loading) {
     return (
       <ThemedView style={styles.fill}>
@@ -142,7 +206,11 @@ export default function ContaScreen() {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <ScrollView contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
+          <ScrollView
+            contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />
+            }>
 
             {/* Profile header */}
             <View style={styles.profileHeader}>
@@ -153,6 +221,12 @@ export default function ContaScreen() {
                 <ThemedText type="subtitle" style={{ fontSize: 22 }}>{profile.name}</ThemedText>
                 <ThemedText themeColor="textSecondary" style={{ fontSize: 13 }}>{user.email}</ThemedText>
               </View>
+              <TouchableOpacity
+                onPress={() => router.push('/configuracoes')}
+                style={styles.settingsBtn}
+                activeOpacity={0.7}>
+                <ThemedText style={{ fontSize: 24 }}>⚙️</ThemedText>
+              </TouchableOpacity>
             </View>
 
             {/* Moedas */}
@@ -198,6 +272,9 @@ export default function ContaScreen() {
                 <ThemedText style={styles.rewardBtnText}>{claiming ? '...' : 'RESGATAR'}</ThemedText>
               </View>
             </TouchableOpacity>
+
+            {/* Ganhar moedas assistindo anúncio */}
+            <AdRewardCard profile={profile} />
 
             {/* Score */}
             <ThemedText style={styles.sectionLabel}>PONTUAÇÃO</ThemedText>
@@ -288,7 +365,11 @@ export default function ContaScreen() {
   return (
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top']}>
-        <ScrollView contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
+        <ScrollView
+          contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />
+          }>
 
           <View style={styles.loggedOutHero}>
             <View style={[styles.heroLogo, { backgroundColor: C.purple }]}>
@@ -330,7 +411,8 @@ const styles = StyleSheet.create({
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
   avatarCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   avatarEmoji:   { fontSize: 32, lineHeight: 40 },
-  profileInfo:   { gap: 2 },
+  profileInfo:   { gap: 2, flex: 1 },
+  settingsBtn:   { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 
   // Coins
   coinCard: {
@@ -412,6 +494,28 @@ const styles = StyleSheet.create({
   rankName:      { flex: 1, fontSize: 14 },
   rankScore:     { fontSize: 14, fontWeight: '800', color: C.purple },
   rankEmpty:     { textAlign: 'center', fontSize: 13, lineHeight: 20, padding: Spacing.three },
+
+  // Ad reward card
+  adCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.gold + '18',
+    borderRadius: C.radius.lg,
+    borderWidth: 1.5,
+    borderColor: C.gold + '66',
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  adCardLeft:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flex: 1 },
+  adCardTitle: { fontSize: 13, fontWeight: '800', color: C.gold },
+  adCardSub:   { fontSize: 11, color: C.gold + 'aa' },
+  adCardDots:  { flexDirection: 'column', gap: 4, alignItems: 'center', justifyContent: 'center' },
+  adDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1, borderColor: C.gold + '55',
+  },
 
   // Guest hero
   loggedOutHero: { alignItems: 'center', paddingTop: Spacing.four, gap: Spacing.two },

@@ -35,6 +35,12 @@ export async function validateWithBank(
       map[cat.key] = 'invalid';
       continue;
     }
+    // 'padre' aceita qualquer palavra que comece com a letra correta;
+    // a verificação de palavrão é feita separadamente via IA.
+    if (cat.key === 'padre') {
+      map[cat.key] = 'valid';
+      continue;
+    }
     const inBank =
       data?.some(
         row => row.category === cat.key && norm(row.word) === norm(ans),

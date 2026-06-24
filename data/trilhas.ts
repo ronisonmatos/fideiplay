@@ -1521,7 +1521,7 @@ export const TRILHAS: Trilha[] = [
     totalLicoes: 8,
     xpTotal: 640,
     gratis: false,
-    preco: 1.00,
+    preco: 9.90,
     licoes: [
       {
         id: 1,
@@ -1894,7 +1894,7 @@ export const TRILHAS: Trilha[] = [
     totalLicoes: 8,
     xpTotal: 640,
     gratis: false,
-    preco: 1.00,
+    preco: 9.90,
     licoes: [
       {
         id: 1,
@@ -3251,7 +3251,7 @@ export const TRILHAS: Trilha[] = [
     totalLicoes: 8,
     xpTotal: 640,
     gratis: false,
-    preco: 1.00,
+    preco: 9.90,
     licoes: [
       {
         id: 1,

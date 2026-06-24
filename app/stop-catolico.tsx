@@ -19,11 +19,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
-import { useGameStore } from '@/context/game-store';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
-import { recordScoreEvent } from '@/lib/score-events';
 import { supabase } from '@/lib/supabase';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 
@@ -38,7 +36,6 @@ type AnswerMap = Partial<Record<string, string>>;
 export default function StopCatolicoScreen() {
   const theme   = useTheme();
   const { user, profile, refreshProfile } = useAuth();
-  const { reportResult } = useGameStore();
 
   const [phase,       setPhase]       = useState<Phase>('idle');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => randomDefaultKeys());
@@ -93,23 +90,15 @@ export default function StopCatolicoScreen() {
     if (phase === 'playing') { reported.current = false; return; }
     if (phase !== 'result' || reported.current || bankScore === null) return;
     reported.current = true;
-    reportResult({
-      gameId: 'stop-catolico',
-      score: bankScore,
-      allStopFilled: bankValidCount === activeCategories.length,
-    });
 
     const uid = user?.id;
     if (uid && bankScore > 0) {
-      // Ranking semanal
-      recordScoreEvent(uid, bankScore, 'stop_solo').catch(() => {});
-      // +1 moeda bônus por jogo perfeito
       const perfect = activeCategories.length > 0 && bankValidCount === activeCategories.length;
       if (perfect) {
         void supabase.rpc('add_coins', { p_user_id: uid, p_amount: 1 });
       }
     }
-  }, [phase, bankScore, bankValidCount, activeCategories.length, reportResult, user?.id]);
+  }, [phase, bankScore, bankValidCount, activeCategories.length, user?.id]);
 
   useEffect(() => {
     if (phase !== 'result') return;
@@ -119,22 +108,27 @@ export default function StopCatolicoScreen() {
     validateWithBank(letter, answers, activeCategories).then(async (map) => {
       setBankMap(map);
 
-      const toCheck = activeCategories.filter(
-        c => map[c.key] === 'unverified' && c.key !== 'padre',
-      );
-      if (toCheck.length === 0) return;
+      const toCheck = activeCategories.filter(c => map[c.key] === 'unverified');
+      // 'padre' já marcado como 'valid' no banco; verificamos apenas palavrão via IA
+      const padreCat = activeCategories.find(c => c.key === 'padre' && map['padre'] === 'valid');
+      if (toCheck.length === 0 && !padreCat) return;
 
       setAiLoading(true);
       try {
-        await Promise.all(toCheck.map(async (cat) => {
-          const ans = (answers[cat.key] ?? '').trim();
-          const result = await validateWithAI(letter, ans, cat.key, cat.label);
-          if (result === null) return; // error → keep as 'unverified'
-          setBankMap(prev => ({
-            ...prev,
-            [cat.key]: result ? 'ai_valid' : 'ai_invalid',
-          }));
-        }));
+        await Promise.all([
+          ...toCheck.map(async (cat) => {
+            const ans = (answers[cat.key] ?? '').trim();
+            const result = await validateWithAI(letter, ans, cat.key, cat.label);
+            if (result === null) return;
+            setBankMap(prev => ({ ...prev, [cat.key]: result ? 'ai_valid' : 'ai_invalid' }));
+          }),
+          ...(padreCat ? [(async () => {
+            const ans = (answers['padre'] ?? '').trim();
+            if (!ans) return;
+            const result = await validateWithAI(letter, ans, 'padre', padreCat.label);
+            if (result === false) setBankMap(prev => ({ ...prev, padre: 'ai_invalid' }));
+          })()] : []),
+        ]);
       } finally {
         setAiLoading(false);
       }

@@ -26,40 +26,54 @@ import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 
-const BRAND   = '#EF9F27';
-const TIMER   = 90;
-const MIN_CATS = 4;
-const ASYNC_DEADLINE_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+const BRAND            = '#EF9F27';
+const TIMER            = 90;
+const MIN_CATS         = 4;
+const ASYNC_DEADLINE_MS = 2 * 24 * 60 * 60 * 1000;
+const ROOM_TIMEOUT_S   = 120; // 2 min para sala encher; depois inicia com quem entrou
 
 const COINS = {
-  WIN_RT:   20,   // vitória tempo real
-  DRAW_RT:  10,   // empate tempo real
-  LOSE_RT:  -5,   // derrota tempo real
-  WIN_AS:   15,   // vitória assíncrona
-  DRAW_AS:   8,   // empate assíncrono
-  LOSE_AS:  -3,   // derrota assíncrona
-  ABANDON: -15,   // abandonou a partida
-  OPP_OUT:  25,   // adversário abandonou / expirou
+  WIN_RT:   20,
+  DRAW_RT:  10,
+  LOSE_RT:   0,
+  WIN_AS:   15,
+  DRAW_AS:   8,
+  LOSE_AS:   0,
+  ABANDON: -15,
+  OPP_OUT:  25,
 } as const;
 
-const LETTERS         = ['A','B','C','D','E','F','G','H','J','L','M','N','O','P','R','S','T','V'];
-const CODE_CHARS      = 'ABCDEFGHJKLMNPRSTV23456789';
+const LETTERS     = ['A','B','C','D','E','F','G','H','J','L','M','N','O','P','R','S','T','V'];
+const CODE_CHARS  = 'ABCDEFGHJKLMNPRSTV23456789';
 const genRoomCode = () =>
   Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 
-type Phase     = 'selecting' | 'matchmaking' | 'spinning' | 'playing' | 'waiting' | 'async_submitted' | 'validating' | 'result' | 'error';
-type GameMode  = 'realtime' | 'async';
+type Phase    = 'selecting' | 'matchmaking' | 'spinning' | 'playing' | 'waiting' | 'async_submitted' | 'validating' | 'result' | 'error';
+type GameMode = 'realtime' | 'async';
 type AnswerMap = Partial<Record<string, string>>;
 
-interface PlayerResult  { answers: AnswerMap; score: number; validCount: number; }
-interface RealtimeRoom  { id: string; letter: string; player1_name: string | null; created_at: string; }
-interface AsyncGame     {
+interface PlayerInfo   { id: string; name: string; }
+interface PlayerResult { answers: AnswerMap; score: number; validCount: number; }
+interface MultiResult  {
+  playerId: string; playerName: string; rank: number;
+  answers: AnswerMap; score: number; validCount: number;
+  bankMap: Partial<Record<string, BankResult>>;
+}
+interface RealtimeRoom {
+  id: string; letter: string; player1_name: string | null;
+  created_at: string; max_players: number; player_count: number;
+}
+interface AsyncGame {
   id: string; letter: string; status: string;
   player1_id: string; player2_id: string | null;
   player1_name: string | null; player2_name: string | null;
   deadline: string | null;
 }
-interface PendingResults { meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean; }
+interface PendingResults {
+  meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean;
+  oppName?: string;
+  allSubmissions?: { player_id: string; answers: AnswerMap; score: number; valid_count: number }[];
+}
 
 function calcScore(ans: AnswerMap, ltr: string, cats: StopCategory[]) {
   const valid = cats.filter(c => {
@@ -101,22 +115,39 @@ export default function StopOnlineScreen() {
   useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
 
   // ── Game state ─────────────────────────────────────────────────────────────
-  const [letter,    setLetter]    = useState('A');
-  const [answers,   setAnswers]   = useState<AnswerMap>({});
-  const [timeLeft,  setTimeLeft]  = useState(TIMER);
-  const [myResult,  setMyResult]  = useState<PlayerResult | null>(null);
-  const [oppResult, setOppResult] = useState<PlayerResult | null>(null);
-  const [p1Rematch, setP1Rematch] = useState(false);
-  const [p2Rematch, setP2Rematch] = useState(false);
-  const [isPlayer1, setIsPlayer1] = useState(false);
-  const [abandoned,  setAbandoned]  = useState<'me' | 'opp' | null>(null);
-  const [coinDelta,  setCoinDelta]  = useState<number | null>(null);
+  const [letter,        setLetter]        = useState('A');
+  const [answers,       setAnswers]       = useState<AnswerMap>({});
+  const [timeLeft,      setTimeLeft]      = useState(TIMER);
+  const [myResult,      setMyResult]      = useState<PlayerResult | null>(null);
+  const [oppResult,     setOppResult]     = useState<PlayerResult | null>(null);
+  const [oppName,       setOppName]       = useState('Adversário');
+  const [p1Rematch,     setP1Rematch]     = useState(false);
+  const [p2Rematch,     setP2Rematch]     = useState(false);
+  const [isPlayer1,     setIsPlayer1]     = useState(false);
+  const [abandoned,     setAbandoned]     = useState<'me' | 'opp' | null>(null);
+  const [coinDelta,     setCoinDelta]     = useState<number | null>(null);
+
+  // ── Multi-player state ─────────────────────────────────────────────────────
+  const [maxPlayers,    setMaxPlayers]    = useState(2);
+  const maxPlayersRef   = useRef(2);
+  useEffect(() => { maxPlayersRef.current = maxPlayers; }, [maxPlayers]);
+
+  const [roomPlayers,   setRoomPlayers]   = useState<PlayerInfo[]>([]);
+  const roomPlayersRef  = useRef<PlayerInfo[]>([]);
+  useEffect(() => { roomPlayersRef.current = roomPlayers; }, [roomPlayers]);
+
+  const [multiResults,  setMultiResults]  = useState<MultiResult[]>([]);
+
+  // Countdown no matchmaking para salas com múltiplos jogadores
+  const [mmTimeLeft,    setMmTimeLeft]    = useState(ROOM_TIMEOUT_S);
+  const mmIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Room lists ─────────────────────────────────────────────────────────────
   const [realtimeRooms,   setRealtimeRooms]   = useState<RealtimeRoom[]>([]);
   const [loadingRooms,    setLoadingRooms]     = useState(false);
   const [asyncGames,      setAsyncGames]       = useState<AsyncGame[]>([]);
   const [loadingAsync,    setLoadingAsync]     = useState(false);
+  const [dismissedIds,    setDismissedIds]     = useState<Set<string>>(() => new Set());
   const [privateRoomCode, setPrivateRoomCode]  = useState<string | null>(null);
   const [joinCodeInput,   setJoinCodeInput]    = useState('');
   const [myBankMap,   setMyBankMap]   = useState<Partial<Record<string, BankResult>>>({});
@@ -151,6 +182,8 @@ export default function StopOnlineScreen() {
   const awardCoinsRef      = useRef<(delta: number) => void>(() => {});
   const coinsAwardedRef    = useRef(false);
   const pendingResultsRef  = useRef<PendingResults | null>(null);
+  // N-player: jogadores ativos na partida em curso (snapshot no momento do start)
+  const activePCountRef    = useRef(2);
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
   useEffect(() => { letterRef.current  = letter;  }, [letter]);
@@ -201,6 +234,7 @@ export default function StopOnlineScreen() {
     spinTimeouts.current.forEach(clearTimeout);
     channelRef.current?.unsubscribe();
     if (mmTimerRef.current) clearTimeout(mmTimerRef.current);
+    if (mmIntervalRef.current) clearInterval(mmIntervalRef.current);
   }, [stopTimer]);
 
   // ── Spin animation ─────────────────────────────────────────────────────────
@@ -261,23 +295,51 @@ export default function StopOnlineScreen() {
 
   useEffect(() => { awardCoinsRef.current = awardCoins; }, [awardCoins]);
 
-  // ── Check both submitted ───────────────────────────────────────────────────
+  // ── Check all players submitted ────────────────────────────────────────────
+  // Funciona tanto para 1v1 (needed=2) quanto para N jogadores
   const checkBothSubmitted = useCallback(async (rId: string) => {
-    // Guard: once we've entered validating or result, never go back to validating.
-    // Late-arriving postgres_changes notifications (e.g. opponent's upsert) would
-    // otherwise reset the phase after we've already moved on, causing a double-run.
     if (phaseRef.current === 'validating' || phaseRef.current === 'result') return;
 
+    const needed = activePCountRef.current;
     const { data } = await supabase
       .from('stop_answers').select('*').eq('room_id', rId).eq('submitted', true);
-    if (!data || data.length < 2) return;
+    if (!data || data.length < needed) return;
+
     const me  = data.find(r => r.player_id === playerIdRef.current);
     const opp = data.find(r => r.player_id !== playerIdRef.current);
-    if (!me || !opp) return;
+    if (!me) return;
+
+    const oppPlayerName = roomPlayersRef.current.find(p => p.id !== playerIdRef.current)?.name ?? 'Adversário';
+    setOppName(oppPlayerName);
     setAbandoned(null);
-    pendingResultsRef.current = { meAnswers: me.answers, oppAnswers: opp.answers };
+    pendingResultsRef.current = {
+      meAnswers:      me.answers,
+      oppAnswers:     opp?.answers ?? {},
+      oppName:        oppPlayerName,
+      allSubmissions: data,
+    };
     setPhase('validating');
   }, []);
+
+  // ── Helper: inicia a partida quando a sala fica ativa ─────────────────────
+  const startMatchFromRoom = useCallback((roomLetter: string, players: PlayerInfo[]) => {
+    if (mmTimerRef.current) { clearTimeout(mmTimerRef.current); mmTimerRef.current = null; }
+    if (mmIntervalRef.current) { clearInterval(mmIntervalRef.current); mmIntervalRef.current = null; }
+    isMatchedRef.current = true;
+    // snapshot do número real de jogadores que entraram
+    activePCountRef.current = Math.max(players.length, 2);
+    setRoomPlayers(players);
+    roomPlayersRef.current = players;
+    if (isP1Ref.current) {
+      setTimeout(() => {
+        channelRef.current?.send({
+          type: 'broadcast', event: 'cats_sync',
+          payload: { cats: gameCatsRef.current.map(c => c.key) },
+        });
+      }, 600);
+    }
+    startSpin(roomLetter);
+  }, [startSpin]);
 
   // ── Subscribe to room (realtime) ───────────────────────────────────────────
   const subscribeToRoom = useCallback((rId: string) => {
@@ -289,21 +351,29 @@ export default function StopOnlineScreen() {
         (payload) => {
           const room = payload.new as Record<string, unknown>;
 
-          // P1 detects P2 joined → start spin + broadcast cats
-          if (room.status === 'active' && room.player2_id && isP1Ref.current && !isMatchedRef.current) {
-            isMatchedRef.current = true;
-            if (mmTimerRef.current) { clearTimeout(mmTimerRef.current); mmTimerRef.current = null; }
-            setTimeout(() => {
-              channelRef.current?.send({
-                type: 'broadcast', event: 'cats_sync',
-                payload: { cats: gameCatsRef.current.map(c => c.key) },
-              });
-            }, 600);
-            startSpin(room.letter as string);
+          // Sala ativada (cheia OU host iniciou com quem entrou) → TODOS começam
+          if (room.status === 'active' && !isMatchedRef.current) {
+            const players: PlayerInfo[] = Array.isArray(room.players)
+              ? (room.players as PlayerInfo[])
+              : [];
+            startMatchFromRoom(room.letter as string, players);
           }
 
-          // Opponent abandoned → I win
-          if (room.status === 'abandoned' && room.abandoned_by !== playerIdRef.current && !abandonedRef.current) {
+          // Atualiza lista de jogadores para mostrar no matchmaking (P1 que espera)
+          if (room.players && !isMatchedRef.current) {
+            const players: PlayerInfo[] = Array.isArray(room.players)
+              ? (room.players as PlayerInfo[])
+              : [];
+            setRoomPlayers(players);
+            roomPlayersRef.current = players;
+            setStatusMsg(`${players.length}/${room.max_players ?? maxPlayersRef.current} jogadores`);
+          }
+
+          // Para 1v1: adversário abandonou → eu ganho
+          if (room.status === 'abandoned'
+              && room.abandoned_by !== playerIdRef.current
+              && !abandonedRef.current
+              && activePCountRef.current === 2) {
             stopTimer();
             const ans = answersRef.current;
             const { score, validCount } = calcScore(ans, letterRef.current, gameCatsRef.current);
@@ -325,17 +395,17 @@ export default function StopOnlineScreen() {
         { event: '*', schema: 'public', table: 'stop_answers', filter: `room_id=eq.${rId}` },
         () => checkBothSubmitted(rId)
       )
-      // P2 receives category keys from P1
+      // Não-P1 recebe as categorias de P1
       .on('broadcast', { event: 'cats_sync' }, ({ payload }) => {
         const keys = (payload as { cats: string[] }).cats;
         const cats = ALL_STOP_CATEGORIES.filter(c => keys.includes(c.key));
         if (cats.length > 0) { setGameCategories(cats); gameCatsRef.current = cats; }
       })
-      // One player clicked STOP → other player also stops
+      // Qualquer jogador clicou STOP → todos param
       .on('broadcast', { event: 'stop_signal' }, () => { doSubmitRef.current(); })
-      // Broadcast for immediate abandon notification
+      // Notificação de abandono em 1v1
       .on('broadcast', { event: 'abandoned' }, () => {
-        if (abandonedRef.current) return;
+        if (abandonedRef.current || activePCountRef.current > 2) return;
         stopTimer();
         const ans = answersRef.current;
         const { score, validCount } = calcScore(ans, letterRef.current, gameCatsRef.current);
@@ -346,7 +416,7 @@ export default function StopOnlineScreen() {
         setPhase('result');
       })
       .subscribe();
-  }, [startSpin, checkBothSubmitted, stopTimer]);
+  }, [startMatchFromRoom, checkBothSubmitted, stopTimer]);
 
   // ── Rematch ────────────────────────────────────────────────────────────────
   const joinRematchRoom = useCallback(async (newRoomId: string) => {
@@ -398,11 +468,24 @@ export default function StopOnlineScreen() {
     abandonedRef.current = true;
     stopTimer();
     const rId = roomIdRef.current;
+    const isMulti = activePCountRef.current > 2;
+
     if (rId) {
-      channelRef.current?.send({ type: 'broadcast', event: 'abandoned', payload: {} });
-      await supabase.from('stop_rooms')
-        .update({ status: 'abandoned', abandoned_by: playerIdRef.current })
-        .eq('id', rId);
+      if (isMulti) {
+        // N-player: envia respostas vazias (score=0) para não travar a partida
+        await supabase.from('stop_answers').upsert({
+          room_id: rId, player_id: playerIdRef.current,
+          answers: {}, score: 0, valid_count: 0, submitted: true,
+        }, { onConflict: 'room_id,player_id' });
+        awardCoinsRef.current(COINS.ABANDON);
+        router.back(); // sai imediatamente sem mostrar resultado
+        return;
+      } else {
+        channelRef.current?.send({ type: 'broadcast', event: 'abandoned', payload: {} });
+        await supabase.from('stop_rooms')
+          .update({ status: 'abandoned', abandoned_by: playerIdRef.current })
+          .eq('id', rId);
+      }
     }
     setAbandoned('me');
     setMyResult({ answers: answersRef.current, score: 0, validCount: 0 });
@@ -507,11 +590,17 @@ export default function StopOnlineScreen() {
     if (!playerIdRef.current) { setRealtimeRooms([]); return; }
     if (!silent) setLoadingRooms(true);
     const { data } = await supabase
-      .from('stop_rooms').select('id, letter, player1_name, created_at')
+      .from('stop_rooms')
+      .select('id, letter, player1_name, created_at, max_players, players')
       .eq('status', 'waiting').eq('mode', 'realtime').eq('visibility', 'public')
       .neq('player1_id', playerIdRef.current)
       .order('created_at', { ascending: true }).limit(10);
-    setRealtimeRooms((data as RealtimeRoom[]) ?? []);
+    const rooms = ((data ?? []) as any[]).map(r => ({
+      ...r,
+      player_count: Array.isArray(r.players) ? r.players.length : 1,
+      max_players:  r.max_players ?? 2,
+    })) as RealtimeRoom[];
+    setRealtimeRooms(rooms);
     if (!silent) setLoadingRooms(false);
   }, []);
 
@@ -530,7 +619,11 @@ export default function StopOnlineScreen() {
       .order('created_at', { ascending: false })
       .limit(20);
 
-    setAsyncGames((data as AsyncGame[]) ?? []);
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const filtered = ((data as AsyncGame[]) ?? []).filter(g =>
+      g.status !== 'completed' || !g.deadline || g.deadline > oneDayAgo
+    );
+    setAsyncGames(filtered);
     if (!silent) setLoadingAsync(false);
   }, []);
 
@@ -576,18 +669,29 @@ export default function StopOnlineScreen() {
       console.log('[StopOnline] Banco (minhas):', myMap);
 
       const finalMyMap = { ...myMap };
-      const myUnverified = cats.filter(c => myMap[c.key] === 'unverified' && c.key !== 'padre');
+      const myUnverified = cats.filter(c => myMap[c.key] === 'unverified');
+      // 'padre' já foi marcado como 'valid' no banco; verificamos apenas palavrão via IA
+      const padreCat = cats.find(c => c.key === 'padre' && finalMyMap['padre'] === 'valid');
       console.log('[StopOnline] Não verificados (minhas):', myUnverified.map(c => `${c.key}="${pending.meAnswers[c.key]}"`));
 
-      if (myUnverified.length > 0) {
+      if (myUnverified.length > 0 || padreCat) {
         setAiLoading(true);
-        await Promise.all(myUnverified.map(async (cat) => {
-          const ans = (pending.meAnswers[cat.key] ?? '').trim();
-          if (!ans) return;
-          const result = await validateWithAI(ltr, ans, cat.key, cat.label);
-          console.log(`[StopOnline] IA (minha) "${ans}": ${result === null ? 'null' : result ? 'VÁLIDA' : 'INVÁLIDA'}`);
-          if (result !== null) finalMyMap[cat.key] = result ? 'ai_valid' : 'ai_invalid';
-        }));
+        await Promise.all([
+          ...myUnverified.map(async (cat) => {
+            const ans = (pending.meAnswers[cat.key] ?? '').trim();
+            if (!ans) return;
+            const result = await validateWithAI(ltr, ans, cat.key, cat.label);
+            console.log(`[StopOnline] IA (minha) "${ans}": ${result === null ? 'null' : result ? 'VÁLIDA' : 'INVÁLIDA'}`);
+            if (result !== null) finalMyMap[cat.key] = result ? 'ai_valid' : 'ai_invalid';
+          }),
+          ...(padreCat ? [(async () => {
+            const ans = (pending.meAnswers['padre'] ?? '').trim();
+            if (!ans) return;
+            const result = await validateWithAI(ltr, ans, 'padre', padreCat.label);
+            console.log(`[StopOnline] IA padre "${ans}": ${result === null ? 'null' : result ? 'não ofensiva' : 'OFENSIVA'}`);
+            if (result === false) finalMyMap['padre'] = 'ai_invalid';
+          })()] : []),
+        ]);
         setMyBankMap(finalMyMap);
         setAiLoading(false);
       }
@@ -636,32 +740,66 @@ export default function StopOnlineScreen() {
 
       setOppBankMap(finalOppMap);
 
-      // ── Step 4: Score and show result ────────────────────────────────────
-      const myVC  = cats.filter(c => finalMyMap[c.key]  === 'valid' || finalMyMap[c.key]  === 'ai_valid').length;
-      const oppVC = cats.filter(c => finalOppMap[c.key] === 'valid' || finalOppMap[c.key] === 'ai_valid').length;
-      const myS   = myVC  * 10 + (cats.length > 0 && myVC  === cats.length ? 20 : 0);
-      const oppS  = oppVC * 10 + (cats.length > 0 && oppVC === cats.length ? 20 : 0);
-      console.log(`[StopOnline] Pontuação final — eu: ${myS} (${myVC}) | adv: ${oppS} (${oppVC})`);
+      // ── Step 4: Score e resultado ────────────────────────────────────────
+      const myVC = cats.filter(c => finalMyMap[c.key] === 'valid' || finalMyMap[c.key] === 'ai_valid').length;
+      const myS  = myVC * 10 + (cats.length > 0 && myVC === cats.length ? 20 : 0);
 
-      setMyResult({ answers: pending.meAnswers,  score: myS,  validCount: myVC });
-      setOppResult({ answers: pending.oppAnswers, score: oppS, validCount: oppVC });
+      const isMulti = activePCountRef.current > 2 && !!pending.allSubmissions;
 
-      if (!pending.skipCoins) {
-        const isAS  = gameModeRef.current === 'async';
-        const delta = myS > oppS
-          ? (isAS ? COINS.WIN_AS  : COINS.WIN_RT)
-          : myS === oppS
-            ? (isAS ? COINS.DRAW_AS : COINS.DRAW_RT)
-            : (isAS ? COINS.LOSE_AS : COINS.LOSE_RT);
-        awardCoinsRef.current(delta);
+      if (isMulti && pending.allSubmissions) {
+        // ── N jogadores: monta leaderboard ────────────────────────────────
+        const allSubs = pending.allSubmissions;
+        const playerMap = Object.fromEntries(
+          roomPlayersRef.current.map(p => [p.id, p.name])
+        );
+        const ranked: MultiResult[] = allSubs
+          .map(sub => ({
+            playerId:   sub.player_id,
+            playerName: playerMap[sub.player_id] ?? 'Jogador',
+            answers:    sub.answers,
+            score:      sub.score,
+            validCount: sub.valid_count,
+            bankMap:    sub.player_id === myId ? finalMyMap : {},
+            rank:       0,
+          }))
+          .sort((a, b) => b.score - a.score)
+          .map((r, i) => ({ ...r, rank: i + 1 }));
 
-        // +1 moeda bônus por jogo perfeito (todas categorias corretas)
-        const perfectGame = cats.length > 0 && myVC === cats.length;
-        if (perfectGame) awardCoinsRef.current(1);
+        setMultiResults(ranked);
+        const mine = ranked.find(r => r.playerId === myId);
+        setMyResult({ answers: pending.meAnswers, score: mine?.score ?? myS, validCount: mine?.validCount ?? myVC });
 
-        // Registra evento de pontuação para o ranking semanal
-        if (myS > 0 && myId) {
-          recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
+        if (!pending.skipCoins) {
+          const myRank = mine?.rank ?? ranked.length;
+          const N      = ranked.length;
+          let delta    = 0;
+          if (myRank === 1)      delta = COINS.WIN_RT;
+          else if (myRank === N && N >= 3) delta = COINS.LOSE_RT;
+          awardCoinsRef.current(delta);
+          if (cats.length > 0 && myVC === cats.length) awardCoinsRef.current(1);
+          if (myS > 0 && myId) recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
+        }
+
+      } else {
+        // ── 1v1 / async: lógica original ──────────────────────────────────
+        const oppVC = cats.filter(c => finalOppMap[c.key] === 'valid' || finalOppMap[c.key] === 'ai_valid').length;
+        const oppS  = oppVC * 10 + (cats.length > 0 && oppVC === cats.length ? 20 : 0);
+        console.log(`[StopOnline] Pontuação — eu: ${myS} (${myVC}) | adv: ${oppS} (${oppVC})`);
+
+        setMyResult({ answers: pending.meAnswers,  score: myS,  validCount: myVC });
+        setOppResult({ answers: pending.oppAnswers, score: oppS, validCount: oppVC });
+
+        if (!pending.skipCoins) {
+          const isAS  = gameModeRef.current === 'async';
+          const delta = myS > oppS
+            ? (isAS ? COINS.WIN_AS  : COINS.WIN_RT)
+            : myS === oppS
+              ? (isAS ? COINS.DRAW_AS : COINS.DRAW_RT)
+              : (isAS ? COINS.LOSE_AS : COINS.LOSE_RT);
+          awardCoinsRef.current(delta);
+          const perfectGame = cats.length > 0 && myVC === cats.length;
+          if (perfectGame) awardCoinsRef.current(1);
+          if (myS > 0 && myId) recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
         }
       }
 
@@ -676,24 +814,41 @@ export default function StopOnlineScreen() {
   }, [phase]);
 
   // ── Create realtime room ──────────────────────────────────────────────────
-  const createRealtimeRoom = useCallback(async (visibility: 'public' | 'private') => {
+  const createRealtimeRoom = useCallback(async (visibility: 'public' | 'private', nPlayers = 2) => {
     if (!playerIdRef.current) return;
     const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     setPhase('matchmaking');
-    setStatusMsg(visibility === 'private' ? 'Sala privada criada!' : 'Aguardando adversário...');
-    isMatchedRef.current = false;
     setPrivateRoomCode(null);
+    isMatchedRef.current = false;
 
-    const newLetter  = LETTERS[Math.floor(Math.random() * LETTERS.length)];
-    const roomCode   = visibility === 'private' ? genRoomCode() : null;
+    const mp       = nPlayers;
+    const isMulti  = mp > 2 && visibility === 'public';
+    const p1Info   = [{ id: playerIdRef.current, name: playerNameRef.current }];
+    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    const roomCode  = visibility === 'private' ? genRoomCode() : null;
+
+    setMaxPlayers(mp); maxPlayersRef.current = mp;
+    activePCountRef.current = mp;
+    const initialPlayers: PlayerInfo[] = [{ id: playerIdRef.current, name: playerNameRef.current }];
+    setRoomPlayers(initialPlayers); roomPlayersRef.current = initialPlayers;
+
+    if (isMulti) {
+      setStatusMsg(`1/${mp} jogadores`);
+      setMmTimeLeft(ROOM_TIMEOUT_S);
+    } else {
+      setStatusMsg(visibility === 'private' ? 'Sala privada criada!' : 'Aguardando adversário...');
+    }
+
     const { data: newRoom, error } = await supabase
       .from('stop_rooms')
       .insert({
         letter: newLetter, player1_id: playerIdRef.current,
         player1_name: playerNameRef.current, mode: 'realtime',
         visibility, room_code: roomCode,
+        max_players: mp,
+        players: p1Info,
       })
       .select().single();
 
@@ -704,21 +859,47 @@ export default function StopOnlineScreen() {
     if (roomCode) setPrivateRoomCode(roomCode);
     subscribeToRoom(newRoom.id);
 
-    mmTimerRef.current = setTimeout(async () => {
-      if (!isMatchedRef.current) {
-        await supabase.from('stop_rooms').delete()
-          .eq('id', newRoom.id).eq('status', 'waiting');
-        setPhase('error');
-        setStatusMsg('Nenhum adversário entrou.\nTente novamente.');
-      }
-    }, 5 * 60_000);
+    if (isMulti) {
+      // Countdown: inicia a partida após ROOM_TIMEOUT_S ou quando sala encher
+      mmIntervalRef.current = setInterval(() => {
+        setMmTimeLeft(t => Math.max(0, t - 1));
+      }, 1000);
+
+      mmTimerRef.current = setTimeout(async () => {
+        if (mmIntervalRef.current) { clearInterval(mmIntervalRef.current); mmIntervalRef.current = null; }
+        if (isMatchedRef.current) return;
+        const currentPlayers = roomPlayersRef.current;
+        if (currentPlayers.length >= 2) {
+          // Inicia com quem entrou
+          activePCountRef.current = currentPlayers.length;
+          await supabase.from('stop_rooms')
+            .update({ status: 'active', max_players: currentPlayers.length })
+            .eq('id', newRoom.id).eq('status', 'waiting');
+          // A subscription vai disparar startMatchFromRoom para todos
+        } else {
+          await supabase.from('stop_rooms').delete().eq('id', newRoom.id);
+          setPhase('error');
+          setStatusMsg('Nenhum jogador entrou.\nA sala foi cancelada.');
+        }
+      }, ROOM_TIMEOUT_S * 1000);
+    } else {
+      // 1v1: timeout de 5 minutos
+      mmTimerRef.current = setTimeout(async () => {
+        if (!isMatchedRef.current) {
+          await supabase.from('stop_rooms').delete()
+            .eq('id', newRoom.id).eq('status', 'waiting');
+          setPhase('error');
+          setStatusMsg('Nenhum adversário entrou.\nTente novamente.');
+        }
+      }, 5 * 60_000);
+    }
   }, [selectedKeys, subscribeToRoom]);
 
-  const handleCriarSalaPublica  = useCallback(() => createRealtimeRoom('public'),  [createRealtimeRoom]);
-  const handleCriarSalaPrivada  = useCallback(() => createRealtimeRoom('private'), [createRealtimeRoom]);
+  const handleCriarSalaPublica  = useCallback(() => createRealtimeRoom('public', maxPlayers),  [createRealtimeRoom, maxPlayers]);
+  const handleCriarSalaPrivada  = useCallback(() => createRealtimeRoom('private', 2),           [createRealtimeRoom]);
 
   // ── Join a realtime room from list ─────────────────────────────────────────
-  const joinRealtimeRoom = useCallback(async (roomId: string, roomLetter: string) => {
+  const joinRealtimeRoom = useCallback(async (room: RealtimeRoom) => {
     if (!playerIdRef.current) return;
     const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
     setGameCategories(cats); gameCatsRef.current = cats;
@@ -726,23 +907,33 @@ export default function StopOnlineScreen() {
     isMatchedRef.current = false;
     setPhase('matchmaking'); setStatusMsg('Entrando na sala...');
 
-    const { data: claimed } = await supabase
-      .from('stop_rooms')
-      .update({ player2_id: playerIdRef.current, player2_name: playerNameRef.current, status: 'active' })
-      .eq('id', roomId).eq('status', 'waiting').select();
+    const { data: joinResult } = await supabase.rpc('join_stop_room', {
+      p_room_id:     room.id,
+      p_player_id:   playerIdRef.current,
+      p_player_name: playerNameRef.current,
+    });
 
-    if (!claimed || claimed.length === 0) {
+    if (!joinResult?.ok) {
       setPhase('selecting'); fetchRealtimeRooms();
       return;
     }
 
-    isMatchedRef.current = true; isP1Ref.current = false; setIsPlayer1(false);
-    roomIdRef.current = roomId;
-    setLetter(roomLetter); letterRef.current = roomLetter;
-    setStatusMsg('Adversário encontrado! 🎯');
-    subscribeToRoom(roomId);
-    startSpin(roomLetter);
-  }, [selectedKeys, subscribeToRoom, startSpin, fetchRealtimeRooms]);
+    isP1Ref.current = false; setIsPlayer1(false);
+    roomIdRef.current = room.id;
+    setLetter(room.letter); letterRef.current = room.letter;
+    setMaxPlayers(room.max_players); maxPlayersRef.current = room.max_players;
+    activePCountRef.current = room.max_players;
+
+    subscribeToRoom(room.id);
+
+    if (joinResult.is_full) {
+      // Sala cheia → subscription vai disparar startMatchFromRoom para todos
+      setStatusMsg('Sala completa! Iniciando... 🎯');
+    } else {
+      // Ainda há vagas: aguarda mais jogadores ou timeout de P1
+      setStatusMsg(`${joinResult.player_count}/${joinResult.max_players} jogadores`);
+    }
+  }, [selectedKeys, subscribeToRoom, fetchRealtimeRooms]);
 
   // ── Join private room by code ─────────────────────────────────────────────
   const joinByCode = useCallback(async () => {
@@ -760,7 +951,7 @@ export default function StopOnlineScreen() {
       return;
     }
     setJoinCodeInput('');
-    await joinRealtimeRoom(rooms[0].id, rooms[0].letter);
+    await joinRealtimeRoom({ ...rooms[0], max_players: 2, player_count: 1 } as RealtimeRoom);
   }, [joinCodeInput, joinRealtimeRoom]);
 
   // ── Async flow (VAMOS JOGAR!) ──────────────────────────────────────────────
@@ -865,8 +1056,11 @@ export default function StopOnlineScreen() {
     setP1Rematch(false); setP2Rematch(false);
 
     if (opp) {
+      const pid = playerIdRef.current;
+      const opponentName = (game.player1_id === pid ? game.player2_name : game.player1_name) ?? 'Adversário';
+      setOppName(opponentName);
       setAbandoned(null);
-      pendingResultsRef.current = { meAnswers: me.answers, oppAnswers: opp.answers };
+      pendingResultsRef.current = { meAnswers: me.answers, oppAnswers: opp.answers, oppName: opponentName };
       setPhase('validating');
     } else if (isExpired) {
       // Opp never responded — validate my answers but skip coin award
@@ -889,7 +1083,7 @@ export default function StopOnlineScreen() {
       <SafeAreaView style={s.fill} edges={['top']}>
         <GameHeader title="Stop Online" subtitle="MODO ONLINE" />
         <View style={s.centerFlex}>
-          <ThemedText style={{ fontSize: 64 }}>🔐</ThemedText>
+          <ThemedText style={{ fontSize: 64, lineHeight: 78 }}>🔐</ThemedText>
           <ThemedText type="subtitle" style={s.center}>Login necessário</ThemedText>
           <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
             Para jogar online você precisa estar logado.
@@ -945,18 +1139,38 @@ export default function StopOnlineScreen() {
             </View>
 
             {/* ── Modo escolha ── */}
+            {/* Picker de jogadores para sala pública */}
+            <View style={s.playerPickerWrap}>
+              <ThemedText style={s.playerPickerLabel}>SALA PÚBLICA — Nº DE JOGADORES</ThemedText>
+              <View style={s.playerPickerRow}>
+                {[2, 3, 4, 5].map(n => (
+                  <TouchableOpacity
+                    key={n}
+                    style={[s.playerPickerBtn, maxPlayers === n && { backgroundColor: C.purple, borderColor: C.purple }]}
+                    onPress={() => setMaxPlayers(n)}
+                    activeOpacity={0.8}>
+                    <ThemedText style={[s.playerPickerTxt, maxPlayers === n && { color: '#fff' }]}>
+                      {n === 2 ? '1v1' : `${n}👤`}
+                    </ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
             <View style={s.modeRow}>
               <TouchableOpacity style={[s.modeBtn, { backgroundColor: C.purple }]}
                 onPress={handleCriarSalaPublica} activeOpacity={0.85}>
                 <ThemedText style={{ fontSize: 20 }}>🏠</ThemedText>
                 <ThemedText style={s.modeBtnTitle}>SALA PÚBLICA</ThemedText>
-                <ThemedText style={s.modeBtnSub}>Qualquer um entra</ThemedText>
+                <ThemedText style={s.modeBtnSub}>
+                  {maxPlayers === 2 ? 'Qualquer um entra · 1v1' : `Até ${maxPlayers} jogadores`}
+                </ThemedText>
               </TouchableOpacity>
               <TouchableOpacity style={[s.modeBtn, { backgroundColor: '#5B6EBF' }]}
                 onPress={handleCriarSalaPrivada} activeOpacity={0.85}>
                 <ThemedText style={{ fontSize: 20 }}>🔒</ThemedText>
                 <ThemedText style={s.modeBtnTitle}>SALA PRIVADA</ThemedText>
-                <ThemedText style={s.modeBtnSub}>Somente com código</ThemedText>
+                <ThemedText style={s.modeBtnSub}>Somente com código · 1v1</ThemedText>
               </TouchableOpacity>
             </View>
             <TouchableOpacity style={[s.modeBtn, { backgroundColor: BRAND, alignSelf: 'stretch' }]}
@@ -1010,12 +1224,14 @@ export default function StopOnlineScreen() {
                   <View>
                     <ThemedText type="smallBold">{room.player1_name || 'Jogador'}</ThemedText>
                     <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
-                      Aguardando adversário
+                      {room.max_players === 2
+                        ? 'Aguardando adversário'
+                        : `${room.player_count}/${room.max_players} jogadores`}
                     </ThemedText>
                   </View>
                 </View>
                 <TouchableOpacity style={s.enterBtn}
-                  onPress={() => joinRealtimeRoom(room.id, room.letter)} activeOpacity={0.8}>
+                  onPress={() => joinRealtimeRoom(room)} activeOpacity={0.8}>
                   <ThemedText style={s.enterBtnTxt}>ENTRAR</ThemedText>
                 </TouchableOpacity>
               </ThemedView>
@@ -1028,13 +1244,13 @@ export default function StopOnlineScreen() {
                 <ThemedText style={{ fontSize: 16 }}>{loadingAsync ? '⏳' : '🔄'}</ThemedText>
               </TouchableOpacity>
             </View>
-            {asyncGames.length === 0 ? (
+            {asyncGames.filter(g => !dismissedIds.has(g.id)).length === 0 ? (
               <ThemedView type="backgroundElement" style={s.emptyCard}>
                 <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12 }]}>
                   Clique em "Vamos Jogar!" para entrar em uma partida.
                 </ThemedText>
               </ThemedView>
-            ) : asyncGames.map(game => {
+            ) : asyncGames.filter(g => !dismissedIds.has(g.id)).map(game => {
               const pid    = playerIdRef.current;
               const amP1   = game.player1_id === pid;
               const amP2   = game.player2_id === pid;
@@ -1096,8 +1312,10 @@ export default function StopOnlineScreen() {
 
   // ── Matchmaking / error ────────────────────────────────────────────────────
   if (phase === 'matchmaking' || phase === 'error') {
-    const isRealtime = gameMode === 'realtime';
-    const isPrivate  = Boolean(privateRoomCode);
+    const isRealtime  = gameMode === 'realtime';
+    const isPrivate   = Boolean(privateRoomCode);
+    const isMultiRoom = isRealtime && !isPrivate && maxPlayers > 2;
+    const mmPct       = (mmTimeLeft / ROOM_TIMEOUT_S) * 100;
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
@@ -1106,16 +1324,42 @@ export default function StopOnlineScreen() {
             subtitle={isRealtime ? (isPrivate ? 'SALA PRIVADA' : 'SALA PÚBLICA') : 'PARTIDA ASSÍNCRONA'}
           />
           <View style={s.centerFlex}>
-            <ThemedText style={{ fontSize: 64 }}>
+            <ThemedText style={{ fontSize: 64, lineHeight: 78 }}>
               {phase === 'error' ? '📡' : isPrivate ? '🔒' : isRealtime ? '🏠' : '⏱️'}
             </ThemedText>
             <ThemedText type="subtitle" style={s.center}>{statusMsg}</ThemedText>
 
-            {/* Private room code block */}
+            {/* Barra de countdown para salas multi-player */}
+            {isMultiRoom && phase !== 'error' && (
+              <View style={{ alignSelf: 'stretch', gap: Spacing.two }}>
+                <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
+                  <View style={[s.timerFill, { width: `${mmPct}%`, backgroundColor: C.purple }]} />
+                </View>
+                <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12 }]}>
+                  Inicia em {mmTimeLeft}s ou quando a sala encher
+                </ThemedText>
+                {/* Avatares dos jogadores que entraram */}
+                <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {Array.from({ length: maxPlayers }).map((_, i) => {
+                    const p = roomPlayers[i];
+                    return (
+                      <View key={i} style={[s.playerSlot, { borderColor: p ? C.purple : C.border }]}>
+                        <ThemedText style={{ fontSize: 18 }}>{p ? '👤' : '○'}</ThemedText>
+                        <ThemedText themeColor={p ? 'text' : 'textSecondary'} style={{ fontSize: 9, textAlign: 'center' }} numberOfLines={1}>
+                          {p ? p.name : '...'}
+                        </ThemedText>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Código da sala privada */}
             {isPrivate && privateRoomCode && phase !== 'error' && (
               <View style={s.codeBlock}>
                 <ThemedText style={s.codeLabel}>CÓDIGO DA SALA</ThemedText>
-                <ThemedText style={s.codeText}>{privateRoomCode}</ThemedText>
+                <ThemedText style={s.codeText} numberOfLines={1} adjustsFontSizeToFit>{privateRoomCode}</ThemedText>
                 <ThemedText themeColor="textSecondary" style={{ fontSize: 12, textAlign: 'center' }}>
                   Compartilhe este código com seu amigo para ele entrar na sala.
                 </ThemedText>
@@ -1136,6 +1380,7 @@ export default function StopOnlineScreen() {
             ) : null}
             <TouchableOpacity style={s.ghostBtn} onPress={async () => {
               if (mmTimerRef.current) clearTimeout(mmTimerRef.current);
+              if (mmIntervalRef.current) { clearInterval(mmIntervalRef.current); mmIntervalRef.current = null; }
               if (roomIdRef.current) {
                 await supabase.from('stop_rooms').delete()
                   .eq('id', roomIdRef.current).eq('status', 'waiting');
@@ -1194,7 +1439,7 @@ export default function StopOnlineScreen() {
       <SafeAreaView style={s.fill} edges={['top']}>
         <GameHeader title="Stop Online" subtitle="AGUARDANDO" />
         <View style={s.centerFlex}>
-          <ThemedText style={{ fontSize: 64 }}>⏳</ThemedText>
+          <ThemedText style={{ fontSize: 64, lineHeight: 78 }}>⏳</ThemedText>
           <ThemedText type="subtitle" style={s.center}>Aguardando adversário...</ThemedText>
           <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
             Você finalizou. Aguarde o adversário completar.
@@ -1210,7 +1455,7 @@ export default function StopOnlineScreen() {
       <SafeAreaView style={s.fill} edges={['top']}>
         <GameHeader title="Stop Online" subtitle="RESPOSTAS ENVIADAS" />
         <View style={s.centerFlex}>
-          <ThemedText style={{ fontSize: 64 }}>✅</ThemedText>
+          <ThemedText style={{ fontSize: 64, lineHeight: 78 }}>✅</ThemedText>
           <ThemedText type="subtitle" style={s.center}>Respostas enviadas!</ThemedText>
           <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
             O adversário tem 2 dias para responder.{'\n'}Volte para ver o resultado!
@@ -1226,20 +1471,44 @@ export default function StopOnlineScreen() {
 
   // ── Result ─────────────────────────────────────────────────────────────────
   if (phase === 'result' && myResult) {
-    const cats       = gameCatsRef.current;
-    const isAbandon  = abandoned === 'me';
-    const oppLeft    = abandoned === 'opp';
-    const iWon       = isAbandon ? false : oppLeft ? true : (myResult.score > (oppResult?.score ?? 0));
-    const tied       = !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0);
-    const isAsync    = gameMode === 'async';
+    const cats      = gameCatsRef.current;
+    const isAbandon = abandoned === 'me';
+    const oppLeft   = abandoned === 'opp';
+    const isAsync   = gameMode === 'async';
+    const isMulti   = multiResults.length > 2;
+    const myRank    = multiResults.find(r => r.playerId === (user?.id ?? ''))?.rank ?? 1;
 
-    let resEmoji = tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '📿';
-    let resMsg   = tied ? 'Empate!' : iWon ? 'Você ganhou!' : isAbandon ? 'Você abandonou' : 'Adversário ganhou!';
-    let resColor = iWon ? C.green : tied ? C.gold : C.red;
-    if (oppLeft) { resEmoji = '🏆'; resMsg = 'Adversário saiu — você ganhou!'; resColor = C.green; }
+    const iWon    = isMulti ? (myRank === 1) : (isAbandon ? false : oppLeft ? true : (myResult.score > (oppResult?.score ?? 0)));
+    const tied    = !isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0);
+
+    let resEmoji = isMulti
+      ? (myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '📿')
+      : (tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '📿');
+    let resMsg = isMulti
+      ? (myRank === 1 ? 'Você ganhou!' : `${myRank}º lugar`)
+      : (tied ? 'Empate!' : iWon ? 'Você ganhou!' : isAbandon ? 'Você abandonou' : 'Adversário ganhou!');
+    let resColor = (iWon || myRank === 1) ? C.green : tied ? C.gold : C.red;
+    if (!isMulti && oppLeft) { resEmoji = '🏆'; resMsg = 'Adversário saiu — você ganhou!'; resColor = C.green; }
 
     const myRematch  = isPlayer1 ? p1Rematch : p2Rematch;
     const oppRematch = isPlayer1 ? p2Rematch : p1Rematch;
+
+    const handleBack = () => {
+      if (roomIdRef.current) {
+        void supabase.rpc('mark_stop_result_seen', { p_room_id: roomIdRef.current });
+      }
+      if (isAsync && roomIdRef.current) {
+        setDismissedIds(prev => new Set([...prev, roomIdRef.current!]));
+      }
+      setPhase('selecting'); setAbandoned(null);
+      setMyResult(null); setOppResult(null); setMultiResults([]);
+      setOppName('Adversário');
+      setP1Rematch(false); setP2Rematch(false);
+      setCoinDelta(null); coinsAwardedRef.current = false;
+      pendingResultsRef.current = null;
+      setMyBankMap({}); setOppBankMap({}); setAiLoading(false);
+      fetchAsyncGames();
+    };
 
     return (
       <ThemedView style={s.fill}>
@@ -1259,9 +1528,14 @@ export default function StopOnlineScreen() {
               <ThemedText style={{ fontSize: 40, lineHeight: 48 }}>{resEmoji}</ThemedText>
               <View style={{ gap: 2 }}>
                 <ThemedText style={{ fontSize: 20, fontWeight: '800', color: resColor, lineHeight: 26 }}>{resMsg}</ThemedText>
-                {!isAbandon && !oppLeft && (
+                {!isAbandon && !oppLeft && !isMulti && (
                   <ThemedText themeColor="textSecondary" style={{ fontSize: 13 }}>
                     Letra: {letter} · {myResult.score} vs {oppResult?.score ?? 0} pts
+                  </ThemedText>
+                )}
+                {!isAbandon && isMulti && (
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 13 }}>
+                    Letra: {letter} · {multiResults.length} jogadores
                   </ThemedText>
                 )}
                 {oppLeft && (
@@ -1272,8 +1546,72 @@ export default function StopOnlineScreen() {
               </View>
             </View>
 
-            {!isAbandon && oppResult && (
+            {/* ── Leaderboard multi-player ── */}
+            {isMulti && (
+              <View style={{ gap: Spacing.one }}>
+                <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
+                  CLASSIFICAÇÃO
+                </ThemedText>
+                {multiResults.map(r => {
+                  const isMe = r.playerId === (user?.id ?? '');
+                  const rankEmoji = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : `${r.rank}º`;
+                  return (
+                    <ThemedView key={r.playerId} type="backgroundElement"
+                      style={[s.leaderRow, isMe && { borderColor: C.purple, borderWidth: 1.5 }]}>
+                      <ThemedText style={{ fontSize: 20, width: 32 }}>{rankEmoji}</ThemedText>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold" numberOfLines={1}>
+                          {r.playerName}{isMe ? ' (você)' : ''}
+                        </ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                          {r.validCount}/{cats.length} válidas
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={{ fontSize: 22, fontWeight: '900',
+                        color: r.rank === 1 ? C.green : r.rank === multiResults.length ? C.red : theme.text }}>
+                        {r.score}
+                      </ThemedText>
+                    </ThemedView>
+                  );
+                })}
+              </View>
+            )}
+
+            {!isMulti && !isAbandon && oppResult && (
               <>
+                {/* Mini ranking 1v1 */}
+                {!oppLeft && (() => {
+                  const ranked1v1 = [
+                    { name: profile?.name ?? 'Você', score: myResult.score, validCount: myResult.validCount, isMe: true },
+                    { name: oppName, score: oppResult.score, validCount: oppResult.validCount, isMe: false },
+                  ].sort((a, b) => b.score - a.score);
+                  return (
+                    <View style={{ gap: Spacing.one }}>
+                      <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
+                        CLASSIFICAÇÃO
+                      </ThemedText>
+                      {ranked1v1.map((r, i) => (
+                        <ThemedView key={r.name} type="backgroundElement"
+                          style={[s.leaderRow, r.isMe && { borderColor: C.purple, borderWidth: 1.5 }]}>
+                          <ThemedText style={{ fontSize: 20, width: 32 }}>{i === 0 ? '🥇' : '🥈'}</ThemedText>
+                          <View style={{ flex: 1 }}>
+                            <ThemedText type="smallBold" numberOfLines={1}>
+                              {r.name}{r.isMe ? ' (você)' : ''}
+                            </ThemedText>
+                            <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                              {r.validCount}/{cats.length} válidas
+                            </ThemedText>
+                          </View>
+                          <ThemedText style={{ fontSize: 22, fontWeight: '900',
+                            color: i === 0 ? C.green : theme.text }}>
+                            {r.score}
+                          </ThemedText>
+                        </ThemedView>
+                      ))}
+                    </View>
+                  );
+                })()}
+
                 <View style={s.scoreRow}>
                   <ThemedView type="backgroundElement" style={[s.scoreCard, { borderColor: C.purple }]}>
                     <ThemedText style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: C.purple }}>VOCÊ</ThemedText>
@@ -1282,7 +1620,7 @@ export default function StopOnlineScreen() {
                   </ThemedView>
                   <ThemedText style={{ fontSize: 18, fontWeight: '800', color: theme.textSecondary }}>VS</ThemedText>
                   <ThemedView type="backgroundElement" style={[s.scoreCard, { borderColor: BRAND }]}>
-                    <ThemedText style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: BRAND }}>ADVERSÁRIO</ThemedText>
+                    <ThemedText style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: BRAND }} numberOfLines={1}>{oppName.toUpperCase()}</ThemedText>
                     <ThemedText style={{ fontSize: 30, fontWeight: '900', color: BRAND, lineHeight: 36 }}>
                       {oppLeft ? '—' : oppResult.score}
                     </ThemedText>
@@ -1340,7 +1678,7 @@ export default function StopOnlineScreen() {
                           <Badge res={myRes} />
                         </View>
                         <View style={[s.compCell, { backgroundColor: cellBg(oppRes, theirV) }]}>
-                          <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: BRAND }}>ADVERSÁRIO</ThemedText>
+                          <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: BRAND }} numberOfLines={1}>{oppName.toUpperCase()}</ThemedText>
                           <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(oppRes) }}>
                             {theirs || (oppLeft ? '(não respondeu)' : '—')}
                           </ThemedText>
@@ -1353,8 +1691,8 @@ export default function StopOnlineScreen() {
               </>
             )}
 
-            {/* Rematch — only realtime, only if no abandon */}
-            {!isAbandon && !oppLeft && !isAsync && (
+            {/* Rematch — só 1v1, sem abandono */}
+            {!isMulti && !isAbandon && !oppLeft && !isAsync && (
               <>
                 <TouchableOpacity
                   style={[s.btn, myRematch
@@ -1375,15 +1713,7 @@ export default function StopOnlineScreen() {
               </>
             )}
 
-            <TouchableOpacity style={s.ghostBtn} onPress={() => {
-              setPhase('selecting'); setAbandoned(null);
-              setMyResult(null); setOppResult(null);
-              setP1Rematch(false); setP2Rematch(false);
-              setCoinDelta(null); coinsAwardedRef.current = false;
-              pendingResultsRef.current = null;
-              setMyBankMap({}); setOppBankMap({}); setAiLoading(false);
-              fetchAsyncGames();
-            }} activeOpacity={0.8}>
+            <TouchableOpacity style={s.ghostBtn} onPress={handleBack} activeOpacity={0.8}>
               <ThemedText style={[s.btnTxt, { color: theme.textSecondary }]}>VOLTAR AO MENU</ThemedText>
             </TouchableOpacity>
           </ScrollView>
@@ -1518,7 +1848,7 @@ const s = StyleSheet.create({
     padding: Spacing.three,
   },
   codeLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: C.purple },
-  codeText:  { fontSize: 42, fontWeight: '900', letterSpacing: 8, color: C.purple },
+  codeText:  { fontSize: 38, fontWeight: '900', letterSpacing: 4, color: C.purple, lineHeight: 48 },
 
   // Code entry (selection screen)
   codeEntryRow: { flexDirection: 'row', gap: Spacing.two, alignSelf: 'stretch', alignItems: 'center' },
@@ -1583,6 +1913,22 @@ const s = StyleSheet.create({
   stopBtn: { paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', marginTop: Spacing.one },
   stopTxt: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1.5 },
 
+  // Player picker (selection screen)
+  playerPickerWrap: { alignSelf: 'stretch', gap: Spacing.one },
+  playerPickerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#9B97D4' },
+  playerPickerRow:   { flexDirection: 'row', gap: Spacing.two },
+  playerPickerBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: C.radius.md, alignItems: 'center',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: 'transparent',
+  },
+  playerPickerTxt: { fontSize: 13, fontWeight: '800' },
+
+  // Player slots (matchmaking)
+  playerSlot: {
+    alignItems: 'center', width: 56, paddingVertical: 8,
+    borderRadius: C.radius.md, borderWidth: 1.5, gap: 2,
+  },
+
   // Result
   coinBadge: {
     alignSelf: 'center', paddingHorizontal: 20, paddingVertical: 8,
@@ -1600,4 +1946,11 @@ const s = StyleSheet.create({
   compAnswers:  { flexDirection: 'row', gap: Spacing.one },
   compCell:     { flex: 1, borderRadius: C.radius.sm, padding: Spacing.one, gap: 2 },
   compBadge:    { fontSize: 8, fontWeight: '800', color: C.green, letterSpacing: 0.3 },
+
+  // Leaderboard
+  leaderRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
+    borderRadius: C.radius.md, padding: Spacing.two,
+    borderWidth: 1, borderColor: C.border,
+  },
 });

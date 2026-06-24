@@ -1,14 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { useColorScheme } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { Bloco, TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
+import { pushProgress } from '@/lib/progress-sync';
+import { supabase } from '@/lib/supabase';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
 
@@ -20,6 +25,8 @@ interface Progresso {
 type Fase = 'conteudo' | 'quiz' | 'conclusao';
 
 function BlocoConteudo({ bloco, theme }: { bloco: Bloco; theme: ReturnType<typeof useTheme> }) {
+  const scheme = useColorScheme() ?? 'dark';
+
   if (bloco.tipo === 'versiculo') {
     return (
       <View style={[styles.blocoVersiculo, { backgroundColor: C.purple + '12', borderColor: C.purple }]}>
@@ -28,8 +35,9 @@ function BlocoConteudo({ bloco, theme }: { bloco: Bloco; theme: ReturnType<typeo
     );
   }
   if (bloco.tipo === 'destaque') {
+    const destaqueBg = scheme === 'dark' ? '#26215C' : C.purple + '18';
     return (
-      <View style={[styles.blocoDestaque, { backgroundColor: '#26215C', borderColor: C.purple + '55' }]}>
+      <View style={[styles.blocoDestaque, { backgroundColor: destaqueBg, borderColor: C.purple + '55' }]}>
         <ThemedText style={styles.blocoDestaqueIcon}>💡</ThemedText>
         <ThemedText style={[styles.blocoDestaqueText, { color: theme.text }]}>{bloco.texto}</ThemedText>
       </View>
@@ -52,6 +60,7 @@ function BlocoConteudo({ bloco, theme }: { bloco: Bloco; theme: ReturnType<typeo
 
 export default function LicaoScreen() {
   const theme = useTheme();
+  const { user } = useAuth();
   const { trilhaId, licaoId } = useLocalSearchParams<{ trilhaId: string; licaoId: string }>();
   const trilha = TRILHAS.find(t => t.id === Number(trilhaId));
   const licao = trilha?.licoes.find(l => l.id === Number(licaoId));
@@ -60,13 +69,21 @@ export default function LicaoScreen() {
   const [perguntaIdx, setPerguntaIdx] = useState(0);
   const [respostaSelecionada, setRespostaSelecionada] = useState<number | null>(null);
   const [mostrarExplicacao, setMostrarExplicacao] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [starRating, setStarRating] = useState(0);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
   const xpAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (fase === 'conclusao') {
       Animated.spring(xpAnim, { toValue: 1, useNativeDriver: true, tension: 50, friction: 8 }).start();
+      const isLastLesson = trilha ? !trilha.licoes.some(l => l.id === (licao?.id ?? 0) + 1) : false;
+      if (isLastLesson) {
+        setShowFeedback(true);
+        setStarRating(0);
+      }
     }
-  }, [fase, xpAnim]);
+  }, [fase, xpAnim, trilha, licao]);
 
   if (!trilha || !licao) {
     return (
@@ -91,8 +108,10 @@ export default function LicaoScreen() {
     const prog: Progresso = raw ? JSON.parse(raw) : { licoesConcluidas: [], xpTotal: 0 };
     if (!prog.licoesConcluidas.includes(key)) {
       prog.licoesConcluidas.push(key);
-      prog.xpTotal += 80;
+      prog.xpTotal += licao?.xp ?? 80;
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prog));
+      // Sincroniza com o banco em background (sem bloquear a UI)
+      if (user?.id) pushProgress(user.id).catch(() => {});
     }
     setFase('conclusao');
   }
@@ -111,6 +130,23 @@ export default function LicaoScreen() {
     } else {
       concluirLicao();
     }
+  }
+
+  async function submitFeedback(stars: number) {
+    setSendingFeedback(true);
+    const { error } = await supabase.from('licao_feedback').insert({
+      user_id:   user?.id ?? null,
+      trilha_id: Number(trilhaId),
+      licao_id:  Number(licaoId),
+      stars,
+    });
+    setSendingFeedback(false);
+    if (error) {
+      console.error('[licao_feedback]', error.message, error.code);
+      Alert.alert('Erro ao enviar', `Não foi possível salvar: ${error.message}`);
+      return;
+    }
+    setShowFeedback(false);
   }
 
   function irParaProximaLicao() {
@@ -161,6 +197,44 @@ export default function LicaoScreen() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+
+        {/* Modal de feedback com estrelas */}
+        <Modal
+          visible={showFeedback}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowFeedback(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText style={styles.modalEmoji}>⭐</ThemedText>
+              <ThemedText style={[styles.modalTitle, { color: theme.text }]}>Como foi essa lição?</ThemedText>
+              <ThemedText style={[styles.modalSub, { color: theme.textSecondary }]}>
+                Sua avaliação nos ajuda a melhorar o conteúdo
+              </ThemedText>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map(n => (
+                  <TouchableOpacity key={n} onPress={() => setStarRating(n)} activeOpacity={0.7} style={styles.starBtn}>
+                    <ThemedText style={[styles.starIcon, { opacity: n <= starRating ? 1 : 0.3 }]}>⭐</ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.modalBtns}>
+                <TouchableOpacity
+                  style={[styles.modalSendBtn, { opacity: starRating === 0 || sendingFeedback ? 0.5 : 1 }]}
+                  onPress={() => submitFeedback(starRating)}
+                  disabled={starRating === 0 || sendingFeedback}
+                  activeOpacity={0.8}>
+                  <ThemedText style={styles.modalSendText}>
+                    {sendingFeedback ? 'ENVIANDO...' : 'ENVIAR'}
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowFeedback(false)} activeOpacity={0.7}>
+                  <ThemedText style={[styles.modalSkipText, { color: theme.textSecondary }]}>Pular</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </ThemedView>
     );
   }
@@ -409,4 +483,41 @@ const styles = StyleSheet.create({
   xpCardText: { color: C.gold, fontSize: 28, fontWeight: '900', lineHeight: 36 },
   conclusaoBtns: { gap: Spacing.two, width: '100%' },
   linkBtn: { textAlign: 'center', fontSize: 14, fontWeight: '600', paddingVertical: 8 },
+  // Feedback modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  modalCard: {
+    borderRadius: 20,
+    padding: Spacing.four,
+    width: '100%',
+    alignItems: 'center',
+    gap: Spacing.two,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalEmoji:    { fontSize: 40, lineHeight: 50 },
+  modalTitle:    { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  modalSub:      { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  starsRow:      { flexDirection: 'row', gap: 8, marginVertical: Spacing.one },
+  starBtn:       { padding: 4 },
+  starIcon:      { fontSize: 36, lineHeight: 44 },
+  modalBtns:     { gap: Spacing.one, width: '100%', alignItems: 'center', marginTop: Spacing.one },
+  modalSendBtn: {
+    backgroundColor: C.purple,
+    paddingVertical: 13,
+    paddingHorizontal: 40,
+    borderRadius: 99,
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalSendText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 1 },
+  modalSkipText: { fontSize: 13, paddingVertical: 8 },
 });
