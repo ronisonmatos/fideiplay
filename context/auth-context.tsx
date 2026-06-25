@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
 export interface Profile {
@@ -53,14 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadTrilhas = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('user_trilhas')
       .select('trilha_id')
       .eq('user_id', userId);
-    if (error) {
-      console.warn('[loadTrilhas] erro:', error.message, error.code);
-    }
-    console.log('[loadTrilhas] data:', JSON.stringify(data));
     setTrilhasDesbloqueadas(data?.map(r => Number(r.trilha_id)) ?? []);
   }, []);
 
@@ -94,7 +91,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Quando o app volta do background, reinicia o auto-refresh do token.
+    // Sem isso, o JWT expira enquanto o app está parado e queries falham com 401.
+    const appStateSub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        supabase.auth.startAutoRefresh();
+        // Força re-leitura da sessão para garantir token válido em memória
+        const { data: { session: current } } = await supabase.auth.getSession();
+        if (current?.user.id) {
+          setSession(current);
+          loadProfile(current.user.id).catch(() => {});
+        }
+      } else {
+        supabase.auth.stopAutoRefresh();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateSub.remove();
+    };
   }, [loadProfile, loadTrilhas]);
 
   const signUp = useCallback(async (

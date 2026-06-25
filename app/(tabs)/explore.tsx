@@ -28,6 +28,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { getWeeklyRanking, RankingEntry } from '@/lib/score-events';
 import { scheduleCoinBonusReminder } from '@/lib/notifications';
+import { ECONOMY } from '@/constants/economy';
+import { CoinsAnimation } from '@/components/coins-animation';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -38,21 +40,42 @@ const ACHIEVEMENTS = [
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
 
-const AD_MAX_DAILY   = 3;
-const AD_COINS       = 50;
+function useAdCooldownCountdown(limitReached: boolean) {
+  const [countdown, setCountdown] = useState('');
+
+  useEffect(() => {
+    if (!limitReached) { setCountdown(''); return; }
+    const tick = () => {
+      const now      = new Date();
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 0);
+      const diff = midnight.getTime() - now.getTime();
+      const h = Math.floor(diff / 3_600_000).toString().padStart(2, '0');
+      const m = Math.floor((diff % 3_600_000) / 60_000).toString().padStart(2, '0');
+      const s = Math.floor((diff % 60_000) / 1_000).toString().padStart(2, '0');
+      setCountdown(`${h}:${m}:${s}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [limitReached]);
+
+  return countdown;
+}
 
 function AdRewardCard({ profile }: { profile: Profile }) {
-  const today      = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  const isToday    = profile.ad_watches_date === today;
-  const watched    = isToday ? (profile.ad_watches_today ?? 0) : 0;
-  const remaining  = Math.max(0, AD_MAX_DAILY - watched);
+  const today        = new Date().toISOString().slice(0, 10);
+  const isToday      = profile.ad_watches_date === today;
+  const watched      = isToday ? (profile.ad_watches_today ?? 0) : 0;
+  const remaining    = Math.max(0, ECONOMY.AD_MAX_DAILY - watched);
   const limitReached = remaining === 0;
+  const countdown    = useAdCooldownCountdown(limitReached);
 
   return (
     <>
       <ThemedText style={styles.sectionLabel}>GANHAR MOEDAS</ThemedText>
       <TouchableOpacity
-        style={[styles.adCard, limitReached && { opacity: 0.5 }]}
+        style={[styles.adCard, limitReached && { opacity: 0.6 }]}
         onPress={() => router.push('/ad-reward')}
         activeOpacity={0.82}
         disabled={limitReached}>
@@ -60,18 +83,18 @@ function AdRewardCard({ profile }: { profile: Profile }) {
           <ThemedText style={{ fontSize: 28, lineHeight: 36 }}>📺</ThemedText>
           <View style={{ gap: 2, flex: 1 }}>
             <ThemedText style={styles.adCardTitle} numberOfLines={2}>
-              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${AD_COINS} 🪙`}
+              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${ECONOMY.AD_REWARD} 🪙`}
             </ThemedText>
             <ThemedText style={styles.adCardSub}>
               {limitReached
-                ? 'Volte amanhã para mais moedas'
-                : `${watched}/${AD_MAX_DAILY} vídeos assistidos hoje`}
+                ? (countdown ? `Próximo disponível em ${countdown}` : 'Volte amanhã para mais moedas')
+                : `${watched}/${ECONOMY.AD_MAX_DAILY} vídeos assistidos hoje`}
             </ThemedText>
           </View>
         </View>
         {!limitReached && (
           <View style={styles.adCardDots}>
-            {Array.from({ length: AD_MAX_DAILY }).map((_, i) => (
+            {Array.from({ length: ECONOMY.AD_MAX_DAILY }).map((_, i) => (
               <View
                 key={i}
                 style={[styles.adDot, i < watched && { backgroundColor: C.gold }]}
@@ -123,6 +146,7 @@ export default function ContaScreen() {
   const [ranking,      setRanking]      = useState<RankingEntry[]>([]);
   const [rankingLoad,  setRankingLoad]  = useState(false);
   const [justClaimed,  setJustClaimed]  = useState(false);
+  const [coinAnim,     setCoinAnim]     = useState(false);
   const [claiming,     setClaiming]     = useState(false);
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
@@ -163,6 +187,7 @@ export default function ContaScreen() {
     if (!error && result > 0) {
       await refreshProfile();
       setJustClaimed(true);
+      setCoinAnim(true);
       showRewardToast();
       scheduleCoinBonusReminder();
     } else {
@@ -189,12 +214,15 @@ export default function ContaScreen() {
     setRefreshing(false);
   }, [refreshProfile, loadRanking]);
 
-  if (loading) {
+  // Skeleton: mostra durante loading inicial OU quando user existe mas profile ainda não chegou
+  if (loading || (user && !profile)) {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <View style={styles.centerFlex}>
-            <ActivityIndicator color={C.purple} size="large" />
+          <View style={[styles.mainScroll, { paddingTop: 24, gap: 16 }]}>
+            {[80, 120, 60, 60].map((h, i) => (
+              <View key={i} style={[styles.skeletonBlock, { height: h }]} />
+            ))}
           </View>
         </SafeAreaView>
       </ThemedView>
@@ -205,6 +233,11 @@ export default function ContaScreen() {
   if (user && profile) {
     return (
       <ThemedView style={styles.fill}>
+        <CoinsAnimation
+          amount={ECONOMY.BONUS_2_HORAS}
+          visible={coinAnim}
+          onDone={() => setCoinAnim(false)}
+        />
         <SafeAreaView style={styles.fill} edges={['top']}>
           <ScrollView
             contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}
@@ -398,8 +431,13 @@ export default function ContaScreen() {
 }
 
 const styles = StyleSheet.create({
-  fill:         { flex: 1 },
-  centerFlex:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  fill:          { flex: 1 },
+  centerFlex:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  skeletonBlock: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(128,128,128,0.15)',
+    marginHorizontal: Spacing.four,
+  },
   textCenter:   { textAlign: 'center' },
   sectionLabel: {
     fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
