@@ -12,7 +12,6 @@ import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { Bloco, TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
-import { pushProgress } from '@/lib/progress-sync';
 import { supabase } from '@/lib/supabase';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
@@ -103,15 +102,21 @@ export default function LicaoScreen() {
   const passoAtual = fase === 'conteudo' ? 0 : perguntaIdx;
 
   async function concluirLicao() {
-    const key = `${trilhaId}-${licaoId}`;
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    const prog: Progresso = raw ? JSON.parse(raw) : { licoesConcluidas: [], xpTotal: 0 };
-    if (!prog.licoesConcluidas.includes(key)) {
-      prog.licoesConcluidas.push(key);
-      prog.xpTotal += licao?.xp ?? 80;
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prog));
-      // Sincroniza com o banco em background (sem bloquear a UI)
-      if (user?.id) pushProgress(user.id).catch(() => {});
+    if (user?.id) {
+      const key = `${trilhaId}-${licaoId}`;
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const prog: Progresso = raw ? JSON.parse(raw) : { licoesConcluidas: [], xpTotal: 0 };
+      if (!prog.licoesConcluidas.includes(key)) {
+        prog.licoesConcluidas.push(key);
+        prog.xpTotal += licao.xp;
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prog));
+        // Grava direto no banco só os campos de trilha — evita mandar unlocked_achievements vazio
+        supabase.rpc('merge_user_progress', {
+          p_user_id:           user.id,
+          p_licoes_concluidas: prog.licoesConcluidas,
+          p_trilhas_xp:        prog.xpTotal,
+        }).then(() => {}).catch(() => {});
+      }
     }
     setFase('conclusao');
   }

@@ -3,6 +3,11 @@ export const ECONOMY = {
   MOEDAS_INICIAIS:          50,
   BONUS_BOAS_VINDAS:        30,
 
+  // XP por questão acertada (varia por dificuldade)
+  XP_FACIL:   5,
+  XP_MEDIO:   7,
+  XP_DIFICIL: 9,
+
   // Ganhos por jogabilidade
   COMPLETAR_QUIZ:           5,
   BONUS_QUIZ_PERFEITO:      10,

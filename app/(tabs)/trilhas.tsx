@@ -13,6 +13,7 @@ import { useAuth } from '@/context/auth-context';
 import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+import { pullProgress } from '@/lib/progress-sync';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
 
@@ -31,12 +32,21 @@ const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 
 export default function TrilhasScreen() {
   const theme = useTheme();
-  const { trilhasDesbloqueadas, refreshTrilhas } = useAuth();
+  const { user, trilhasDesbloqueadas, refreshTrilhas } = useAuth();
   const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [trilhaConfigs, setTrilhaConfigs] = useState<Record<number, TrilhaConfig>>({});
 
   const loadData = useCallback(async () => {
+    if (user?.id) {
+      const remote = await pullProgress(user.id).catch(() => null);
+      if (remote) {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
+          licoesConcluidas: remote.licoesConcluidas,
+          xpTotal:          remote.trilhasXp,
+        })).catch(() => {});
+      }
+    }
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw) setProgresso(JSON.parse(raw));
     await refreshTrilhas().catch(() => {});
@@ -48,7 +58,7 @@ export default function TrilhasScreen() {
       }
       setTrilhaConfigs(map);
     }
-  }, [refreshTrilhas]);
+  }, [user, refreshTrilhas]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 

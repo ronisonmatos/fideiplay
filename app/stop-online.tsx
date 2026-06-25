@@ -289,7 +289,7 @@ export default function StopOnlineScreen() {
     coinsAwardedRef.current = true;
     setCoinDelta(delta);
     if (!user?.id || delta === 0) return;
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: delta });
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: delta, p_motivo: 'stop_online' });
     refreshProfile();
   }, [user, refreshProfile]);
 
@@ -380,7 +380,7 @@ export default function StopOnlineScreen() {
             setMyResult({ answers: ans, score, validCount });
             setOppResult({ answers: {}, score: 0, validCount: 0 });
             setAbandoned('opp');
-            awardCoinsRef.current(COINS.OPP_OUT);
+            awardCoinsRef.current(COINS.OPP_OUT + validCount * 2);
             setPhase('result');
           }
 
@@ -412,7 +412,7 @@ export default function StopOnlineScreen() {
         setMyResult({ answers: ans, score, validCount });
         setOppResult({ answers: {}, score: 0, validCount: 0 });
         setAbandoned('opp');
-        awardCoinsRef.current(COINS.OPP_OUT);
+        awardCoinsRef.current(COINS.OPP_OUT + validCount * 2);
         setPhase('result');
       })
       .subscribe();
@@ -782,8 +782,7 @@ export default function StopOnlineScreen() {
           if (myRank === 1 && tiedAtTop === 1)          delta = COINS.WIN_RT;   // vencedor único
           else if (myRank === 1 && tiedAtTop > 1)       delta = COINS.DRAW_RT;  // empate no topo
           else if (mine?.score === lastScore && !allTied) delta = COINS.LOSE_RT; // último isolado
-          awardCoinsRef.current(delta);
-          if (cats.length > 0 && myVC === cats.length) awardCoinsRef.current(1);
+          awardCoinsRef.current(delta + myVC * 2);
           if (myS > 0 && myId) recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
         }
 
@@ -803,9 +802,7 @@ export default function StopOnlineScreen() {
             : myS === oppS
               ? (isAS ? COINS.DRAW_AS : COINS.DRAW_RT)
               : (isAS ? COINS.LOSE_AS : COINS.LOSE_RT);
-          awardCoinsRef.current(delta);
-          const perfectGame = cats.length > 0 && myVC === cats.length;
-          if (perfectGame) awardCoinsRef.current(1);
+          awardCoinsRef.current(delta + myVC * 2);
           if (myS > 0 && myId) recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
         }
       }

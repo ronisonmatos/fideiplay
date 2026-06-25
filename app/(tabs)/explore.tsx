@@ -26,6 +26,7 @@ import { useGameStore } from '@/context/game-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+import { pullProgress } from '@/lib/progress-sync';
 import { getWeeklyRanking, RankingEntry } from '@/lib/score-events';
 import { scheduleCoinBonusReminder } from '@/lib/notifications';
 import { ECONOMY } from '@/constants/economy';
@@ -178,7 +179,7 @@ export default function ContaScreen() {
   const theme        = useTheme();
   const colorScheme  = useColorScheme();
   const isDark       = colorScheme === 'dark';
-  const { totalScore, gamesPlayed, unlockedAchievements } = useGameStore();
+  const { totalScore, gamesPlayed, unlockedAchievements, hydrate } = useGameStore();
   const { user, profile, refreshProfile, signOut, loading } = useAuth();
 
   const [ranking,      setRanking]      = useState<RankingEntry[]>([]);
@@ -237,9 +238,20 @@ export default function ContaScreen() {
     setClaiming(false);
   }, [claiming, user, refreshProfile, showRewardToast]);
 
+  const refreshProgress = useCallback(async () => {
+    if (!user?.id) return;
+    const remote = await pullProgress(user.id).catch(() => null);
+    if (remote) hydrate({
+      totalScore:           remote.gamesXp,
+      gamesPlayed:          remote.gamesPlayed,
+      unlockedAchievements: remote.unlockedAchievements,
+    });
+  }, [user, hydrate]);
+
   useFocusEffect(useCallback(() => {
     loadRanking();
-  }, [loadRanking]));
+    refreshProgress();
+  }, [loadRanking, refreshProgress]));
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -248,9 +260,10 @@ export default function ContaScreen() {
     await Promise.all([
       refreshProfile().catch(() => {}),
       loadRanking(),
+      refreshProgress(),
     ]);
     setRefreshing(false);
-  }, [refreshProfile, loadRanking]);
+  }, [refreshProfile, loadRanking, refreshProgress]);
 
   // Skeleton: mostra durante loading inicial OU quando user existe mas profile ainda não chegou
   if (loading || (user && !profile)) {

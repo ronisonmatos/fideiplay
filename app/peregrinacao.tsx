@@ -1,14 +1,18 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
+import { GameRewardBanner } from '@/components/game-reward-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
+import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeSanctuaries } from '@/hooks/use-game-packs';
+import { supabase } from '@/lib/supabase';
 
 interface Question {
   question: string;
@@ -167,9 +171,11 @@ type Screen = 'map' | 'quiz' | 'result';
 export default function PeregrinacaoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { user, refreshProfile } = useAuth();
   const { packs } = useGamePacks('peregrinacao');
   const allSanctuaries = useMemo(() => mergeSanctuaries(SANCTUARIES, packs), [packs]);
   const [unlocked, setUnlocked] = useState(1);
+  const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [screen, setScreen] = useState<Screen>('map');
   const [activeSanctuary, setActiveSanctuary] = useState(0);
   const [shuffledQuestions, setShuffledQuestions] = useState<Question[]>([]);
@@ -177,9 +183,26 @@ export default function PeregrinacaoScreen() {
   const [selected, setSelected] = useState<number | null>(null);
   const [correct, setCorrect] = useState(0);
   const reportedSanctuaries = useRef<Set<number>>(new Set());
+  const coinsAwardedRef = useRef<Set<number>>(new Set());
 
   const sanctuary = allSanctuaries[activeSanctuary];
   const q = shuffledQuestions[qIndex];
+
+  // Award coins when result screen appears (before user taps back)
+  useEffect(() => {
+    if (screen !== 'result' || coinsAwardedRef.current.has(activeSanctuary) || !user?.id) return;
+    const passed = correct >= 2;
+    if (!passed) return;
+    coinsAwardedRef.current.add(activeSanctuary);
+    const nextUnlockedCalc = activeSanctuary + 1 >= unlocked
+      ? Math.min(unlocked + 1, allSanctuaries.length)
+      : unlocked;
+    const isComplete = nextUnlockedCalc >= allSanctuaries.length;
+    const coins = ECONOMY.COMPLETAR_QUIZ + (isComplete ? ECONOMY.COMPLETAR_TRILHA_INTEIRA : 0);
+    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
+      .then(() => { setCoinsEarned(coins); refreshProfile(); })
+      .catch(() => {});
+  }, [screen, correct, activeSanctuary, unlocked, allSanctuaries.length, user, refreshProfile]);
 
   const enterSanctuary = (idx: number) => {
     setActiveSanctuary(idx);
@@ -187,6 +210,7 @@ export default function PeregrinacaoScreen() {
     setQIndex(0);
     setSelected(null);
     setCorrect(0);
+    setCoinsEarned(null);
     setScreen('quiz');
   };
 
@@ -217,11 +241,8 @@ export default function PeregrinacaoScreen() {
     }
     if (!reportedSanctuaries.current.has(activeSanctuary)) {
       reportedSanctuaries.current.add(activeSanctuary);
-      reportResult({
-        gameId: 'peregrinacao',
-        score: correct * 10,
-        pilgrimComplete: nextUnlocked >= allSanctuaries.length,
-      });
+      const isComplete = nextUnlocked >= allSanctuaries.length;
+      reportResult({ gameId: 'peregrinacao', score: correct * ECONOMY.XP_MEDIO, pilgrimComplete: isComplete });
     }
     setScreen('map');
   };
@@ -319,6 +340,7 @@ export default function PeregrinacaoScreen() {
                   : 'Próximo santuário desbloqueado! Continue a peregrinação.'
                 : 'Acerte pelo menos 2 perguntas para avançar.'}
             </ThemedText>
+            {passed && <GameRewardBanner xp={correct * ECONOMY.XP_MEDIO} coins={coinsEarned} />}
             <TouchableOpacity style={styles.greenBtn} onPress={finishSanctuary} activeOpacity={0.8}>
               <ThemedText style={styles.btnText}>VOLTAR AO MAPA</ThemedText>
             </TouchableOpacity>

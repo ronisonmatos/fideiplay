@@ -19,7 +19,7 @@ export interface Licao {
   resumo: string;
   conteudo: Bloco[];
   perguntas: Pergunta[];
-  xp: 80;
+  xp: number;
 }
 
 export interface Trilha {
@@ -43,7 +43,7 @@ export const TRILHAS: Trilha[] = [
     icone: '✝️',
     nivel: 'Iniciante',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: true,
     licoes: [
       {
@@ -104,7 +104,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'As virtudes teologais têm Deus como sua origem e são infundidas diretamente por Ele na alma, especialmente no Batismo. Elas ultrapassam as capacidades naturais humanas.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -164,7 +164,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A Onipresença é o atributo pelo qual Deus está presente em todo lugar simultaneamente. A Onipotência é o poder ilimitado; a Onisciência é o conhecimento de tudo.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -224,7 +224,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Jesus veio para redimir a humanidade: pela sua morte e ressurreição, venceu o pecado e a morte, abrindo o caminho para a vida eterna.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -284,7 +284,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A pomba representa o Espírito Santo no Batismo de Jesus (Mt 3,16) e as línguas de fogo simbolizam sua descida em Pentecostes (At 2,3).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -344,7 +344,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Batismo, Crisma e Ordem imprimem um caráter espiritual permanente na alma, razão pela qual são recebidos uma única vez.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -404,7 +404,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Os padrinhos assumem o compromisso de testemunhar a fé, apoiar a formação cristã do afilhado e rezar por ele. É uma responsabilidade espiritual séria diante da Igreja.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -464,7 +464,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Código de Direito Canônico (cân. 919) estabelece que o fiel deve abster-se de qualquer alimento ou bebida por pelo menos 1 hora antes da Sagrada Comunhão.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -524,7 +524,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Código de Direito Canônico (cân. 882) estabelece que o ministro ordinário da Confirmação é o bispo. Em casos especiais, o bispo pode delegar sacerdotes.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -535,7 +535,7 @@ export const TRILHAS: Trilha[] = [
     icone: '🕊️',
     nivel: 'Iniciante',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: true,
     licoes: [
       {
@@ -596,7 +596,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O nome Missa deriva do "Ite, missa est" (Ide, está encerrada/enviados) — a fórmula de despedida que expressa o envio missionário dos fiéis ao final da celebração.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -656,7 +656,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A oração coleta é presidida pelo sacerdote celebrante, que "coleta" as intenções silenciosas de toda a assembleia e as apresenta a Deus em nome de todos.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -716,7 +716,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A Homilia é reservada ao sacerdote ou diácono, pois é a proclamação autorizada da Palavra no contexto litúrgico, conectando as leituras com a vida da fé.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -776,7 +776,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A inclinação ao dizer "e se fez homem" é um gesto de adoração diante do sublime mistério da Encarnação — Deus que se fez homem por amor a nós.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -836,7 +836,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Missal Romano tem quatro Orações Eucarísticas principais (I a IV), além de formas especiais para situações particulares como missas com crianças.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -896,7 +896,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Pai Nosso tem 7 petições: 3 voltadas à glória de Deus (santificação do nome, vinda do Reino, cumprimento da vontade) e 4 para nossas necessidades (pão, perdão, livramento da tentação e do mal).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -956,7 +956,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Código de Direito Canônico (cân. 919) estabelece o jejum eucarístico de pelo menos 1 hora antes da Sagrada Comunhão, exceto para doentes e idosos.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -1016,7 +1016,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O sacerdote faz o sinal da cruz sobre a assembleia ao pronunciar a bênção trinitária: "Em nome do Pai, do Filho e do Espírito Santo."',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -1027,7 +1027,7 @@ export const TRILHAS: Trilha[] = [
     icone: '🙏',
     nivel: 'Iniciante',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: true,
     licoes: [
       {
@@ -1088,7 +1088,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A contrição é a oração de arrependimento pelos pecados cometidos, expressando dor pelo mal praticado e firme propósito de emenda.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -1148,7 +1148,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'As três primeiras petições — santificação do nome, vinda do Reino e cumprimento da vontade — são voltadas para a glória de Deus. As quatro últimas são para nossas necessidades.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -1208,7 +1208,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A segunda parte ("Santa Maria, Mãe de Deus, rogai por nós pecadores, agora e na hora de nossa morte") é uma súplica pedindo a intercessão de Maria junto a Deus.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -1268,7 +1268,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Os Mistérios Gozosos contemplam: Anunciação, Visitação, Nascimento, Apresentação no Templo e Encontro do Menino Jesus no Templo.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -1328,7 +1328,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Cada dezena começa com o anúncio do mistério e um Pai Nosso, seguido de 10 Ave Marias e encerrado com o Glória e a oração de Fátima.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -1388,7 +1388,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A novena a Nossa Senhora Aparecida é especialmente rezada em outubro, mês de Nossa Senhora do Rosário. A festa da Padroeira do Brasil é celebrada em 12 de outubro.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -1448,7 +1448,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Cada uma das 7 alegrias da Coroa Franciscana é rezada com 1 Pai Nosso e 10 Ave Marias, totalizando 70 Ave Marias (mais 2 ao final = 72).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -1508,7 +1508,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Memorare é uma oração de profunda confiança na intercessão de Maria, afirmando que quem recorre a ela jamais foi abandonado.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -1519,7 +1519,7 @@ export const TRILHAS: Trilha[] = [
     icone: '📿',
     nivel: 'Intermediário',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: false,
     preco: 9.90,
     licoes: [
@@ -1566,7 +1566,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O último domingo do ano litúrgico é a solenidade de Cristo Rei do Universo, celebrando a realeza universal de Jesus antes do início do Advento.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -1611,7 +1611,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: "'Gaudete' significa 'alegrai-vos' em latim. É um momento de alegria antecipada no meio do tempo penitencial do Advento, expresso pela vela rosa.",
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -1656,7 +1656,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'São Francisco de Assis criou o primeiro preségio vivo em Greccio em 1223, para tornar concreto o mistério da Encarnação ao povo.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -1701,7 +1701,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A Quarta-feira de Cinzas inicia a Quaresma com a imposição das cinzas, símbolo de penitência e mortalidade, lembrando que somos pó e ao pó voltaremos.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -1746,7 +1746,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: "O rito da lavagem dos pés é chamado de Mandatum (mandamento) por causa das palavras de Jesus: 'Um mandamento novo vos dou: que vos ameis uns aos outros' (Jo 13,34), proferidas após o gesto.",
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -1791,7 +1791,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A Páscoa cristã é calculada pelo comput pascal: primeiro domingo após a primeira lua cheia após 21 de março. Por isso é uma data móvel, variando entre 22 de março e 25 de abril.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -1836,7 +1836,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A liturgia usa um ciclo trianual (anos A, B, C) para ler os Sinóticos. No ano A lemos Mateus, B Marcos, C Lucas. O Evangelho de João é lido principalmente na Páscoa e Natal.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -1881,7 +1881,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Ao benzer-se com água benta, o fiel renova mentalmente a graça do seu Batismo — a morte para o pecado e o renascimento para a vida em Cristo.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -1892,7 +1892,7 @@ export const TRILHAS: Trilha[] = [
     icone: '⚖️',
     nivel: 'Intermediário',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: false,
     preco: 9.90,
     licoes: [
@@ -1939,7 +1939,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Catecismo (n. 1857) define três condições para o pecado mortal: matéria grave, plena advertência e deliberado consentimento. A ausência de qualquer um desses elementos reduz a gravidade do pecado.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -1984,7 +1984,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A consciência precisa ser formada pelas fontes objetivas da moral cristã: a Sagrada Escritura, o Magistério da Igreja, a oração, os sacramentos e a prática do exame de consciência.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -2029,7 +2029,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A inveja é a tristeza diante do bem alheio acompanhada do desejo de privá-lo desse bem. É especialmente grave porque se opõe diretamente à caridade fraterna.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -2074,7 +2074,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A Temperança modera a atração pelos prazeres e assegura o domínio da vontade sobre os instintos. Ela garante o equilíbrio e não permite que o prazer legítimo se torne desordenado.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -2119,7 +2119,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A universalidade da Lei Natural decorre de sua origem divina e de ser inscrita na natureza racional humana. Por isso, seus preceitos fundamentais são reconhecíveis por todos os povos e culturas, mesmo com variações.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -2164,7 +2164,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Em Mt 22,37-40, Jesus resumiu toda a Lei e os Profetas em dois mandamentos: amar a Deus de todo o coração e amar o próximo como a si mesmo. Estes dois contêm e fundamentam os dez.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -2209,7 +2209,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Ágape é a palavra grega usada no Novo Testamento para o amor cristão — amor que doa, que serve, que perdoa, que não busca o próprio interesse (1Cor 13). É o amor com que Deus nos ama e que somos chamados a imitar.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -2254,7 +2254,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'João Paulo II instituiu o Domingo da Divina Misericórdia (1º domingo após a Páscoa) ao canonizar Santa Faustina em 30 de abril de 2000, tornando-o universal para toda a Igreja Católica.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -2265,7 +2265,7 @@ export const TRILHAS: Trilha[] = [
     icone: '📜',
     nivel: 'Avançado',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: true,
     licoes: [
       {
@@ -2326,7 +2326,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O ministro do sacramento da Penitência é o bispo ou o presbítero que possua a faculdade (jurisdição) de absolver, concedida pelo direito ou pelo ordinário competente (CDC can. 966). Sem jurisdição, a absolvição é inválida, salvo em perigo de morte.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -2386,7 +2386,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O sacrifício é único e idêntico em substância — mesma vítima (Cristo), mesmo sacerdote principal (Cristo). O que difere é o modo: sangrento na Cruz, incruento na Missa. Não há dois sacrifícios, mas um mesmo oferecido de forma diferente (Trento, Sess. XXII, cap. 2).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -2446,7 +2446,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A Confirmação, como o Batismo e a Ordem, imprime um *character* — marca espiritual permanente. Não pode ser repetida porque aquilo que se imprimiu na alma permanece para sempre, mesmo em estado de pecado (CIC n. 1317).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -2506,7 +2506,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: '*In persona Christi* significa que o sacerdote ordenado age como instrumento e representante de Cristo Cabeça nos sacramentos — especialmente na Eucaristia e na Absolvição. A eficácia do ato não depende da santidade do ministro, mas da ordenação válida e da intenção de fazer o que a Igreja faz.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -2566,7 +2566,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A indissolubilidade significa que o vínculo do matrimônio rato e consumado entre batizados não pode ser dissolvido por nenhuma autoridade humana — nem civil nem eclesiástica. Apenas a morte de um cônjuge dissolve o vínculo (CDC, can. 1141). A nulidade declara que nunca houve matrimônio válido.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -2626,7 +2626,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Concílio Vaticano II (Sacrosanctum Concilium, 73) determinou que o sacramento se destinava aos enfermos — não exclusivamente aos que estão à beira da morte. Assim, o nome "Extrema Unção" foi substituído por "Unção dos Enfermos" para refletir seu verdadeiro escopo sacramental.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -2686,7 +2686,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A indulgência plenária remite *toda* a pena temporal devida pelos pecados, cuja culpa já foi perdoada. Exige estado de graça, ausência de apego a qualquer pecado (mesmo venial), e o cumprimento das obras prescritas (oração, confissão, comunhão, intenção do Papa).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -2746,7 +2746,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O mérito *de condigno* (de estrita condigência) é o pelo qual, fundado na graça santificante e na caridade, se merece a vida eterna com rigor de justiça — condignamente. O mérito *de congruo* (de conveniência) é menos rigoroso, como quando intercedemos pelos outros: convém que Deus atenda, mas não há estrita exigência.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -2757,7 +2757,7 @@ export const TRILHAS: Trilha[] = [
     icone: '🏛️',
     nivel: 'Intermediário',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: true,
     licoes: [
       {
@@ -2818,7 +2818,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Pentecostes (At 2) é considerado o "nascimento" visível da Igreja: o Espírito Santo desce sobre os Apóstolos reunidos com Maria, Pedro prega publicamente e cerca de 3.000 pessoas são batizadas naquele dia — formando a primeira comunidade cristã de Jerusalém.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -2878,7 +2878,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Do grego *martys* (μάρτυς) = testemunha. O mártir cristão testemunha com seu sangue a verdade do Evangelho e a realidade da Ressurreição de Cristo. O martírio é considerado pela Igreja o ato de fé mais perfeito — *baptismus sanguinis* (batismo de sangue).',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -2938,7 +2938,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Os Padres Apostólicos são a geração-ponte entre os Apóstolos e a Igreja pós-apostólica. Por terem recebido a fé diretamente dos Apóstolos ou de seus discípulos imediatos, seus escritos são testemunhos de primeira ordem sobre a fé e a prática da Igreja primitiva — parte essencial da Tradição Viva.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -2998,7 +2998,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Santo Atanásio de Alexandria (*c.* 296–373) foi o principal defensor da fé nicena, exilado cinco vezes por imperadores arianos. A expressão *Athanasius contra mundum* (Atanásio contra o mundo) resume sua resistência solitária ao arianismo dominante na corte imperial.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -3058,7 +3058,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O cesaropapismo é a subordinação da autoridade eclesiástica ao poder civil. São Ambrósio de Milão (c. 340–397) o combateu exemplarmente ao impor penitência pública ao imperador Teodósio I pelo massacre de Tessalônica (390 d.C.) — afirmando que o imperador estava sujeito à lei de Cristo, não acima dela.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -3118,7 +3118,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Agostinho foi batizado pelo bispo Santo Ambrósio de Milão na Vigília Pascal de 387 d.C., na Páscoa. Seu percurso de conversão — do maniqueísmo ao neoplatonismo ao catolicismo — está narrado em detalhes nas *Confissões* (livros I–IX). Sua mãe, Santa Mônica, acompanhou o processo com orações por décadas.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -3178,7 +3178,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'O Concílio de Trento (Sessão IV, 1546) declarou a Vulgata "autêntica" para uso litúrgico e doutrinal da Igreja latina — não por ser a mais perfeita filologicamente, mas por sua autoridade de séculos de uso ininterrupto, aceitação universal e conformidade com a fé transmitida.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -3238,7 +3238,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Em 1964, Paulo VI e Atenágoras I se encontraram em Jerusalém — o primeiro encontro entre Papa e Patriarca em séculos. Em 7 de dezembro de 1965, publicaram uma declaração conjunta expressando "pesar" pelos eventos de 1054 e levantando as excomunhões mútuas — sem, contudo, restaurar a plena comunhão.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },
@@ -3249,7 +3249,7 @@ export const TRILHAS: Trilha[] = [
     icone: '🏰',
     nivel: 'Avançado',
     totalLicoes: 8,
-    xpTotal: 640,
+    xpTotal: 240,
     gratis: false,
     preco: 9.90,
     licoes: [
@@ -3311,7 +3311,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Teresa ensina que a alma em pecado mortal é como um castelo de cristal coberto por trevas: "ainda que o mesmo sol que lhe dava tanta claridade e formosura esteja no centro da alma, é como se ele não estivesse ali" (I,2,1). A alma não é destruída pelo pecado, mas sua beleza torna-se invisível.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 2,
@@ -3371,7 +3371,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Teresa ensina que não é possível conhecer-se verdadeiramente sem se elevar a contemplar a grandeza de Deus — e vice-versa. As almas que vivem sempre olhando para sua própria miséria, sem elevar o olhar a Deus, tendem ao desânimo e à pusilanimidade. O verdadeiro autoconhecimento gera humildade, não depressão.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 3,
@@ -3431,7 +3431,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Teresa narra em sua *Vida* (autobiografia) que passou cerca de dezoito anos em sofrimento espiritual, entrando no oratório por obrigação e olhando para o relógio. Esta confissão pública de suas dificuldades é um dos aspectos mais valiosos de seu ensinamento: o progresso espiritual é lento e doloroso, mas possível com a graça de Deus.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 4,
@@ -3491,7 +3491,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Para Teresa, a aridez não é punição mas pedagogia divina: Deus retira os consolos sensíveis para purificar o amor da alma. Quando os consolos desaparecem e a alma continua fiel à oração, está aprendendo a amar a Deus por Ele mesmo — não pelo prazer que Ele dá. Este é um passo essencial para avançar às moradas superiores.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 5,
@@ -3551,7 +3551,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A fronteira entre as terceiras e quartas moradas marca a passagem da oração *adquirida* (fruto do esforço humano) para a oração *infusa* (dom de Deus que vem de dentro). A alma deixa de ser predominantemente ativa para tornar-se predominantemente receptiva — começa a verdadeira contemplação.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 6,
@@ -3611,7 +3611,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'A tradição hesicasta oriental (*hēsychia* = repouso/silêncio), especialmente a Oração de Jesus ("Senhor Jesus Cristo, Filho de Deus, tende misericórdia de mim, pecador"), aponta para uma experiência análoga de oração do coração que conduz ao repouso contemplativo em Deus. Embora culturalmente diferente, converge com o ensinamento teresiano sobre a quietude.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 7,
@@ -3671,7 +3671,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: 'Teresa vê na obediência ao confessor sábio uma das proteções mais seguras contra o engano espiritual: o demônio dificilmente consegue manter uma ilusão quando a alma é transparente e obediente ao diretor. A desobediência ao confessor em matérias espirituais é, para Teresa, sinal forte de que a graça pode não ser de Deus.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
       {
         id: 8,
@@ -3731,7 +3731,7 @@ export const TRILHAS: Trilha[] = [
             explicacao: '"Ao fim sou filha da Igreja" (*Al fin, soy hija de la Iglesia*) são as últimas palavras atribuídas a Teresa de Ávila, morta em 4 de outubro de 1582. Expressam perfeitamente o espírito de todo o seu ensinamento: a mística autêntica não afasta da Igreja — a une mais profundamente a ela.',
           },
         ],
-        xp: 80,
+        xp: 30,
       },
     ],
   },

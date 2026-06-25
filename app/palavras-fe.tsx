@@ -3,12 +3,16 @@ import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
+import { GameRewardBanner } from '@/components/game-reward-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
+import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergePuzzleThemes } from '@/hooks/use-game-packs';
+import { supabase } from '@/lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Difficulty = 'facil' | 'medio' | 'dificil';
@@ -162,9 +166,11 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 export default function PalavrasFeScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { user, refreshProfile } = useAuth();
   const { packs } = useGamePacks('palavras');
 
   const [phase, setPhase] = useState<Phase>('select');
+  const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [activeDiff, setActiveDiff] = useState<Difficulty>('facil');
   const [activePuzzle, setActivePuzzle] = useState<ActivePuzzle | null>(null);
   const [foundWords, setFoundWords] = useState<string[]>([]);
@@ -190,6 +196,7 @@ export default function PalavrasFeScreen() {
         setFoundCells(new Set());
         setStart(null);
         setPreview([]);
+        setCoinsEarned(null);
         reported.current = false;
         setPhase('playing');
         return;
@@ -231,7 +238,13 @@ export default function PalavrasFeScreen() {
         if (newFound.length === words.length) {
           if (!reported.current) {
             reported.current = true;
-            reportResult({ gameId: 'palavras-fe', score: words.length * 10 });
+            const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
+            reportResult({ gameId: 'palavras-fe', score: words.length * XP[activeDiff] });
+            if (user?.id) {
+              supabase.rpc('add_coins', { p_user_id: user.id, p_amount: ECONOMY.COMPLETAR_QUIZ })
+                .then(() => { setCoinsEarned(ECONOMY.COMPLETAR_QUIZ); refreshProfile(); })
+                .catch(() => {});
+            }
           }
           setPhase('result');
         }
@@ -298,6 +311,7 @@ export default function PalavrasFeScreen() {
                 </ThemedText>
               </View>
             </View>
+            <GameRewardBanner xp={(activePuzzle?.theme.words.length ?? 0) * { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL }[activeDiff]} coins={coinsEarned} />
             <TouchableOpacity
               onPress={() => startDifficulty(activeDiff)}
               style={[styles.btn, { backgroundColor: cfg.color }]}
