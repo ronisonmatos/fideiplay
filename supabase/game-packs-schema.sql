@@ -158,7 +158,7 @@ VALUES (
       {
         "topic": "Santos do Brasil",
         "question": "Qual o nome de batismo de Frei Galvão?",
-        "options": ["Antônio de Sant'Ana Galvão", "Francisco de Assis Galvão", "José Maria Galvão", "Pedro Galvão de Moura"],
+        "options": ["Antônio de Sant''Ana Galvão", "Francisco de Assis Galvão", "José Maria Galvão", "Pedro Galvão de Moura"],
         "correct": 0,
         "difficulty": "dificil"
       }
@@ -364,7 +364,7 @@ VALUES (
         "difficulty": "medio"
       },
       {
-        "question": "O que é o 'Triduum Pascal'?",
+        "question": "O que é o ''Triduum Pascal''?",
         "options": [
           "Os três dias antes do Natal",
           "Quinta-feira Santa, Sexta-feira Santa e Vigília Pascal",
