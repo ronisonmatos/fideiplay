@@ -176,7 +176,7 @@ export default function TrilhasScreen() {
                     <View style={styles.trilhaTitleRow}>
                       <ThemedText style={[styles.trilhaTitulo, { color: theme.text }, styles.lockedOpacity]}>{trilha.titulo}</ThemedText>
                       <View style={[styles.badge, { backgroundColor: C.gold + '22', borderColor: C.gold + '55' }]}>
-                        <ThemedText style={[styles.badgeText, { color: C.gold }]}>🔒 Em breve</ThemedText>
+                        <ThemedText style={[styles.badgeText, { color: C.gold }]}>⭐ Premium</ThemedText>
                       </View>
                     </View>
                     <ThemedText style={[styles.trilhaDesc, { color: theme.textSecondary }, styles.lockedOpacity]}>{trilha.descricao}</ThemedText>
