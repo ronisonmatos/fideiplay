@@ -2,11 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState, Appearance } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
+import * as ExpoNotifications from 'expo-notifications';
 
 import { AnimatedSplashOverlay } from '@/components/animated-splash';
 import { GameStoreProvider, useGameStore } from '@/context/game-store';
 import { AuthProvider, useAuth } from '@/context/auth-context';
-import { NotificationsProvider } from '@/context/notifications-context';
+import { NotificationsProvider, useNotifications } from '@/context/notifications-context';
 import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications } from '@/lib/notifications';
 import { pullProgress, pushProgress } from '@/lib/progress-sync';
 
@@ -86,10 +87,59 @@ function ProgressSyncBridge() {
   return null;
 }
 
+// ── Bridge: captura todas as notificações para a tela in-app ─────────────────
+function NotificationBridge() {
+  const { user } = useAuth();
+  const { addNotification } = useNotifications();
+
+  // Ref estável para não recriar efeitos ao re-render
+  const addRef = useRef(addNotification);
+  useEffect(() => { addRef.current = addNotification; }, [addNotification]);
+
+  // Callback para notificações vindas do banco (notifications table)
+  const onServerNotif = useCallback((title: string, body: string) => {
+    addRef.current({ type: 'server', title, body, createdAt: new Date().toISOString() }, true);
+  }, []);
+
+  // Sync do banco ao abrir/focar o app
+  useEffect(() => {
+    if (!user?.id) return;
+    const sync = () => syncServerNotifications(user.id, onServerNotif);
+    sync();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') sync();
+    });
+    return () => sub.remove();
+  }, [user?.id, onServerNotif]);
+
+  // Captura notificações Expo recebidas com o app aberto (lembrete diário, bônus etc.)
+  useEffect(() => {
+    const sub = ExpoNotifications.addNotificationReceivedListener(notification => {
+      const { title, body, data } = notification.request.content;
+      const identifier = notification.request.identifier;
+      if (!title) return;
+      // Chat já é tratado pelo chat.tsx — evita duplicata
+      if ((data as Record<string, unknown>)?.type === 'chat') return;
+      // Banco já é tratado por syncServerNotifications via onInApp — evita duplicata
+      if (identifier.startsWith('server-')) return;
+      addRef.current({
+        type: 'system',
+        title,
+        body: body ?? '',
+        createdAt: new Date().toISOString(),
+      }, true); // silent — o SO já tocou o som
+    });
+    return () => sub.remove();
+  }, []);
+
+  return null;
+}
+
 // ── Redirecionamento de autenticação ─────────────────────────────────────────
 function AuthGate() {
-  const { user, loading, isGuest } = useAuth();
+  const { loading } = useAuth();
   const segments = useSegments();
+  const { user, isGuest } = useAuth();
 
   useEffect(() => {
     if (loading) return;
@@ -107,15 +157,6 @@ function AuthGate() {
     scheduleDailyReminder();
   }, [loading]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') syncServerNotifications(user.id);
-    });
-    syncServerNotifications(user.id);
-    return () => sub.remove();
-  }, [user?.id]);
-
   return null;
 }
 
@@ -125,6 +166,7 @@ export default function RootLayout() {
       <GameStoreProvider>
         <NotificationsProvider>
           <ProgressSyncBridge />
+          <NotificationBridge />
           <AnimatedSplashOverlay />
           <AuthGate />
           <Stack screenOptions={{ headerShown: false }} />

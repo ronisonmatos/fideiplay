@@ -140,11 +140,12 @@ export async function scheduleCoinBonusReminder() {
 
 // ── Notificações agendadas pelo servidor (tabela `notifications`) ─────────────
 
-export async function syncServerNotifications(userId: string) {
+export async function syncServerNotifications(
+  userId: string,
+  onInApp?: (title: string, body: string) => void,
+) {
   const granted = await requestNotificationPermission();
   if (!granted) return;
-
-  const now = new Date().toISOString();
 
   // Busca notificações não enviadas agendadas até 24h no futuro
   const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -179,6 +180,9 @@ export async function syncServerNotifications(userId: string) {
             channelId: NOTIF_CHANNEL,
           },
     });
+
+    // Registra na tela in-app
+    onInApp?.(notif.title, notif.body);
 
     // Marca como enviada no banco
     await supabase

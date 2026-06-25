@@ -45,7 +45,7 @@ function groupLabel(iso: string): string {
 function NotifItem({ n, onDelete }: { n: AppNotification; onDelete: () => void }) {
   const theme    = useTheme();
   const isUnread = !n.readAt;
-  const icon     = n.type === 'chat_message' ? '💬' : '🔔';
+  const icon     = n.type === 'chat_message' ? '💬' : n.type === 'server' ? '📢' : '🔔';
   const count    = n.count ?? 1;
 
   return (
@@ -129,7 +129,7 @@ export default function NotificationsScreen() {
               />
               <ThemedText style={[s.emptyTitle, { color: theme.text }]}>Nenhuma notificação</ThemedText>
               <ThemedText style={[s.emptySub, { color: theme.textSecondary }]}>
-                Novas mensagens no chat aparecerão aqui.
+                Mensagens do chat, avisos do app e notificações do servidor aparecerão aqui.
               </ThemedText>
             </View>
           ) : (

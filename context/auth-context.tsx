@@ -13,6 +13,7 @@ export interface Profile {
   last_coin_reward: string | null;
   ad_watches_today: number | null;
   ad_watches_date:  string | null;
+  is_admin:         boolean;
 }
 
 interface AuthCtx {

@@ -84,8 +84,12 @@ const GAMES = [
   },
 ];
 
-const MISSION = GAMES[0];
 const STREAK = 7;
+
+function getDailyMission() {
+  const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+  return GAMES[dayIndex % GAMES.length];
+}
 
 function useCountdown() {
   const [time, setTime] = useState('');
@@ -123,6 +127,17 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const countdown = useCountdown();
   const [activeTag, setActiveTag] = useState('Todos');
+  const [mission, setMission] = useState(getDailyMission);
+
+  // Atualiza a missão quando vira meia-noite sem precisar reiniciar o app
+  useEffect(() => {
+    const now = new Date();
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const msUntilMidnight = midnight.getTime() - now.getTime();
+    const t = setTimeout(() => setMission(getDailyMission()), msUntilMidnight);
+    return () => clearTimeout(t);
+  }, [mission]);
   const { user, profile, refreshProfile } = useAuth();
   const { unreadCount } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
@@ -183,32 +198,32 @@ export default function HomeScreen() {
           <View>
             <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>MISSÃO DO DIA</ThemedText>
             <TouchableOpacity
-              onPress={() => router.push(MISSION.route)}
+              onPress={() => router.push(mission.route)}
               activeOpacity={0.85}
               style={[styles.missionCard, { backgroundColor: colors.backgroundSelected }]}>
               {/* left: info */}
               <View style={styles.missionInfo}>
                 <View style={styles.missionTagRow}>
-                  <View style={[styles.missionTag, { backgroundColor: MISSION.tagColor + '33' }]}>
-                    <ThemedText style={[styles.missionTagText, { color: MISSION.tagColor }]}>
-                      {MISSION.tag.toUpperCase()}
+                  <View style={[styles.missionTag, { backgroundColor: mission.tagColor + '33' }]}>
+                    <ThemedText style={[styles.missionTagText, { color: mission.tagColor }]}>
+                      {mission.tag.toUpperCase()}
                     </ThemedText>
                   </View>
                   <View style={styles.countdownPill}>
                     <ThemedText style={styles.countdownText}>{countdown}</ThemedText>
                   </View>
                 </View>
-                <ThemedText style={[styles.missionTitle, { color: colors.text }]}>{MISSION.title}</ThemedText>
-                <ThemedText style={[styles.missionDesc, { color: colors.textSecondary }]}>{MISSION.desc}</ThemedText>
+                <ThemedText style={[styles.missionTitle, { color: colors.text }]}>{mission.title}</ThemedText>
+                <ThemedText style={[styles.missionDesc, { color: colors.textSecondary }]}>{mission.desc}</ThemedText>
                 <TouchableOpacity
-                  onPress={() => router.push(MISSION.route)}
+                  onPress={() => router.push(mission.route)}
                   style={styles.missionBtn}
                   activeOpacity={0.8}>
                   <ThemedText style={styles.missionBtnText}>JOGAR</ThemedText>
                 </TouchableOpacity>
               </View>
               {/* right: icon */}
-              <Image source={MISSION.image} style={styles.missionEmoji} resizeMode="contain" />
+              <Image source={mission.image} style={styles.missionEmoji} resizeMode="contain" />
             </TouchableOpacity>
           </View>
 

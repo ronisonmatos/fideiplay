@@ -4,7 +4,9 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -25,9 +27,10 @@ import { playChatSound } from '@/lib/chat-sound';
 import { sendChatOSNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 
-const EXPIRE_MS  = 60 * 60 * 1000;  // 1 hora
-const FADE_MS    = 30 * 1000;
-const MAX_LEN    = 200;
+const EXPIRE_MS    = 60 * 60 * 1000;  // 1 hora
+const FADE_MS      = 30 * 1000;
+const MAX_LEN      = 200;
+const HISTORY_24H  = 24 * 60 * 60 * 1000;
 
 const USER_COLORS = [C.purple, C.green, C.gold, '#E24B4A', '#3B82F6', '#EC4899', '#0891B2'];
 
@@ -46,6 +49,14 @@ function fmtTime(iso: string): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  if (isToday) return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
 interface ChatMessage {
   id: string;
   user_id: string;
@@ -53,6 +64,14 @@ interface ChatMessage {
   content: string;
   created_at: string;
   expires_at: string;
+}
+
+interface HistoryMessage {
+  id:        string;
+  user_id:   string | null;
+  user_name: string | null;
+  content:   string | null;
+  sent_at:   string;
 }
 
 // ── Bolha com animação de expiração ──────────────────────────────────────────
@@ -168,9 +187,12 @@ export default function ChatScreen() {
   const { user, profile, refreshProfile } = useAuth();
   const { addChatNotification, markAllRead, muteChat } = useNotifications();
 
-  const [messages,  setMessages]  = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [sending,   setSending]   = useState(false);
+  const [messages,        setMessages]        = useState<ChatMessage[]>([]);
+  const [inputText,       setInputText]       = useState('');
+  const [sending,         setSending]         = useState(false);
+  const [historyVisible,  setHistoryVisible]  = useState(false);
+  const [historyMessages, setHistoryMessages] = useState<HistoryMessage[]>([]);
+  const [historyLoading,  setHistoryLoading]  = useState(false);
 
   const listRef      = useRef<FlatList>(null);
   const channelRef   = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -229,9 +251,11 @@ export default function ChatScreen() {
             if (!muteChat) {
               playChatSound().catch(() => {});
             }
-            if (!isFocused.current && !muteChat) {
+            if (!isFocused.current) {
               addChatNotification(msg.user_name, msg.content);
-              sendChatOSNotification(msg.user_name, msg.content).catch(() => {});
+              if (!muteChat) {
+                sendChatOSNotification(msg.user_name, msg.content).catch(() => {});
+              }
             }
           }
         },
@@ -262,10 +286,36 @@ export default function ChatScreen() {
     supabase.from('community_messages').delete().eq('id', id).then(() => {});
   }, []);
 
+  // ── Histórico admin ───────────────────────────────────────────────────────
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryVisible(true);
+    const since = new Date(Date.now() - HISTORY_24H).toISOString();
+    const { data } = await supabase
+      .from('community_message_log')
+      .select('id, user_id, user_name, content, sent_at')
+      .gte('sent_at', since)
+      .not('content', 'is', null)
+      .order('sent_at', { ascending: true });
+    setHistoryMessages((data ?? []) as HistoryMessage[]);
+    setHistoryLoading(false);
+  }, []);
+
   // ── Envio ─────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || !user || !profile || sending) return;
+
+    // Comando de histórico — somente admins
+    if (text === '/historico24') {
+      setInputText('');
+      if (!profile.is_admin) {
+        Alert.alert('Acesso negado', 'Este comando é exclusivo para administradores.');
+        return;
+      }
+      fetchHistory();
+      return;
+    }
 
     if ((profile.coins ?? 0) < 1) {
       Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para enviar uma mensagem.\n\nGanhe moedas jogando!');
@@ -292,12 +342,16 @@ export default function ChatScreen() {
       Alert.alert('Erro', 'Não foi possível enviar a mensagem. Tente novamente.');
       setInputText(text);
     } else {
-      supabase.from('community_message_log').insert({ user_id: user.id }).then(() => {});
+      supabase.from('community_message_log').insert({
+        user_id:   user.id,
+        user_name: profile.name ?? 'Jogador',
+        content:   text,
+      }).then(() => {});
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
     }
 
     setSending(false);
-  }, [inputText, user, profile, sending, animateCoin, refreshProfile]);
+  }, [inputText, user, profile, sending, animateCoin, refreshProfile, fetchHistory]);
 
   // ── Login gate ────────────────────────────────────────────────────────────
   if (!user) {
@@ -329,8 +383,83 @@ export default function ChatScreen() {
   const canSend   = inputText.trim().length > 0 && coins >= 1 && !sending;
   const charsLeft = MAX_LEN - inputText.length;
 
+  // ── Modal de histórico ────────────────────────────────────────────────────
+  const renderHistory = () => (
+    <Modal
+      visible={historyVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setHistoryVisible(false)}>
+      <View style={[s.histModal, { backgroundColor: theme.background }]}>
+        {/* Header */}
+        <View style={[s.histHeader, { borderBottomColor: C.border, borderBottomWidth: 1 }]}>
+          <View>
+            <ThemedText style={{ fontSize: 17, fontWeight: '800' }}>📋 Histórico 24h</ThemedText>
+            {!historyLoading && (
+              <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                {historyMessages.length} mensagem{historyMessages.length !== 1 ? 's' : ''}
+              </ThemedText>
+            )}
+          </View>
+          <TouchableOpacity onPress={() => setHistoryVisible(false)} style={s.histClose} activeOpacity={0.7}>
+            <ThemedText style={{ fontSize: 18, fontWeight: '700', color: theme.textSecondary }}>✕</ThemedText>
+          </TouchableOpacity>
+        </View>
+
+        {historyLoading ? (
+          <View style={s.histEmpty}>
+            <ThemedText themeColor="textSecondary" style={{ fontSize: 13 }}>Carregando...</ThemedText>
+          </View>
+        ) : historyMessages.length === 0 ? (
+          <View style={s.histEmpty}>
+            <ThemedText style={{ fontSize: 40, lineHeight: 50 }}>💬</ThemedText>
+            <ThemedText themeColor="textSecondary" style={{ fontSize: 13, textAlign: 'center' }}>
+              Nenhuma mensagem nas últimas 24h.
+            </ThemedText>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={s.histList}>
+            {historyMessages.map((msg, i) => {
+              const uColor = msg.user_id ? userColor(msg.user_id) : C.purple;
+              const prevMsg = historyMessages[i - 1];
+              const showDateSep = !prevMsg ||
+                new Date(msg.sent_at).toDateString() !== new Date(prevMsg.sent_at).toDateString();
+              return (
+                <View key={msg.id}>
+                  {showDateSep && (
+                    <View style={s.histDateSep}>
+                      <View style={[s.histDateLine, { backgroundColor: C.border }]} />
+                      <ThemedText themeColor="textSecondary" style={s.histDateLabel}>
+                        {new Date(msg.sent_at).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                      </ThemedText>
+                      <View style={[s.histDateLine, { backgroundColor: C.border }]} />
+                    </View>
+                  )}
+                  <View style={s.histRow}>
+                    <ThemedText style={[s.histTime, { color: theme.textSecondary }]}>
+                      {fmtDateTime(msg.sent_at)}
+                    </ThemedText>
+                    <View style={[s.histBubble, { borderLeftColor: uColor, backgroundColor: uColor + '18' }]}>
+                      <ThemedText style={[s.histName, { color: uColor }]} numberOfLines={1}>
+                        {msg.user_name ?? 'Jogador'}
+                      </ThemedText>
+                      <ThemedText style={[s.histContent, { color: theme.text }]}>
+                        {msg.content ?? '—'}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+
   return (
     <ThemedView style={s.fill}>
+      {renderHistory()}
       <SafeAreaView style={s.fill} edges={['top']}>
         <KeyboardAvoidingView
           style={s.fill}
@@ -353,7 +482,7 @@ export default function ChatScreen() {
           {/* Banner efêmero */}
           <View style={[s.ephemeralBanner, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText themeColor="textSecondary" style={s.ephemeralText}>
-              ⏳ Mensagens somem em 1h · 1 🪙 por mensagem
+              ⏳ Mensagens somem em 1h
             </ThemedText>
           </View>
 
@@ -417,7 +546,7 @@ export default function ChatScreen() {
                   activeOpacity={0.8}>
                   <ThemedText style={s.sendBtnText}>{sending ? '⏳' : '➤'}</ThemedText>
                 </TouchableOpacity>
-                <ThemedText style={s.sendCost}>1🪙</ThemedText>
+
 
                 {/* Moeda flutuando */}
                 {coinVisible && (
@@ -554,4 +683,24 @@ const s = StyleSheet.create({
 
   btn:    { paddingHorizontal: Spacing.five, paddingVertical: Spacing.two + 4, borderRadius: 99 },
   btnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // Modal de histórico admin
+  histModal:  { flex: 1 },
+  histHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  histClose:  { padding: 6 },
+  histEmpty:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  histList:   { paddingHorizontal: 12, paddingVertical: 12, gap: 4 },
+
+  histDateSep:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 },
+  histDateLine: { flex: 1, height: 1 },
+  histDateLabel: { fontSize: 11, fontWeight: '600' },
+
+  histRow:    { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginBottom: 2 },
+  histTime:   { fontSize: 10, fontWeight: '500', marginTop: 4, width: 40, flexShrink: 0 },
+  histBubble: { flex: 1, borderLeftWidth: 3, borderRadius: 8, borderTopLeftRadius: 2, padding: 8, gap: 2 },
+  histName:   { fontSize: 11, fontWeight: '800' },
+  histContent: { fontSize: 14, lineHeight: 20 },
 });

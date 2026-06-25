@@ -752,29 +752,36 @@ export default function StopOnlineScreen() {
         const playerMap = Object.fromEntries(
           roomPlayersRef.current.map(p => [p.id, p.name])
         );
-        const ranked: MultiResult[] = allSubs
-          .map(sub => ({
+        // Ordenar por pontuação e atribuir ranks com empate (standard competition ranking)
+        const sortedSubs = [...allSubs].sort((a, b) => b.score - a.score);
+        let currentRank = 1;
+        const ranked: MultiResult[] = sortedSubs.map((sub, i) => {
+          if (i > 0 && sub.score < sortedSubs[i - 1].score) currentRank = i + 1;
+          return {
             playerId:   sub.player_id,
             playerName: playerMap[sub.player_id] ?? 'Jogador',
             answers:    sub.answers,
             score:      sub.score,
             validCount: sub.valid_count,
             bankMap:    sub.player_id === myId ? finalMyMap : {},
-            rank:       0,
-          }))
-          .sort((a, b) => b.score - a.score)
-          .map((r, i) => ({ ...r, rank: i + 1 }));
+            rank:       currentRank,
+          };
+        });
 
         setMultiResults(ranked);
         const mine = ranked.find(r => r.playerId === myId);
         setMyResult({ answers: pending.meAnswers, score: mine?.score ?? myS, validCount: mine?.validCount ?? myVC });
 
         if (!pending.skipCoins) {
-          const myRank = mine?.rank ?? ranked.length;
-          const N      = ranked.length;
-          let delta    = 0;
-          if (myRank === 1)      delta = COINS.WIN_RT;
-          else if (myRank === N && N >= 3) delta = COINS.LOSE_RT;
+          const myRank     = mine?.rank ?? ranked.length;
+          const topScore   = ranked[0]?.score ?? 0;
+          const lastScore  = ranked[ranked.length - 1]?.score ?? 0;
+          const tiedAtTop  = ranked.filter(r => r.score === topScore).length;
+          const allTied    = tiedAtTop === ranked.length;
+          let delta = 0;
+          if (myRank === 1 && tiedAtTop === 1)          delta = COINS.WIN_RT;   // vencedor único
+          else if (myRank === 1 && tiedAtTop > 1)       delta = COINS.DRAW_RT;  // empate no topo
+          else if (mine?.score === lastScore && !allTied) delta = COINS.LOSE_RT; // último isolado
           awardCoinsRef.current(delta);
           if (cats.length > 0 && myVC === cats.length) awardCoinsRef.current(1);
           if (myS > 0 && myId) recordScoreEvent(myId, myS, 'stop_online').catch(() => {});
@@ -1478,16 +1485,17 @@ export default function StopOnlineScreen() {
     const isMulti   = multiResults.length > 2;
     const myRank    = multiResults.find(r => r.playerId === (user?.id ?? ''))?.rank ?? 1;
 
-    const iWon    = isMulti ? (myRank === 1) : (isAbandon ? false : oppLeft ? true : (myResult.score > (oppResult?.score ?? 0)));
-    const tied    = !isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0);
+    const tiedAtFirst  = isMulti && myRank === 1 && multiResults.filter(r => r.rank === 1).length > 1;
+    const iWon    = isMulti ? (myRank === 1 && !tiedAtFirst) : (isAbandon ? false : oppLeft ? true : (myResult.score > (oppResult?.score ?? 0)));
+    const tied    = (!isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0)) || tiedAtFirst;
 
     let resEmoji = isMulti
-      ? (myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '📿')
+      ? (tiedAtFirst ? '🤝' : myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '📿')
       : (tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '📿');
     let resMsg = isMulti
-      ? (myRank === 1 ? 'Você ganhou!' : `${myRank}º lugar`)
+      ? (tiedAtFirst ? 'Empate!' : myRank === 1 ? 'Você ganhou!' : `${myRank}º lugar`)
       : (tied ? 'Empate!' : iWon ? 'Você ganhou!' : isAbandon ? 'Você abandonou' : 'Adversário ganhou!');
-    let resColor = (iWon || myRank === 1) ? C.green : tied ? C.gold : C.red;
+    let resColor = iWon ? C.green : tied ? C.gold : C.red;
     if (!isMulti && oppLeft) { resEmoji = '🏆'; resMsg = 'Adversário saiu — você ganhou!'; resColor = C.green; }
 
     const myRematch  = isPlayer1 ? p1Rematch : p2Rematch;
@@ -1576,6 +1584,87 @@ export default function StopOnlineScreen() {
                 })}
               </View>
             )}
+
+            {/* ── Respostas dos participantes (multi-player) ── */}
+            {isMulti && cats.length > 0 && (() => {
+              const playerPairs: MultiResult[][] = [];
+              for (let i = 0; i < multiResults.length; i += 2)
+                playerPairs.push(multiResults.slice(i, i + 2));
+              const rl = (rank: number) => rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}º`;
+              return (
+                <View style={{ gap: Spacing.two }}>
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
+                    RESPOSTAS DOS PARTICIPANTES
+                  </ThemedText>
+                  {playerPairs.map((pair, pairIdx) => {
+                    const alone = pair.length === 1;
+                    return (
+                      <ThemedView key={pairIdx} type="backgroundElement"
+                        style={[s.compCard, { padding: 0, overflow: 'hidden' }]}>
+                        {/* Cabeçalho: nomes dos jogadores */}
+                        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border }}>
+                          {pair.map((r, i) => {
+                            const isMe = r.playerId === (user?.id ?? '');
+                            return (
+                              <View key={r.playerId} style={[
+                                { flex: 1, paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
+                                !alone && i === 0 && { borderRightWidth: 1, borderRightColor: C.border },
+                                isMe && { backgroundColor: C.purple + '15' },
+                              ]}>
+                                <ThemedText style={{ fontSize: 10, fontWeight: '900', letterSpacing: 0.6,
+                                  color: isMe ? C.purple : BRAND }} numberOfLines={1}>
+                                  {rl(r.rank)} {r.playerName.toUpperCase()}{isMe ? ' (VOCÊ)' : ''}
+                                </ThemedText>
+                                <ThemedText themeColor="textSecondary" style={{ fontSize: 10 }}>
+                                  {r.score} pts · {r.validCount}/{cats.length} válidas
+                                </ThemedText>
+                              </View>
+                            );
+                          })}
+                        </View>
+                        {/* Linhas de categorias */}
+                        {cats.map((cat, catIdx) => (
+                          <View key={cat.key} style={[
+                            catIdx > 0 && { borderTopWidth: 1, borderTopColor: C.border + '44' },
+                          ]}>
+                            <ThemedText style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.8,
+                              color: theme.textSecondary, paddingHorizontal: 10, paddingTop: 6, paddingBottom: 2 }}>
+                              {cat.label.toUpperCase()}
+                            </ThemedText>
+                            <View style={{ flexDirection: 'row', paddingBottom: 8 }}>
+                              {pair.map((r, i) => {
+                                const ans = ((r.answers[cat.key] ?? '') as string).trim();
+                                const isMe = r.playerId === (user?.id ?? '');
+                                const bm = r.bankMap[cat.key];
+                                const color = bm === 'valid' || bm === 'ai_valid' ? C.green
+                                  : bm === 'unverified' ? C.gold
+                                  : bm === 'ai_invalid' ? C.red
+                                  : !ans ? theme.textSecondary
+                                  : ans[0].toUpperCase() === letter ? C.green : C.red;
+                                return (
+                                  <View key={r.playerId} style={[
+                                    { flex: 1, paddingHorizontal: 10, gap: 1 },
+                                    !alone && i === 0 && { borderRightWidth: 1, borderRightColor: C.border + '44' },
+                                  ]}>
+                                    <ThemedText style={{ fontSize: 14, fontWeight: '600', color }} numberOfLines={1}>
+                                      {ans || '—'}
+                                    </ThemedText>
+                                    {bm === 'valid'      && <ThemedText style={s.compBadge}>✅ Reconhecida</ThemedText>}
+                                    {bm === 'ai_valid'   && <ThemedText style={s.compBadge}>✅ Válida (IA)</ThemedText>}
+                                    {bm === 'unverified' && <ThemedText style={[s.compBadge, { color: C.gold }]}>⚠️ Não verificada</ThemedText>}
+                                    {bm === 'ai_invalid' && <ThemedText style={[s.compBadge, { color: C.red }]}>❌ Inválida</ThemedText>}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        ))}
+                      </ThemedView>
+                    );
+                  })}
+                </View>
+              );
+            })()}
 
             {!isMulti && !isAbandon && oppResult && (
               <>

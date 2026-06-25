@@ -9,7 +9,7 @@ const CHAT_NOTIF_ID  = 'community_chat';
 
 export interface AppNotification {
   id: string;
-  type: 'chat_message' | 'system';
+  type: 'chat_message' | 'system' | 'server';
   title: string;
   body: string;
   createdAt: string;
@@ -20,10 +20,11 @@ export interface AppNotification {
 interface NotificationsCtx {
   notifications: AppNotification[];
   unreadCount: number;
+  chatUnreadCount: number;
   muteChat: boolean;
   setMuteChat: (v: boolean) => void;
   addChatNotification: (senderName: string, preview: string) => void;
-  addNotification: (n: Omit<AppNotification, 'id' | 'readAt'>) => void;
+  addNotification: (n: Omit<AppNotification, 'id' | 'readAt'>, silent?: boolean) => void;
   markAllRead: () => void;
   deleteNotification: (id: string) => void;
   clearAll: () => void;
@@ -32,6 +33,7 @@ interface NotificationsCtx {
 const Ctx = createContext<NotificationsCtx>({
   notifications: [],
   unreadCount: 0,
+  chatUnreadCount: 0,
   muteChat: false,
   setMuteChat: () => {},
   addChatNotification: () => {},
@@ -104,14 +106,14 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   }, []);
 
   // Generic notification (achievements, bonuses, system alerts)
-  const addNotification = useCallback((n: Omit<AppNotification, 'id' | 'readAt'>) => {
+  const addNotification = useCallback((n: Omit<AppNotification, 'id' | 'readAt'>, silent = false) => {
     const newN: AppNotification = {
       ...n,
       id:     `${Date.now()}_${Math.random().toString(36).slice(2)}`,
       readAt: null,
     };
     setNotifications(prev => purgeExpired([newN, ...prev]).slice(0, 50));
-    playSystemSound().catch(() => {});
+    if (!silent) playSystemSound().catch(() => {});
   }, []);
 
   const markAllRead = useCallback(() => {
@@ -125,14 +127,18 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const clearAll = useCallback(() => setNotifications([]), []);
 
-  // Count uses the 'count' field so grouped notifications contribute their real count
   const unreadCount = notifications
     .filter(n => !n.readAt)
     .reduce((sum, n) => sum + (n.count ?? 1), 0);
 
+  // Badge do Chat: só mensagens de chat não lidas
+  const chatUnreadCount = notifications
+    .filter(n => !n.readAt && n.type === 'chat_message')
+    .reduce((sum, n) => sum + (n.count ?? 1), 0);
+
   return (
     <Ctx.Provider value={{
-      notifications, unreadCount,
+      notifications, unreadCount, chatUnreadCount,
       muteChat, setMuteChat,
       addChatNotification, addNotification,
       markAllRead, deleteNotification, clearAll,

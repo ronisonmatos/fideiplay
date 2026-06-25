@@ -17,7 +17,7 @@ function TabIcon({ source, focused }: { source: ReturnType<typeof require>; focu
 export default function TabsLayout() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
-  const { unreadCount } = useNotifications();
+  const { chatUnreadCount } = useNotifications();
 
   return (
     <Tabs
@@ -44,7 +44,7 @@ export default function TabsLayout() {
         name="chat"
         options={{
           title: 'Chat',
-          tabBarBadge: unreadCount > 0 ? (unreadCount > 9 ? '9+' : unreadCount) : undefined,
+          tabBarBadge: chatUnreadCount > 0 ? (chatUnreadCount > 9 ? '9+' : chatUnreadCount) : undefined,
           tabBarIcon: ({ focused }) => <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.38 }}>💬</Text>,
         }}
       />
