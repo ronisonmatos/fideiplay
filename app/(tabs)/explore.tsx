@@ -366,7 +366,7 @@ export default function ContaScreen() {
               <ThemedView type="backgroundElement" style={styles.scoreCard}>
                 <Image source={require('@/assets/images/trofeu.png')} style={styles.scoreImg} resizeMode="contain" />
                 <ThemedText type="subtitle" style={[styles.scoreValue, { color: C.gold }]}>{totalScore}</ThemedText>
-                <ThemedText themeColor="textSecondary" style={styles.scoreSmall}>Pontos totais</ThemedText>
+                <ThemedText themeColor="textSecondary" style={styles.scoreSmall}>XP nos jogos</ThemedText>
               </ThemedView>
               <ThemedView type="backgroundElement" style={styles.scoreCard}>
                 <ThemedText style={styles.scoreEmoji}>🎮</ThemedText>
