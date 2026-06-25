@@ -13,14 +13,19 @@ export const ECONOMY = {
   BONUS_PRIMEIRA_PARTIDA_DIA: 3,
   SUBIR_RANKING:            15,
 
-  // Gastos
-  DICA_RESPOSTA_CORRETA:    30,
-  TEMA_VISUAL_ESPECIAL:     80,
-  AVATAR_SANTO_ESPECIAL:    50,
-  PRESENTE_AMIGO_MINIMO:    10,
+  // Ganhos por anúncios
+  ASSISTIR_ANUNCIO:           15,
+  LIMITE_ANUNCIOS_DIA:        3,
+  COOLDOWN_ANUNCIO_MINUTOS:   10,
 
-  // Sistema atual
+  // Custos
+  CONTINUAR_APOS_GAME_OVER:   20,
+  DICA_ELIMINAR_OPCAO:        10,
+  DICA_RESPOSTA_CORRETA:      30,
+  TEMA_VISUAL_ESPECIAL:       80,
+  AVATAR_SANTO_ESPECIAL:      50,
+  PRESENTE_AMIGO_MINIMO:      10,
+
+  // Outros bônus
   BONUS_2_HORAS:   5,
-  AD_REWARD:       50,
-  AD_MAX_DAILY:    3,
 } as const;

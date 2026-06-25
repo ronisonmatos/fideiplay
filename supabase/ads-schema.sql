@@ -50,12 +50,12 @@ declare
   v_watches_today int;
   v_watches_date  date;
   v_new_coins     int;
-  v_max_daily     int := 3;
-  v_coins_per_ad  int := 50;
+  v_max_daily     int := 3;   -- ECONOMY.LIMITE_ANUNCIOS_DIA
+  v_coins_per_ad  int := 15;  -- ECONOMY.ASSISTIR_ANUNCIO
 begin
   if p_ad_id is not null then
     select coins into v_coins_per_ad from ads where id = p_ad_id;
-    if not found then v_coins_per_ad := 50; end if;
+    if not found then v_coins_per_ad := 15; end if;
   end if;
 
   select ad_watches_today, ad_watches_date

@@ -40,11 +40,36 @@ const ACHIEVEMENTS = [
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
 
-function useAdCooldownCountdown(limitReached: boolean) {
-  const [countdown, setCountdown] = useState('');
+const AD_LAST_TIME_KEY = '@fideiplay:last_ad_time';
+const COOLDOWN_MS = ECONOMY.COOLDOWN_ANUNCIO_MINUTOS * 60 * 1000;
 
+function useAdCooldown() {
+  const [cooldownLeft, setCooldownLeft] = useState(0); // ms restantes
+  const [limitCountdown, setLimitCountdown] = useState('');
+
+  // Lê do AsyncStorage e recalcula ao montar
   useEffect(() => {
-    if (!limitReached) { setCountdown(''); return; }
+    AsyncStorage.getItem(AD_LAST_TIME_KEY).then(raw => {
+      if (!raw) return;
+      const elapsed = Date.now() - parseInt(raw, 10);
+      if (elapsed < COOLDOWN_MS) setCooldownLeft(COOLDOWN_MS - elapsed);
+    });
+  }, []);
+
+  // Tick: decrementa cooldown entre anúncios
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const id = setInterval(() => {
+      setCooldownLeft(prev => {
+        const next = prev - 1000;
+        return next <= 0 ? 0 : next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldownLeft > 0]);
+
+  // Tick: countdown até meia-noite (limite diário)
+  useEffect(() => {
     const tick = () => {
       const now      = new Date();
       const midnight = new Date();
@@ -53,48 +78,61 @@ function useAdCooldownCountdown(limitReached: boolean) {
       const h = Math.floor(diff / 3_600_000).toString().padStart(2, '0');
       const m = Math.floor((diff % 3_600_000) / 60_000).toString().padStart(2, '0');
       const s = Math.floor((diff % 60_000) / 1_000).toString().padStart(2, '0');
-      setCountdown(`${h}:${m}:${s}`);
+      setLimitCountdown(`${h}:${m}:${s}`);
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [limitReached]);
+  }, []);
 
-  return countdown;
+  const cooldownSecs = Math.ceil(cooldownLeft / 1000);
+  const cooldownStr  = cooldownLeft > 0
+    ? `${Math.floor(cooldownSecs / 60).toString().padStart(2, '0')}:${(cooldownSecs % 60).toString().padStart(2, '0')}`
+    : '';
+
+  return { inCooldown: cooldownLeft > 0, cooldownStr, limitCountdown };
 }
 
 function AdRewardCard({ profile }: { profile: Profile }) {
   const today        = new Date().toISOString().slice(0, 10);
   const isToday      = profile.ad_watches_date === today;
   const watched      = isToday ? (profile.ad_watches_today ?? 0) : 0;
-  const remaining    = Math.max(0, ECONOMY.AD_MAX_DAILY - watched);
+  const remaining    = Math.max(0, ECONOMY.LIMITE_ANUNCIOS_DIA - watched);
   const limitReached = remaining === 0;
-  const countdown    = useAdCooldownCountdown(limitReached);
+  const { inCooldown, cooldownStr, limitCountdown } = useAdCooldown();
+
+  const blocked  = limitReached || inCooldown;
+  const subLabel = limitReached
+    ? (limitCountdown ? `Próximo amanhã em ${limitCountdown}` : 'Volte amanhã')
+    : inCooldown
+      ? `Próximo anúncio em ${cooldownStr}`
+      : `${watched}/${ECONOMY.LIMITE_ANUNCIOS_DIA} vídeos hoje`;
+
+  function handlePress() {
+    AsyncStorage.setItem(AD_LAST_TIME_KEY, String(Date.now())).catch(() => {});
+    router.push('/ad-reward');
+  }
 
   return (
     <>
       <ThemedText style={styles.sectionLabel}>GANHAR MOEDAS</ThemedText>
       <TouchableOpacity
-        style={[styles.adCard, limitReached && { opacity: 0.6 }]}
-        onPress={() => router.push('/ad-reward')}
+        style={[styles.adCard, blocked && { opacity: 0.6 }]}
+        onPress={handlePress}
         activeOpacity={0.82}
-        disabled={limitReached}>
+        disabled={blocked}>
         <View style={styles.adCardLeft}>
           <ThemedText style={{ fontSize: 28, lineHeight: 36 }}>📺</ThemedText>
           <View style={{ gap: 2, flex: 1 }}>
             <ThemedText style={styles.adCardTitle} numberOfLines={2}>
-              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${ECONOMY.AD_REWARD} 🪙`}
+              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${ECONOMY.ASSISTIR_ANUNCIO} 🪙`}
             </ThemedText>
-            <ThemedText style={styles.adCardSub}>
-              {limitReached
-                ? (countdown ? `Próximo disponível em ${countdown}` : 'Volte amanhã para mais moedas')
-                : `${watched}/${ECONOMY.AD_MAX_DAILY} vídeos assistidos hoje`}
-            </ThemedText>
+            <ThemedText style={styles.adCardSub}>{subLabel}</ThemedText>
           </View>
         </View>
-        {!limitReached && (
+        {!blocked && (
           <View style={styles.adCardDots}>
-            {Array.from({ length: ECONOMY.AD_MAX_DAILY }).map((_, i) => (
+            {Array.from({ length: ECONOMY.LIMITE_ANUNCIOS_DIA }).map((_, i) => (
               <View
                 key={i}
                 style={[styles.adDot, i < watched && { backgroundColor: C.gold }]}
