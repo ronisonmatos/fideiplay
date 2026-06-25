@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeVersiculo } from '@/hooks/use-game-packs';
 
 type EntryType = 'versículo' | 'santo' | 'papa' | 'documento';
 type Difficulty = 'facil' | 'medio' | 'dificil';
@@ -380,6 +381,7 @@ function shuffle<T>(arr: T[]): T[] {
 export default function VersiculoMisteriosoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { packs } = useGamePacks('versiculo');
   const [phase, setPhase] = useState<Phase>('idle');
   const [difficulty, setDifficulty] = useState<Difficulty>('facil');
   const [frases, setFrases] = useState<FraseSagrada[]>([]);
@@ -406,7 +408,8 @@ export default function VersiculoMisteriosoScreen() {
   }, [phase, score, correctCount, frases.length, reportResult]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
-    const filtered = shuffle(ALL_FRASES.filter(f => f.difficulty === diff))
+    const allF = mergeVersiculo(ALL_FRASES, packs);
+    const filtered = shuffle(allF.filter(f => f.difficulty === diff))
       .map(f => ({ ...f, options: shuffle(f.options) }));
     setDifficulty(diff);
     setFrases(filtered);

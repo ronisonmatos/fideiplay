@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergePuzzleThemes } from '@/hooks/use-game-packs';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Difficulty = 'facil' | 'medio' | 'dificil';
@@ -161,6 +162,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 export default function PalavrasFeScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { packs } = useGamePacks('palavras');
 
   const [phase, setPhase] = useState<Phase>('select');
   const [activeDiff, setActiveDiff] = useState<Difficulty>('facil');
@@ -172,7 +174,8 @@ export default function PalavrasFeScreen() {
   const reported = useRef(false);
 
   function startDifficulty(diff: Difficulty) {
-    const themes = PUZZLE_THEMES.filter(t => t.difficulty === diff);
+    const allThemes = mergePuzzleThemes(PUZZLE_THEMES, packs);
+    const themes = allThemes.filter(t => t.difficulty === diff);
     const shuffled = [...themes].sort(() => Math.random() - 0.5);
     for (const t of shuffled) {
       let result: ReturnType<typeof placeWords> = null;

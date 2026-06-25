@@ -21,6 +21,7 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { supabase } from '@/lib/supabase';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
@@ -36,6 +37,8 @@ type AnswerMap = Partial<Record<string, string>>;
 export default function StopCatolicoScreen() {
   const theme   = useTheme();
   const { user, profile, refreshProfile } = useAuth();
+  const { packs } = useGamePacks('stop');
+  const allCategories = mergeStopCategories(ALL_STOP_CATEGORIES, packs);
 
   const [phase,       setPhase]       = useState<Phase>('idle');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => randomDefaultKeys());
@@ -256,9 +259,9 @@ export default function StopCatolicoScreen() {
   }, [clearSpinTimeouts, scaleAnim]);
 
   const handleVamosJogar = useCallback(() => {
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
-    startGame(cats);
-  }, [selectedKeys, startGame]);
+    const cats = allCategories.filter(c => selectedKeys.has(c.key));
+    startGame(cats as StopCategory[]);
+  }, [allCategories, selectedKeys, startGame]);
 
   const callStop  = useCallback(() => { stopTimer(); setPhase('result'); }, [stopTimer]);
   const setAnswer = useCallback((key: string, value: string) => {
@@ -341,7 +344,7 @@ export default function StopCatolicoScreen() {
             </TouchableOpacity>
 
             <View style={s.catGrid}>
-              {ALL_STOP_CATEGORIES.map(cat => {
+              {allCategories.map(cat => {
                 const on = selectedKeys.has(cat.key);
                 const canDeselect = on && numSelected > MIN_CATS;
                 return (

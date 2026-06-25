@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeLiturgQuestions } from '@/hooks/use-game-packs';
 
 type Difficulty = 'facil' | 'medio' | 'dificil';
 type Phase = 'idle' | 'difficulty' | 'playing' | 'result';
@@ -367,6 +368,7 @@ function shuffleQuestion(q: LiturgQuestion): LiturgQuestion {
 export default function DesafioLiturgicoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { packs } = useGamePacks('liturgico');
   const [phase, setPhase] = useState<Phase>('idle');
   const [difficulty, setDifficulty] = useState<Difficulty>('facil');
   const [questions, setQuestions] = useState<LiturgQuestion[]>([]);
@@ -418,7 +420,8 @@ export default function DesafioLiturgicoScreen() {
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
     const totalTime = DIFFICULTY_CONFIG[diff].time;
-    const filtered = shuffle(ALL_QUESTIONS.filter(q => q.difficulty === diff)).map(shuffleQuestion);
+    const allQ = mergeLiturgQuestions(ALL_QUESTIONS, packs);
+    const filtered = shuffle(allQ.filter(q => q.difficulty === diff)).map(shuffleQuestion);
     setDifficulty(diff);
     setQuestions(filtered);
     setIndex(0);

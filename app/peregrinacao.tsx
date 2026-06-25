@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeSanctuaries } from '@/hooks/use-game-packs';
 
 interface Question {
   question: string;
@@ -166,6 +167,8 @@ type Screen = 'map' | 'quiz' | 'result';
 export default function PeregrinacaoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { packs } = useGamePacks('peregrinacao');
+  const allSanctuaries = useMemo(() => mergeSanctuaries(SANCTUARIES, packs), [packs]);
   const [unlocked, setUnlocked] = useState(1);
   const [screen, setScreen] = useState<Screen>('map');
   const [activeSanctuary, setActiveSanctuary] = useState(0);
@@ -175,12 +178,12 @@ export default function PeregrinacaoScreen() {
   const [correct, setCorrect] = useState(0);
   const reportedSanctuaries = useRef<Set<number>>(new Set());
 
-  const sanctuary = SANCTUARIES[activeSanctuary];
+  const sanctuary = allSanctuaries[activeSanctuary];
   const q = shuffledQuestions[qIndex];
 
   const enterSanctuary = (idx: number) => {
     setActiveSanctuary(idx);
-    setShuffledQuestions(SANCTUARIES[idx].questions.map(shuffleQuestion));
+    setShuffledQuestions(allSanctuaries[idx].questions.map(shuffleQuestion));
     setQIndex(0);
     setSelected(null);
     setCorrect(0);
@@ -209,7 +212,7 @@ export default function PeregrinacaoScreen() {
     const passed = correct >= 2;
     let nextUnlocked = unlocked;
     if (passed && activeSanctuary + 1 >= unlocked) {
-      nextUnlocked = Math.min(unlocked + 1, SANCTUARIES.length);
+      nextUnlocked = Math.min(unlocked + 1, allSanctuaries.length);
       setUnlocked(nextUnlocked);
     }
     if (!reportedSanctuaries.current.has(activeSanctuary)) {
@@ -217,7 +220,7 @@ export default function PeregrinacaoScreen() {
       reportResult({
         gameId: 'peregrinacao',
         score: correct * 10,
-        pilgrimComplete: nextUnlocked >= SANCTUARIES.length,
+        pilgrimComplete: nextUnlocked >= allSanctuaries.length,
       });
     }
     setScreen('map');
@@ -292,7 +295,7 @@ export default function PeregrinacaoScreen() {
 
   if (screen === 'result') {
     const passed = correct >= 2;
-    const isLastSanctuary = activeSanctuary + 1 >= SANCTUARIES.length;
+    const isLastSanctuary = activeSanctuary + 1 >= allSanctuaries.length;
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
@@ -344,10 +347,10 @@ export default function PeregrinacaoScreen() {
           ]}>
           <Image source={require('@/assets/images/peregrinacao.png')} style={styles.mapIcon} resizeMode="contain" />
           <ThemedText themeColor="textSecondary" style={styles.mapSubtitle}>
-            Percorra {SANCTUARIES.length} santuários respondendo perguntas para avançar no mapa.
+            Percorra {allSanctuaries.length} santuários respondendo perguntas para avançar no mapa.
           </ThemedText>
           <View style={styles.journeyList}>
-            {SANCTUARIES.map((s, idx) => {
+            {allSanctuaries.map((s, idx) => {
               const isUnlocked = idx < unlocked;
               const isCompleted = idx < unlocked - 1;
               return (

@@ -9,6 +9,7 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/context/game-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeQuizQuestions } from '@/hooks/use-game-packs';
 
 type Difficulty = 'facil' | 'medio' | 'dificil';
 type Phase = 'idle' | 'difficulty' | 'playing' | 'result';
@@ -344,6 +345,7 @@ export default function QuizSantosScreen() {
   const theme  = useTheme();
   const scheme = useColorScheme() ?? 'light';
   const { reportResult } = useGameStore();
+  const { packs } = useGamePacks('quiz');
   const [phase, setPhase] = useState<Phase>('idle');
   const [difficulty, setDifficulty] = useState<Difficulty>('facil');
   const [questions, setQuestions] = useState<typeof ALL_QUESTIONS>([]);
@@ -365,7 +367,8 @@ export default function QuizSantosScreen() {
   }, [phase, score, questions.length, reportResult]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
-    const filtered = ALL_QUESTIONS.filter(q => q.difficulty === diff);
+    const allQ = mergeQuizQuestions(ALL_QUESTIONS, packs);
+    const filtered = allQ.filter(q => q.difficulty === diff);
     setDifficulty(diff);
     setQuestions(filtered);
     setIndex(0);
