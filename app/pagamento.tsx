@@ -21,21 +21,23 @@ import { TRILHAS } from '@/data/trilhas';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/use-theme';
 
-type Aba = 'pix' | 'card';
+type Aba = 'pix' | 'card' | 'moedas';
 type Fase = 'idle' | 'loading' | 'pix_aguardando' | 'card_aguardando' | 'sucesso' | 'erro';
 
 export default function PagamentoScreen() {
-  const { trilhaId, titulo, preco: precoStr } = useLocalSearchParams<{
+  const { trilhaId, titulo, preco: precoStr, coinsPrice: coinsPriceStr } = useLocalSearchParams<{
     trilhaId: string;
     titulo: string;
     preco: string;
+    coinsPrice?: string;
   }>();
   const trilha = TRILHAS.find(t => t.id === Number(trilhaId));
   const preco = parseFloat(precoStr ?? '1.00');
-  const { refreshTrilhas } = useAuth();
+  const coinsPrice = parseInt(coinsPriceStr ?? '0', 10);
+  const { refreshTrilhas, profile, refreshProfile } = useAuth();
   const theme = useTheme();
 
-  const [aba, setAba] = useState<Aba>('pix');
+  const [aba, setAba] = useState<Aba>(coinsPrice > 0 ? 'moedas' : 'pix');
   const [fase, setFase] = useState<Fase>('idle');
   const [pixCode, setPixCode] = useState('');
   const [pixBase64, setPixBase64] = useState('');
@@ -147,6 +149,29 @@ export default function PagamentoScreen() {
     setFase('erro');
   }
 
+  async function comprarComMoedas() {
+    setFase('loading');
+    try {
+      const { data, error } = await supabase.rpc('buy_trilha_with_coins', {
+        p_trilha_id: Number(trilhaId),
+      });
+      if (error) throw new Error(error.message);
+      if (data === 'success' || data === 'already_unlocked') {
+        await Promise.all([refreshTrilhas(), refreshProfile()]);
+        animarXP();
+        setFase('sucesso');
+      } else if (data === 'insufficient_coins') {
+        setErroMsg(`Moedas insuficientes. Você tem ${profile?.coins ?? 0} moedas e precisa de ${coinsPrice}.`);
+        setFase('erro');
+      } else {
+        throw new Error(`Resposta inesperada: ${data}`);
+      }
+    } catch (e: unknown) {
+      setErroMsg(String(e));
+      setFase('erro');
+    }
+  }
+
   return (
     <ThemedView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
@@ -175,19 +200,70 @@ export default function PagamentoScreen() {
           {(fase === 'idle' || fase === 'loading') && (
             <>
               <View style={[s.tabs, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
-                {(['pix', 'card'] as Aba[]).map(a => (
+                {(coinsPrice > 0
+                  ? ['moedas', 'pix', 'card'] as Aba[]
+                  : ['pix', 'card'] as Aba[]
+                ).map(a => (
                   <TouchableOpacity
                     key={a}
                     onPress={() => setAba(a)}
-                    style={[s.tab, aba === a && { backgroundColor: C.purple }]}>
-                    <ThemedText style={[s.tabText, { color: aba === a ? '#fff' : theme.textSecondary }]}>
-                      {a === 'pix' ? '📱 PIX' : '💳 Cartão'}
-                    </ThemedText>
+                    style={[s.tab, aba === a && { backgroundColor: a === 'moedas' ? C.gold : C.purple }]}>
+                    {a === 'moedas' ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Image source={require('@/assets/images/moedas.png')} style={s.coinIconTab} resizeMode="contain" />
+                        <ThemedText style={[s.tabText, { color: aba === a ? '#fff' : theme.textSecondary }]}>Moedas</ThemedText>
+                      </View>
+                    ) : (
+                      <ThemedText style={[s.tabText, { color: aba === a ? '#fff' : theme.textSecondary }]}>
+                        {a === 'pix' ? '📱 PIX' : '💳 Cartão'}
+                      </ThemedText>
+                    )}
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {aba === 'pix' ? (
+              {aba === 'moedas' ? (
+                <View style={s.abaContent}>
+                  <ThemedText style={[s.abaTitle, { color: theme.text }]}>Comprar com Moedas</ThemedText>
+                  <View style={[s.coinBalanceRow, { backgroundColor: C.gold + '15', borderColor: C.gold + '44' }]}>
+                    <Image source={require('@/assets/images/moedas.png')} style={s.coinIcon} resizeMode="contain" />
+                    <View style={{ flex: 1 }}>
+                      <ThemedText style={{ color: theme.textSecondary, fontSize: 12 }}>Seu saldo atual</ThemedText>
+                      <ThemedText style={{ color: C.gold, fontSize: 20, fontWeight: '900' }}>
+                        {profile?.coins ?? 0} moedas
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <View style={[s.infoRow, { backgroundColor: C.purple + '12', borderColor: C.purple + '33' }]}>
+                    <ThemedText style={{ fontSize: 18 }}>⚡</ThemedText>
+                    <ThemedText style={{ color: theme.textSecondary, fontSize: 13, flex: 1 }}>
+                      Trilha liberada imediatamente, sem pagamento externo
+                    </ThemedText>
+                  </View>
+                  {(profile?.coins ?? 0) < coinsPrice && (
+                    <View style={[s.infoRow, { backgroundColor: C.red + '12', borderColor: C.red + '33' }]}>
+                      <ThemedText style={{ fontSize: 18 }}>⚠️</ThemedText>
+                      <ThemedText style={{ color: C.red, fontSize: 13, flex: 1 }}>
+                        Você precisa de mais {coinsPrice - (profile?.coins ?? 0)} moedas. Ganhe moedas jogando ou assistindo anúncios.
+                      </ThemedText>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={[s.btnPrincipal, { backgroundColor: C.gold }, (fase === 'loading' || (profile?.coins ?? 0) < coinsPrice) && { opacity: 0.5 }]}
+                    onPress={comprarComMoedas}
+                    disabled={fase === 'loading' || (profile?.coins ?? 0) < coinsPrice}
+                    activeOpacity={0.8}>
+                    {fase === 'loading'
+                      ? <ActivityIndicator color="#fff" />
+                      : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Image source={require('@/assets/images/moedas.png')} style={s.coinIconBtn} resizeMode="contain" />
+                          <ThemedText style={s.btnText}>COMPRAR POR {coinsPrice} MOEDAS</ThemedText>
+                        </View>
+                      )}
+                  </TouchableOpacity>
+                </View>
+              ) : aba === 'pix' ? (
                 <View style={s.abaContent}>
                   <ThemedText style={[s.abaTitle, { color: theme.text }]}>Pague com PIX</ThemedText>
                   <ThemedText style={[s.abaDesc, { color: theme.textSecondary }]}>
@@ -381,6 +457,13 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
     padding: Spacing.two, borderRadius: 10, borderWidth: 1,
   },
+  coinBalanceRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
+    padding: Spacing.three, borderRadius: 14, borderWidth: 1,
+  },
+  coinIcon:    { width: 36, height: 36 },
+  coinIconTab: { width: 18, height: 18 },
+  coinIconBtn: { width: 22, height: 22 },
   btnPrincipal: { paddingVertical: 16, borderRadius: 99, alignItems: 'center' },
   btnSecundario: { paddingVertical: 14, borderRadius: 99, alignItems: 'center', borderWidth: 1 },
   btnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1 },

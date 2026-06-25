@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GuestBanner } from '@/components/guest-banner';
@@ -12,12 +12,18 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
+import { supabase } from '@/lib/supabase';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
 
 interface Progresso {
   licoesConcluidas: string[];
   xpTotal: number;
+}
+
+interface TrilhaConfig {
+  coinsPrice: number;
+  coinsPurchasable: boolean;
 }
 
 const TRILHAS_GRATIS = TRILHAS.filter(t => t.gratis);
@@ -28,11 +34,20 @@ export default function TrilhasScreen() {
   const { trilhasDesbloqueadas, refreshTrilhas } = useAuth();
   const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
   const [refreshing, setRefreshing] = useState(false);
+  const [trilhaConfigs, setTrilhaConfigs] = useState<Record<number, TrilhaConfig>>({});
 
   const loadData = useCallback(async () => {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw) setProgresso(JSON.parse(raw));
     await refreshTrilhas().catch(() => {});
+    const { data } = await supabase.from('trilha_config').select('trilha_id, coins_price, coins_purchasable');
+    if (data) {
+      const map: Record<number, TrilhaConfig> = {};
+      for (const row of data) {
+        map[row.trilha_id] = { coinsPrice: row.coins_price, coinsPurchasable: row.coins_purchasable };
+      }
+      setTrilhaConfigs(map);
+    }
   }, [refreshTrilhas]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
@@ -162,12 +177,15 @@ export default function TrilhasScreen() {
               );
             }
 
+            const config = trilhaConfigs[trilha.id];
+            const coinsPrice = config?.coinsPurchasable ? config.coinsPrice : 0;
             return (
               <TouchableOpacity
                 key={trilha.id}
-                onPress={() => router.push(
-                  `/pagamento?trilhaId=${trilha.id}&titulo=${encodeURIComponent(trilha.titulo)}&preco=${trilha.preco ?? 9.90}`
-                )}
+                onPress={() => {
+                  const params = `/pagamento?trilhaId=${trilha.id}&titulo=${encodeURIComponent(trilha.titulo)}&preco=${trilha.preco ?? 9.90}${coinsPrice ? `&coinsPrice=${coinsPrice}` : ''}`;
+                  router.push(params as any);
+                }}
                 activeOpacity={0.75}
                 style={[styles.trilhaCard, styles.trilhaLocked, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
                 <View style={styles.trilhaTop}>
@@ -178,11 +196,27 @@ export default function TrilhasScreen() {
                       <View style={[styles.badge, { backgroundColor: C.gold + '22', borderColor: C.gold + '55' }]}>
                         <ThemedText style={[styles.badgeText, { color: C.gold }]}>⭐ Premium</ThemedText>
                       </View>
+                      {coinsPrice > 0 && (
+                        <View style={[styles.badge, styles.coinsBadge, { backgroundColor: C.purple + '22', borderColor: C.purple + '55' }]}>
+                          <Image source={require('@/assets/images/moedas.png')} style={styles.coinIcon} resizeMode="contain" />
+                          <ThemedText style={[styles.badgeText, { color: C.purple }]}>{coinsPrice}</ThemedText>
+                        </View>
+                      )}
                     </View>
                     <ThemedText style={[styles.trilhaDesc, { color: theme.textSecondary }, styles.lockedOpacity]}>{trilha.descricao}</ThemedText>
-                    <ThemedText style={[styles.trilhaMeta, { color: theme.textSecondary }, styles.lockedOpacity]}>
-                      {trilha.nivel} · {trilha.totalLicoes} lições · R$ {trilha.preco?.toFixed(2).replace('.', ',')}
-                    </ThemedText>
+                    {coinsPrice > 0 ? (
+                      <View style={[styles.metaCoinsRow, styles.lockedOpacity]}>
+                        <ThemedText style={[styles.trilhaMeta, { color: theme.textSecondary }]}>
+                          {trilha.nivel} · {trilha.totalLicoes} lições · R$ {trilha.preco?.toFixed(2).replace('.', ',')}{'  ou  '}
+                        </ThemedText>
+                        <Image source={require('@/assets/images/moedas.png')} style={styles.coinIconMeta} resizeMode="contain" />
+                        <ThemedText style={[styles.trilhaMeta, { color: theme.textSecondary }]}>{coinsPrice} moedas</ThemedText>
+                      </View>
+                    ) : (
+                      <ThemedText style={[styles.trilhaMeta, { color: theme.textSecondary }, styles.lockedOpacity]}>
+                        {trilha.nivel} · {trilha.totalLicoes} lições · R$ {trilha.preco?.toFixed(2).replace('.', ',')}
+                      </ThemedText>
+                    )}
                   </View>
                 </View>
               </TouchableOpacity>
@@ -258,5 +292,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
+  coinsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+  },
+  coinIcon:     { width: 14, height: 14 },
+  coinIconMeta: { width: 13, height: 13 },
+  metaCoinsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   badgeText: { fontSize: 11, fontWeight: '700' },
 });
