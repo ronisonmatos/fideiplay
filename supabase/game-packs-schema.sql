@@ -95,3 +95,345 @@ $$;
 -- 4. Índices para performance
 create index if not exists idx_game_packs_type  on game_packs(game_type) where ativo = true;
 create index if not exists idx_user_game_packs  on user_game_packs(user_id);
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- EXEMPLOS DE INSERÇÃO — copie, adapte e execute para cada novo pack
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- CAMPOS COMUNS:
+--   game_type   → qual jogo recebe o conteúdo
+--   titulo      → nome exibido (não mostrado ainda na UI, útil para organização)
+--   categoria   → rótulo livre: 'santos', 'biblia', 'liturgia', 'maria', etc.
+--   gratuito    → true = disponível para todos / false = requer compra com moedas
+--   coins_price → preço em moedas (só importa se gratuito = false)
+--   ativo       → true = ativo / false = desativado sem deletar
+--   visivel     → false = oculto da query (use para rascunhos)
+--   ordem       → ordem de carregamento (menor número = carregado primeiro)
+--
+-- GERENCIAMENTO:
+--   Desativar:  UPDATE game_packs SET ativo   = false WHERE id = '<uuid>';
+--   Ocultar:    UPDATE game_packs SET visivel  = false WHERE id = '<uuid>';
+--   Tornar pago:UPDATE game_packs SET gratuito = false, coins_price = 300 WHERE id = '<uuid>';
+--   Consultar:  SELECT id, game_type, titulo, gratuito, coins_price, ativo FROM game_packs ORDER BY game_type, ordem;
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 1. QUIZ DOS SANTOS
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.perguntas[]:
+--   topic      → tema da pergunta (exibido como tag acima da questão)
+--   question   → texto da pergunta
+--   options    → array com EXATAMENTE 4 opções de resposta
+--   correct    → índice da opção correta (0, 1, 2 ou 3)
+--   difficulty → 'facil' | 'medio' | 'dificil'
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, descricao, gratuito, coins_price, ordem, conteudo)
+VALUES (
+  'quiz',
+  'Santos Brasileiros',
+  'santos',
+  'Perguntas sobre os santos nascidos ou que viveram no Brasil',
+  false,   -- pack pago
+  200,     -- custa 200 moedas
+  10,
+  '{
+    "perguntas": [
+      {
+        "topic": "Santos do Brasil",
+        "question": "Qual foi o primeiro santo nascido no Brasil?",
+        "options": ["São José de Anchieta", "Santa Dulce dos Pobres", "Frei Galvão", "Madre Paulina"],
+        "correct": 2,
+        "difficulty": "medio"
+      },
+      {
+        "topic": "Santos do Brasil",
+        "question": "Em que cidade nasceu Santa Dulce dos Pobres?",
+        "options": ["Recife", "São Paulo", "Salvador", "Fortaleza"],
+        "correct": 2,
+        "difficulty": "facil"
+      },
+      {
+        "topic": "Santos do Brasil",
+        "question": "Qual o nome de batismo de Frei Galvão?",
+        "options": ["Antônio de Sant'Ana Galvão", "Francisco de Assis Galvão", "José Maria Galvão", "Pedro Galvão de Moura"],
+        "correct": 0,
+        "difficulty": "dificil"
+      }
+    ]
+  }'::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 2. SABEDORIA CATÓLICA (Versículo Misterioso)
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.frases[]:
+--   words      → array de strings com CADA PALAVRA separada (sem pontuação junto)
+--   reference  → resposta correta: referência bíblica, nome do santo, papa ou documento
+--   options    → array com EXATAMENTE 4 opções (inclua a correta entre elas)
+--   type       → 'versículo' | 'santo' | 'papa' | 'documento'
+--   difficulty → 'facil' | 'medio' | 'dificil'
+--
+-- type define o LABEL da pergunta:
+--   versículo  → "Onde está escrito?"
+--   santo      → "Quem disse isso?"
+--   papa       → "De qual papa é esta frase?"
+--   documento  → "De qual documento da Igreja?"
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'versiculo',
+  'Frases dos Papas',
+  'papas',
+  true,   -- pack gratuito
+  10,
+  '{
+    "frases": [
+      {
+        "words": ["Não", "tenham", "medo."],
+        "reference": "São João Paulo II",
+        "options": ["São João Paulo II", "Bento XVI", "Francisco", "João XXIII"],
+        "type": "papa",
+        "difficulty": "facil"
+      },
+      {
+        "words": ["A", "família", "é", "a", "célula", "fundamental", "da", "sociedade."],
+        "reference": "Familiaris Consortio",
+        "options": ["Familiaris Consortio", "Gaudium et Spes", "Humanae Vitae", "Lumen Gentium"],
+        "type": "documento",
+        "difficulty": "medio"
+      },
+      {
+        "words": ["Fora", "da", "Igreja", "não", "há", "salvação."],
+        "reference": "Santo Cipriano de Cartago",
+        "options": ["Santo Agostinho", "Santo Cipriano de Cartago", "São João Crisóstomo", "São Jerônimo"],
+        "type": "santo",
+        "difficulty": "dificil"
+      }
+    ]
+  }'::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 3. PEREGRINAÇÃO VIRTUAL
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.santuarios[]:
+--   emoji       → bandeira/emoji do país (ex: '🇧🇷')
+--   name        → nome do santuário
+--   country     → país (exibido no subtítulo)
+--   description → breve descrição histórica
+--   questions[] → array de perguntas do santuário
+--     question  → texto da pergunta
+--     options   → array com EXATAMENTE 4 opções
+--     correct   → índice da resposta correta (0–3)
+--
+-- Recomendado: 4 perguntas por santuário (o jogo exige ≥2 acertos para avançar)
+-- Novos santuários são adicionados AO FINAL da lista de peregrinação
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'peregrinacao',
+  'Santuários da América Latina',
+  'santuarios',
+  true,
+  10,
+  '{
+    "santuarios": [
+      {
+        "emoji": "🇦🇷",
+        "name": "Basílica de Luján",
+        "country": "Argentina",
+        "description": "Santuário da padroeira da Argentina, Uruguai e Paraguai.",
+        "questions": [
+          {
+            "question": "Nossa Senhora de Luján é padroeira de quantos países?",
+            "options": ["1", "2", "3", "4"],
+            "correct": 2
+          },
+          {
+            "question": "Em que século foi fundado o Santuário de Luján?",
+            "options": ["XVI", "XVII", "XVIII", "XIX"],
+            "correct": 1
+          },
+          {
+            "question": "Qual o estilo arquitetônico da Basílica de Luján?",
+            "options": ["Barroco", "Renascentista", "Gótico", "Neoclássico"],
+            "correct": 2
+          },
+          {
+            "question": "Em que província argentina fica Luján?",
+            "options": ["Córdoba", "Buenos Aires", "Santa Fé", "Mendoza"],
+            "correct": 1
+          }
+        ]
+      }
+    ]
+  }'::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 4. PALAVRAS DA FÉ (Caça-palavras)
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.temas[]:
+--   title      → nome do tema (ex: 'Apóstolos')
+--   subtitle   → subtítulo descritivo (ex: 'Os 12 escolhidos por Jesus')
+--   words      → array de palavras EM MAIÚSCULAS, sem acento, sem espaço
+--                  fácil: 5 palavras / médio: 6 palavras / difícil: 7–8 palavras
+--   difficulty → 'facil' | 'medio' | 'dificil'
+--   gridSize   → tamanho do grid: 8 (fácil) | 9 (médio) | 10 (difícil)
+--
+-- ATENÇÃO: palavras devem caber no grid. Palavra mais longa ≤ gridSize.
+--          Use apenas letras A-Z sem acentos (ex: EUCARISTIA, não EUCARISTÍA).
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'palavras',
+  'Apóstolos e Evangelistas',
+  'biblia',
+  true,
+  10,
+  '{
+    "temas": [
+      {
+        "title": "Os Apóstolos",
+        "subtitle": "Escolhidos por Jesus",
+        "words": ["PEDRO", "PAULO", "JOAO", "TIAGO"],
+        "difficulty": "facil",
+        "gridSize": 8
+      },
+      {
+        "title": "Evangelistas",
+        "subtitle": "Autores dos Evangelhos",
+        "words": ["MATEUS", "MARCOS", "LUCAS", "JOAO", "APOSTOLO", "ESPIRITO"],
+        "difficulty": "medio",
+        "gridSize": 9
+      },
+      {
+        "title": "Cartas de Paulo",
+        "subtitle": "Epístolas paulinas",
+        "words": ["ROMANOS", "CORINTIOS", "GALATAS", "EFESIOS", "FILIPENSES", "COLOSSENSES", "TIMOTEO"],
+        "difficulty": "dificil",
+        "gridSize": 10
+      }
+    ]
+  }'::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 5. DESAFIO LITÚRGICO
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.perguntas[]:
+--   question   → texto da pergunta
+--   options    → array com EXATAMENTE 4 opções
+--   correct    → índice da opção correta (0–3)
+--   hint       → dica exibida após responder (obrigatório)
+--   difficulty → 'facil' | 'medio' | 'dificil'
+--
+-- Diferença do Quiz: tem campo "hint" (sem "topic"), e o tempo é contado
+-- regressivamente por dificuldade: fácil 90s / médio 75s / difícil 60s
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'liturgico',
+  'Ano Litúrgico Avançado',
+  'liturgia',
+  false,  -- pack pago
+  200,    -- custa 200 moedas
+  10,
+  '{
+    "perguntas": [
+      {
+        "question": "Qual é a data fixa da solenidade de Cristo Rei?",
+        "options": ["Último domingo do Ano Litúrgico", "1º de novembro", "Último domingo de outubro", "Primeiro domingo do Advento"],
+        "correct": 0,
+        "hint": "Encerra o Tempo Comum, última semana do Ano Litúrgico.",
+        "difficulty": "medio"
+      },
+      {
+        "question": "O que é o 'Triduum Pascal'?",
+        "options": [
+          "Os três dias antes do Natal",
+          "Quinta-feira Santa, Sexta-feira Santa e Vigília Pascal",
+          "Os três domingos da Quaresma",
+          "Quarta, Quinta e Sexta da Semana Santa"
+        ],
+        "correct": 1,
+        "hint": "Ápice do Ano Litúrgico: Paixão, Morte e Ressurreição de Cristo.",
+        "difficulty": "dificil"
+      },
+      {
+        "question": "Quantas semanas tem o Tempo Comum no total?",
+        "options": ["30", "33 ou 34", "28", "40"],
+        "correct": 1,
+        "hint": "Varia conforme a data da Páscoa: entre 33 e 34 semanas.",
+        "difficulty": "facil"
+      }
+    ]
+  }'::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 6. STOP CATÓLICO
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.categorias[]:
+--   key   → identificador único (snake_case, sem espaços, sem acento)
+--           IMPORTANTE: não use uma key já existente no código (lista abaixo)
+--   label → nome exibido na tela de seleção de categorias
+--   emoji → emoji exibido ao lado do label
+--
+-- Keys já existentes (NÃO repetir):
+--   fundador, igrejafe, missa, objetolit, partesigrj, titulo_maria,
+--   simbolo, oracao, virtude, pecado, livro_biblia, lugar_sagrado,
+--   santo, papa, personagem_biblico, padre
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'stop',
+  'Categorias Avançadas',
+  'extra',
+  false,  -- pack pago
+  150,    -- custa 150 moedas
+  10,
+  '{
+    "categorias": [
+      {
+        "key": "concilio",
+        "label": "Concílio ou Sínodo",
+        "emoji": "🏛️"
+      },
+      {
+        "key": "encíclica",
+        "label": "Encíclica papal",
+        "emoji": "📜"
+      },
+      {
+        "key": "heresia",
+        "label": "Heresia condenada pela Igreja",
+        "emoji": "⚠️"
+      },
+      {
+        "key": "martir",
+        "label": "Mártir cristão",
+        "emoji": "✝️"
+      }
+    ]
+  }'::jsonb
+);
+*/
