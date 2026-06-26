@@ -7,14 +7,21 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+const VALID_CATEGORIES = new Set([
+  'fundador','igrejafe','missa','objetolit','partesigrj','titulo_maria',
+  'simbolo','oracao','virtude','pecado','livro_biblia','lugar_sagrado',
+  'santo','papa','personagem_biblico','padre',
+  'atributo_deus','animal_biblico','dogma','festa_liturgica','mulher_biblia',
+]);
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   try {
-    const { letter, categoryKey: _ck, categoryLabel } = await req.json() as {
+    const { letter, categoryKey, categoryLabel } = await req.json() as {
       letter: string; categoryKey: string; categoryLabel: string;
     };
-    if (!letter || !categoryLabel) return json({ word: null });
+    if (!letter || !categoryKey || !VALID_CATEGORIES.has(categoryKey)) return json({ word: null });
 
     const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
     const msg = await client.messages.create({

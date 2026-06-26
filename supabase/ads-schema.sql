@@ -1,4 +1,4 @@
--- FideiPlay — Sistema de anúncios próprio
+-- SantosPlay — Sistema de anúncios próprio
 -- Execute no SQL Editor do Supabase
 
 -- 1. Tabela de anúncios (conteúdo vem do Storage)

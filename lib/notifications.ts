@@ -2,8 +2,8 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
-export const NOTIF_CHANNEL      = 'fideiplay';
-export const NOTIF_CHANNEL_CHAT = 'fideiplay_chat';
+export const NOTIF_CHANNEL      = 'santosplay';
+export const NOTIF_CHANNEL_CHAT = 'santosplay_chat';
 
 // Como as notificações aparecem quando o app está aberto
 Notifications.setNotificationHandler({
@@ -28,14 +28,14 @@ export async function requestNotificationPermission(): Promise<boolean> {
 export async function setupNotificationChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL, {
-    name: 'FideiPlay',
+    name: 'SantosPlay',
     importance: Notifications.AndroidImportance.HIGH,
     sound: 'church_bell.wav',
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#7C3AED',
   });
   await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL_CHAT, {
-    name: 'FideiPlay — Chat',
+    name: 'SantosPlay — Chat',
     importance: Notifications.AndroidImportance.DEFAULT,
     sound: 'chat_beep.wav',
   });
@@ -126,7 +126,7 @@ export async function scheduleCoinBonusReminder() {
     identifier: COIN_BONUS_ID,
     content: {
       title: '🪙 Seu bônus está disponível!',
-      body: 'Já faz 2 horas — volte ao FideiPlay para resgatar suas moedas.',
+      body: 'Já faz 2 horas — volte ao SantosPlay para resgatar suas moedas.',
       sound: 'church_bell.wav',
       android: { largeIcon: require('../assets/images/logo_SantosPlay.png'), channelId: NOTIF_CHANNEL },
     },

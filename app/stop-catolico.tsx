@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
+import { CoinsAnimation } from '@/components/coins-animation';
 import { GameHeader } from '@/components/game-header';
 import { GameRewardBanner } from '@/components/game-reward-banner';
 import { ThemedText } from '@/components/themed-text';
@@ -61,6 +62,7 @@ export default function StopCatolicoScreen() {
   const [aiLoading,   setAiLoading]   = useState(false);
   const [hints,       setHints]       = useState<HintMap>({});
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
+  const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
 
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRefs        = useRef<Partial<Record<string, TextInput | null>>>({});
@@ -82,10 +84,12 @@ export default function StopCatolicoScreen() {
 
   const skipSpin = useCallback(() => {
     clearSpinTimeouts();
-    setSpinLetter(targetLetterRef.current);
+    const target = targetLetterRef.current;
+    setSpinLetter(target);
+    setLetter(target);
     setSpinDone(true);
     scaleAnim.setValue(1);
-    const t = setTimeout(() => setPhase('playing'), 400);
+    const t = setTimeout(() => { setLetter(targetLetterRef.current); setPhase('playing'); }, 400);
     spinTimeoutsRef.current.push(t);
   }, [clearSpinTimeouts, scaleAnim]);
 
@@ -181,9 +185,11 @@ export default function StopCatolicoScreen() {
       nextIdx = ((nextIdx + dir) + cats.length) % cats.length;
       attempts++;
     }
+    if (cats[nextIdx].key === currentKey) return; // nenhuma categoria disponível
     const newSlots = [...slots];
     newSlots[slotIdx] = cats[nextIdx].key;
     setSlots(newSlots);
+    setCoinSpend(-1);
     supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 }).then(() => refreshProfile());
   }, [user, profile, slots, allCategories, refreshProfile]);
 
@@ -194,8 +200,16 @@ export default function StopCatolicoScreen() {
     }
     await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -5 });
     setSlots(pickSixKeys(allCategories));
+    setCoinSpend(-5);
     refreshProfile();
   }, [user, profile, allCategories, refreshProfile]);
+
+  const setAnswer = useCallback((key: string, value: string) => {
+    setAnswers(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const phaseRef = useRef<Phase>('idle');
+  phaseRef.current = phase;
 
   const handleHint = useCallback(async (cat: StopCategory) => {
     if (!user || !profile) return;
@@ -211,6 +225,8 @@ export default function StopCatolicoScreen() {
       word = await getAIHint(letter, cat.key, cat.label);
       if (word) setHints(prev => ({ ...prev, [cat.key]: word! }));
     }
+
+    if (phaseRef.current !== 'playing') { setLoadingHint(null); return; }
 
     if (!word) {
       Alert.alert('Dica indisponível', 'Não encontramos sugestão para essa categoria com essa letra.');
@@ -274,7 +290,7 @@ export default function StopCatolicoScreen() {
       ]).start();
     }, lastT));
 
-    refs.push(setTimeout(() => setPhase('playing'), lastT + 1100));
+    refs.push(setTimeout(() => { setLetter(targetLetterRef.current); setPhase('playing'); }, lastT + 1100));
     setPhase('spinning');
   }, [clearSpinTimeouts, scaleAnim]);
 
@@ -284,9 +300,6 @@ export default function StopCatolicoScreen() {
   }, [slots, allCategories, startGame]);
 
   const callStop  = useCallback(() => { stopTimer(); setPhase('result'); }, [stopTimer]);
-  const setAnswer = useCallback((key: string, value: string) => {
-    setAnswers(prev => ({ ...prev, [key]: value }));
-  }, []);
   const isValid = useCallback((key: string) => {
     const a = answers[key]?.trim() ?? '';
     return a.length > 0 && a[0].toUpperCase() === letter;
@@ -346,7 +359,26 @@ export default function StopCatolicoScreen() {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Stop Católico" subtitle="CATEGORIAS" />
+          <GameHeader
+            title="Stop Católico"
+            subtitle="CATEGORIAS"
+            right={
+              <View style={{ alignItems: 'flex-end' }}>
+                <ThemedText style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.8, color: C.gold }}>MOEDAS</ThemedText>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Image source={require('@/assets/images/moedas.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
+                  <ThemedText style={{ fontSize: 18, fontWeight: '900', color: C.gold, lineHeight: 22 }}>
+                    {profile?.coins ?? 0}
+                  </ThemedText>
+                </View>
+              </View>
+            }
+          />
+          <CoinsAnimation
+            amount={coinSpend ?? -1}
+            visible={coinSpend !== null}
+            onDone={() => setCoinSpend(null)}
+          />
           <ScrollView
             contentContainerStyle={[s.selectScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             showsVerticalScrollIndicator={false}>
@@ -391,7 +423,6 @@ export default function StopCatolicoScreen() {
 
                     {/* Category center */}
                     <View style={s.slotCenter}>
-                      <ThemedText style={s.slotEmoji}>{cat.emoji}</ThemedText>
                       <ThemedText
                         style={[s.slotLabel, { color: theme.text }]}
                         numberOfLines={2}
@@ -460,7 +491,6 @@ export default function StopCatolicoScreen() {
   if (phase === 'result') {
     const displayScore      = bankScore ?? score;
     const displayValidCount = bankValidCount ?? validCount;
-    const medal = displayScore >= 60 ? '🏆' : displayScore >= 30 ? '🎖️' : '📿';
     const msg   = displayScore >= 60
       ? 'Excelente vocabulário da fé!'
       : displayScore >= 30
@@ -477,7 +507,6 @@ export default function StopCatolicoScreen() {
                 <ThemedText style={s.letterCircleText}>{letter}</ThemedText>
               </View>
               <View style={s.resultSummaryText}>
-                <ThemedText style={{ fontSize: 40, lineHeight: 48 }}>{medal}</ThemedText>
                 <ThemedText type="subtitle" style={{ lineHeight: 32 }}>
                   {bankScore !== null ? `${displayScore} pts` : '...'}
                 </ThemedText>
@@ -679,7 +708,6 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.two,
   },
-  slotEmoji: { fontSize: 26, lineHeight: 32, width: 32, textAlign: 'center' },
   slotLabel: { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
   playBtn: {
     alignSelf: 'stretch',

@@ -1,4 +1,4 @@
--- FideiPlay — Histórico de pagamentos de trilhas
+-- SantosPlay — Histórico de pagamentos de trilhas
 -- Execute no SQL Editor do Supabase
 
 CREATE TABLE IF NOT EXISTS payments (

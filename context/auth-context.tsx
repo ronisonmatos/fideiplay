@@ -139,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([
-      '@fideiplay:game_store',
+      '@santosplay:game_store',
       '@santosplay:trilhas_progresso',
     ]).catch(() => {});
   }, []);

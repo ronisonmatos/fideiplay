@@ -17,8 +17,8 @@ CREATE POLICY "Leitura pública de config"
 
 -- URLs das páginas legais — atualize para o domínio real após o deploy na Vercel
 INSERT INTO public.app_config (key, value) VALUES
-  ('url_termos',      'https://seu-dominio.vercel.app/termos'),
-  ('url_privacidade', 'https://seu-dominio.vercel.app/privacidade')
+  ('url_termos',      'https://santosplay.vercel.app/termos.html'),
+  ('url_privacidade', 'https://santosplay.vercel.app/privacidade.html')
 ON CONFLICT (key) DO UPDATE SET
   value      = EXCLUDED.value,
   updated_at = now();

@@ -12,7 +12,7 @@ import { scheduleDailyReminder, setupNotificationChannel, syncServerNotification
 import { pullProgress, pushProgress } from '@/lib/progress-sync';
 
 // Aplica o tema salvo (padrão: escuro)
-AsyncStorage.getItem('@fideiplay:theme').then(saved => {
+AsyncStorage.getItem('@santosplay:theme').then(saved => {
   Appearance.setColorScheme(saved === 'light' ? 'light' : 'dark');
 });
 

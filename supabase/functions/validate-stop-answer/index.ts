@@ -6,6 +6,7 @@ const VALID_CATEGORIES = new Set([
   'fundador','igrejafe','missa','objetolit','partesigrj','titulo_maria',
   'simbolo','oracao','virtude','pecado','livro_biblia','lugar_sagrado',
   'santo','papa','personagem_biblico','padre',
+  'atributo_deus','animal_biblico','dogma','festa_liturgica','mulher_biblia',
 ]);
 
 const cors = {

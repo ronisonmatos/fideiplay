@@ -1,4 +1,4 @@
-export const ALL_LETTERS = ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V','Z'];
+export const ALL_LETTERS = ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V'];
 
 export interface StopCategory {
   key:          string;
@@ -19,19 +19,19 @@ export const ALL_STOP_CATEGORIES: StopCategory[] = [
     key: 'santo',
     label: 'Santo(a)',
     emoji: '😇',
-    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','P','R','S','T','U','V','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','P','R','S','T','U','V'],
   },
   {
     key: 'personagem_biblico',
     label: 'Personagem bíblico',
     emoji: '📜',
-    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','P','R','S','T','U','V','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','P','R','S','T','U','V'],
   },
   {
     key: 'pecado',
     label: 'Pecado',
     emoji: '🍎',
-    validLetters: ['A','B','C','D','E','F','G','H','I','L','M','N','O','P','R','S','T','U','V','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','L','M','N','O','P','R','S','T','U','V'],
   },
   {
     key: 'atributo_deus',
@@ -67,31 +67,31 @@ export const ALL_STOP_CATEGORIES: StopCategory[] = [
     key: 'virtude',
     label: 'Virtude cristã',
     emoji: '✨',
-    validLetters: ['A','B','C','D','E','F','G','H','I','L','M','P','R','S','T','U','V','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','L','M','P','R','S','T','U','V'],
   },
   {
     key: 'livro_biblia',
     label: 'Livro da Bíblia',
     emoji: '📖',
-    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T'],
   },
   {
     key: 'lugar_sagrado',
     label: 'Lugar sagrado / Cidade bíblica',
     emoji: '🗺️',
-    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U'],
   },
   {
     key: 'papa',
     label: 'Papa',
     emoji: '👑',
-    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','P','S','T','U','V','Z'],
+    validLetters: ['A','B','C','D','E','F','G','H','I','J','L','M','N','P','S','T','U','V'],
   },
   {
     key: 'fundador',
     label: 'Fundador de ordem religiosa',
     emoji: '⛪',
-    validLetters: ['A','B','C','D','E','F','G','I','J','L','M','N','P','R','S','T','V','Z'],
+    validLetters: ['A','B','C','D','E','F','G','I','J','L','M','N','P','R','S','T','V'],
   },
   {
     key: 'titulo_maria',
@@ -119,12 +119,18 @@ export const ALL_STOP_CATEGORIES: StopCategory[] = [
   },
 ];
 
-/** Intersection of validLetters across all selected categories */
+/**
+ * Returns the letters valid for ALL selected categories (strict intersection).
+ * If no such letter exists, returns the letters valid for the most categories
+ * (best-coverage fallback) so the drawn letter is always as valid as possible.
+ */
 export function computeAvailableLetters(cats: StopCategory[]): string[] {
   if (cats.length === 0) return ALL_LETTERS;
   const sets = cats.map(c => new Set(c.validLetters));
-  const available = ALL_LETTERS.filter(l => sets.every(s => s.has(l)));
-  return available.length > 0 ? available : ALL_LETTERS;
+  const perfect = ALL_LETTERS.filter(l => sets.every(s => s.has(l)));
+  if (perfect.length > 0) return perfect;
+  const maxCoverage = Math.max(...ALL_LETTERS.map(l => sets.filter(s => s.has(l)).length));
+  return ALL_LETTERS.filter(l => sets.filter(s => s.has(l)).length === maxCoverage);
 }
 
 export function randomDefaultKeys(count = 6): Set<string> {

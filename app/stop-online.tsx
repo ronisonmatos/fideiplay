@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,18 +19,26 @@ import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
-import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
+import { ALL_LETTERS, ALL_STOP_CATEGORIES, computeAvailableLetters, StopCategory } from '@/constants/stop-categories';
 import { supabase } from '@/lib/supabase';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { recordScoreEvent } from '@/lib/score-events';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
+import { useStopCategories } from '@/hooks/use-stop-categories';
+import { CoinsAnimation } from '@/components/coins-animation';
 
 const BRAND            = '#EF9F27';
 const TIMER            = 90;
-const MIN_CATS         = 4;
+const SLOT_COUNT       = 6;
+const SLOT_COLORS      = [C.purple, BRAND, C.green, '#4A9EDB', '#C97BD4', '#E05555'];
 const ASYNC_DEADLINE_MS = 2 * 24 * 60 * 60 * 1000;
+
+function pickSixKeys(cats: StopCategory[]): string[] {
+  return [...cats].sort(() => Math.random() - 0.5).slice(0, SLOT_COUNT).map(c => c.key);
+}
 const ROOM_TIMEOUT_S   = 120; // 2 min para sala encher; depois inicia com quem entrou
 
 const COINS = {
@@ -43,10 +52,17 @@ const COINS = {
   OPP_OUT:  25,
 } as const;
 
-const LETTERS     = ['A','B','C','D','E','F','G','H','J','L','M','N','O','P','R','S','T','V'];
+const LETTERS     = ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V'];
 const CODE_CHARS  = 'ABCDEFGHJKLMNPRSTV23456789';
 const genRoomCode = () =>
   Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+
+function pickOnlineLetter(cats: StopCategory[]): string {
+  const catValid  = computeAvailableLetters(cats);
+  const pool      = catValid.filter(l => LETTERS.includes(l));
+  const draw      = pool.length > 0 ? pool : LETTERS;
+  return draw[Math.floor(Math.random() * draw.length)];
+}
 
 type Phase    = 'selecting' | 'matchmaking' | 'spinning' | 'playing' | 'waiting' | 'async_submitted' | 'validating' | 'result' | 'error';
 type GameMode = 'realtime' | 'async';
@@ -98,6 +114,11 @@ export default function StopOnlineScreen() {
   const theme      = useTheme();
   const navigation = useNavigation();
   const { user, profile, refreshProfile } = useAuth();
+  const { packs }      = useGamePacks('stop');
+  const baseCategories = useStopCategories();
+  const allCategories  = mergeStopCategories(baseCategories, packs, ALL_LETTERS) as StopCategory[];
+  const allCategoriesRef = useRef<StopCategory[]>(ALL_STOP_CATEGORIES);
+  useEffect(() => { allCategoriesRef.current = allCategories; }, [allCategories]);
 
   const playerIdRef   = useRef('');   playerIdRef.current   = user?.id ?? '';
   const playerNameRef = useRef('Jogador'); playerNameRef.current = profile?.name ?? 'Jogador';
@@ -108,7 +129,9 @@ export default function StopOnlineScreen() {
   const [gameMode,       setGameMode]       = useState<GameMode>('realtime');
   const gameModeRef                         = useRef<GameMode>('realtime');
   const [statusMsg,      setStatusMsg]      = useState('');
-  const [selectedKeys,   setSelectedKeys]   = useState<Set<string>>(() => randomDefaultKeys());
+  const [slots,          setSlots]          = useState<string[]>(() => pickSixKeys(ALL_STOP_CATEGORIES));
+  const slotsRef = useRef<string[]>([]);
+  useEffect(() => { slotsRef.current = slots; }, [slots]);
   const [gameCategories, setGameCategories] = useState<StopCategory[]>([]);
   const gameCatsRef = useRef<StopCategory[]>([]);
   useEffect(() => { gameCatsRef.current = gameCategories; }, [gameCategories]);
@@ -156,6 +179,7 @@ export default function StopOnlineScreen() {
   const [waitingOpp,  setWaitingOpp]  = useState(false);
   const [hints,       setHints]       = useState<HintMap>({});
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
+  const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
 
   // ── Spin state ─────────────────────────────────────────────────────────────
   const [spinLetter, setSpinLetter] = useState('A');
@@ -279,7 +303,7 @@ export default function StopOnlineScreen() {
         Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, bounciness: 12 }),
       ]).start();
     }, lastT));
-    refs.push(setTimeout(() => { setTimeLeft(TIMER); setPhase('playing'); }, lastT + 1100));
+    refs.push(setTimeout(() => { setLetter(targetLetter); setTimeLeft(TIMER); setPhase('playing'); }, lastT + 1100));
     setPhase('spinning');
   }, [scaleAnim]);
 
@@ -398,7 +422,7 @@ export default function StopOnlineScreen() {
       // Não-P1 recebe as categorias de P1
       .on('broadcast', { event: 'cats_sync' }, ({ payload }) => {
         const keys = (payload as { cats: string[] }).cats;
-        const cats = ALL_STOP_CATEGORIES.filter(c => keys.includes(c.key));
+        const cats = allCategoriesRef.current.filter(c => keys.includes(c.key));
         if (cats.length > 0) { setGameCategories(cats); gameCatsRef.current = cats; }
       })
       // Qualquer jogador clicou STOP → todos param
@@ -444,7 +468,7 @@ export default function StopOnlineScreen() {
       .from('stop_rooms').select('p1_rematch,p2_rematch,player1_id,player2_id').eq('id', rId).single();
     if (!room || !(room.p1_rematch && room.p2_rematch) || !isP1Ref.current) return;
 
-    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    const newLetter = pickOnlineLetter(gameCatsRef.current);
     const { data: newRoom } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, status: 'active', mode: 'realtime',
@@ -542,20 +566,40 @@ export default function StopOnlineScreen() {
   const setAnswer  = useCallback((key: string, value: string) => {
     setAnswers(prev => ({ ...prev, [key]: value }));
   }, []);
-  const toggleCat  = useCallback((key: string) => {
-    setSelectedKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) { if (next.size > MIN_CATS) next.delete(key); }
-      else next.add(key);
-      return next;
-    });
-  }, []);
 
   const handleShuffle = useCallback(async () => {
-    if (!user || !profile || profile.coins < 1) return;
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
-    setSelectedKeys(randomDefaultKeys(6));
+    if (!user || !profile || profile.coins < 5) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 5 🪙 para sortear novas categorias.');
+      return;
+    }
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -5 });
+    setSlots(pickSixKeys(allCategoriesRef.current));
+    setCoinSpend(-5);
     refreshProfile();
+  }, [user, profile, refreshProfile]);
+
+  const cycleCat = useCallback(async (slotIdx: number, dir: 1 | -1) => {
+    if (!user || !profile) return;
+    if (profile.coins < 1) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para trocar uma categoria.');
+      return;
+    }
+    const cats         = allCategoriesRef.current;
+    const currentSlots = slotsRef.current;
+    const currentKey   = currentSlots[slotIdx];
+    const usedKeys     = new Set(currentSlots.filter((_, i) => i !== slotIdx));
+    let   nextIdx      = ((cats.findIndex(c => c.key === currentKey) + dir) + cats.length) % cats.length;
+    let   attempts     = 0;
+    while (usedKeys.has(cats[nextIdx].key) && attempts < cats.length) {
+      nextIdx = ((nextIdx + dir) + cats.length) % cats.length;
+      attempts++;
+    }
+    if (cats[nextIdx].key === currentKey) return; // nenhuma categoria disponível
+    const newSlots = [...currentSlots];
+    newSlots[slotIdx] = cats[nextIdx].key;
+    setSlots(newSlots);
+    setCoinSpend(-1);
+    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 }).then(() => refreshProfile());
   }, [user, profile, refreshProfile]);
 
   const handleHint = useCallback(async (cat: StopCategory) => {
@@ -572,6 +616,8 @@ export default function StopOnlineScreen() {
       word = await getAIHint(letterRef.current, cat.key, cat.label);
       if (word) setHints(prev => ({ ...prev, [cat.key]: word! }));
     }
+
+    if (phaseRef.current !== 'playing') { setLoadingHint(null); return; }
 
     if (!word) {
       Alert.alert('Dica indisponível', 'Não encontramos sugestão para essa categoria com essa letra.');
@@ -820,7 +866,7 @@ export default function StopOnlineScreen() {
   // ── Create realtime room ──────────────────────────────────────────────────
   const createRealtimeRoom = useCallback(async (visibility: 'public' | 'private', nPlayers = 2) => {
     if (!playerIdRef.current) return;
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     setPhase('matchmaking');
@@ -830,7 +876,7 @@ export default function StopOnlineScreen() {
     const mp       = nPlayers;
     const isMulti  = mp > 2 && visibility === 'public';
     const p1Info   = [{ id: playerIdRef.current, name: playerNameRef.current }];
-    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    const newLetter = pickOnlineLetter(cats);
     const roomCode  = visibility === 'private' ? genRoomCode() : null;
 
     setMaxPlayers(mp); maxPlayersRef.current = mp;
@@ -897,7 +943,7 @@ export default function StopOnlineScreen() {
         }
       }, 5 * 60_000);
     }
-  }, [selectedKeys, subscribeToRoom]);
+  }, [subscribeToRoom]);
 
   const handleCriarSalaPublica  = useCallback(() => createRealtimeRoom('public', maxPlayers),  [createRealtimeRoom, maxPlayers]);
   const handleCriarSalaPrivada  = useCallback(() => createRealtimeRoom('private', 2),           [createRealtimeRoom]);
@@ -905,7 +951,7 @@ export default function StopOnlineScreen() {
   // ── Join a realtime room from list ─────────────────────────────────────────
   const joinRealtimeRoom = useCallback(async (room: RealtimeRoom) => {
     if (!playerIdRef.current) return;
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     isMatchedRef.current = false;
@@ -937,12 +983,12 @@ export default function StopOnlineScreen() {
       // Ainda há vagas: aguarda mais jogadores ou timeout de P1
       setStatusMsg(`${joinResult.player_count}/${joinResult.max_players} jogadores`);
     }
-  }, [selectedKeys, subscribeToRoom, fetchRealtimeRooms]);
+  }, [subscribeToRoom, fetchRealtimeRooms]);
 
   // ── Join private room by code ─────────────────────────────────────────────
   const joinByCode = useCallback(async () => {
     const code = joinCodeInput.trim().toUpperCase();
-    if (code.length < 4) {
+    if (code.length !== 6) {
       Alert.alert('Código inválido', 'Digite o código de 6 caracteres da sala.');
       return;
     }
@@ -961,7 +1007,7 @@ export default function StopOnlineScreen() {
   // ── Async flow (VAMOS JOGAR!) ──────────────────────────────────────────────
   const handleVamosJogar = useCallback(async () => {
     if (!playerIdRef.current) return;
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('async'); gameModeRef.current = 'async';
     setPhase('matchmaking'); setStatusMsg('Procurando partida...');
@@ -996,7 +1042,7 @@ export default function StopOnlineScreen() {
     }
 
     // Create a new async room and play as P1
-    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    const newLetter = pickOnlineLetter(cats);
     const { data: newRoom, error } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, player1_id: playerIdRef.current,
@@ -1008,7 +1054,7 @@ export default function StopOnlineScreen() {
     roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true);
     setLetter(newLetter); letterRef.current = newLetter;
     startSpin(newLetter);
-  }, [selectedKeys, startSpin]);
+  }, [startSpin]);
 
   // ── Join a specific async game from list (as P2) ───────────────────────────
   const joinAsyncGame = useCallback(async (game: AsyncGame) => {
@@ -1017,7 +1063,7 @@ export default function StopOnlineScreen() {
       Alert.alert('Prazo expirado', 'Esta partida já expirou.');
       fetchAsyncGames(true); return;
     }
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('async'); gameModeRef.current = 'async';
     setPhase('matchmaking'); setStatusMsg('Entrando na partida...');
@@ -1035,7 +1081,7 @@ export default function StopOnlineScreen() {
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
     startSpin(game.letter);
-  }, [selectedKeys, startSpin, fetchAsyncGames]);
+  }, [startSpin, fetchAsyncGames]);
 
   // ── View result of a completed async game ─────────────────────────────────
   const viewAsyncResult = useCallback(async (game: AsyncGame) => {
@@ -1051,7 +1097,7 @@ export default function StopOnlineScreen() {
     if (!me) { Alert.alert('Aguarde', 'Você ainda não enviou suas respostas.'); return; }
 
     const answerKeys = Object.keys(me.answers ?? {});
-    const cats = ALL_STOP_CATEGORIES.filter(c => answerKeys.includes(c.key));
+    const cats = allCategoriesRef.current.filter(c => answerKeys.includes(c.key));
 
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
@@ -1106,38 +1152,79 @@ export default function StopOnlineScreen() {
 
   // ── Category selection ─────────────────────────────────────────────────────
   if (phase === 'selecting') {
-    const numSelected = selectedKeys.size;
+    const canCycle = !!profile && profile.coins >= 1;
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Stop Online" subtitle="ESCOLHER CATEGORIAS" />
+          <GameHeader
+            title="Stop Online"
+            subtitle="CATEGORIAS"
+            right={
+              <View style={{ alignItems: 'flex-end' }}>
+                <ThemedText style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.8, color: C.gold }}>MOEDAS</ThemedText>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Image source={require('@/assets/images/moedas.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
+                  <ThemedText style={{ fontSize: 18, fontWeight: '900', color: C.gold, lineHeight: 22 }}>
+                    {profile?.coins ?? 0}
+                  </ThemedText>
+                </View>
+              </View>
+            }
+          />
+          <CoinsAnimation
+            amount={coinSpend ?? -1}
+            visible={coinSpend !== null}
+            onDone={() => setCoinSpend(null)}
+          />
           <ScrollView contentContainerStyle={[s.selectScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             showsVerticalScrollIndicator={false}>
 
-            <ThemedText type="subtitle" style={s.center}>Escolha as categorias</ThemedText>
-            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
-              Mínimo {MIN_CATS} · Selecionadas: {numSelected}
+            {/* Slot header */}
+            <View style={s.selectHeader}>
+              <ThemedText style={[s.selectTitle, { color: theme.text }]}>Categorias</ThemedText>
+              <TouchableOpacity
+                style={[s.shuffleBtn, (!profile || profile.coins < 5) && { opacity: 0.35 }]}
+                onPress={handleShuffle}
+                disabled={!profile || profile.coins < 5}
+                activeOpacity={0.8}>
+                <ThemedText style={s.shuffleBtnText}>🔀 Novas  −5 🪙</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12 }]}>
+              Use ‹ › para trocar cada categoria  (−1 🪙)
             </ThemedText>
 
-            <TouchableOpacity
-              style={[s.shuffleBtn, profile && profile.coins < 1 && { opacity: 0.4 }]}
-              onPress={handleShuffle}
-              disabled={!profile || profile.coins < 1}
-              activeOpacity={0.8}>
-              <ThemedText style={s.shuffleBtnText}>🔀  Novas categorias  −1 🪙</ThemedText>
-            </TouchableOpacity>
-
-            <View style={s.catGrid}>
-              {ALL_STOP_CATEGORIES.map(cat => {
-                const on = selectedKeys.has(cat.key);
+            {/* Slots */}
+            <View style={s.slotsContainer}>
+              {slots.map((key, idx) => {
+                const cat   = allCategories.find(c => c.key === key) ?? ALL_STOP_CATEGORIES.find(c => c.key === key);
+                const color = SLOT_COLORS[idx];
+                if (!cat) return null;
                 return (
-                  <TouchableOpacity key={cat.key} onPress={() => toggleCat(cat.key)} activeOpacity={0.75}
-                    style={[s.catChip, on
-                      ? { backgroundColor: BRAND, borderColor: BRAND }
-                      : { backgroundColor: 'transparent', borderColor: C.border }]}>
-                    <ThemedText style={[s.chipLabel, { color: on ? '#fff' : theme.textSecondary }]}
-                      numberOfLines={2}>{cat.label}</ThemedText>
-                  </TouchableOpacity>
+                  <View key={idx}
+                    style={[s.slotCard, { backgroundColor: theme.backgroundElement, borderColor: color + '44' }]}>
+                    <View style={[s.slotAccent, { backgroundColor: color }]} />
+                    <TouchableOpacity
+                      style={[s.arrowBtn, { backgroundColor: color + '18', borderColor: color + '55' }]}
+                      onPress={() => cycleCat(idx, -1)}
+                      disabled={!canCycle}
+                      activeOpacity={0.7}>
+                      <ThemedText style={[s.arrowText, { color, opacity: canCycle ? 1 : 0.35 }]}>‹</ThemedText>
+                    </TouchableOpacity>
+                    <View style={s.slotCenter}>
+                      <ThemedText style={[s.slotLabel, { color: theme.text }]} numberOfLines={2} adjustsFontSizeToFit>
+                        {cat.label}
+                      </ThemedText>
+                    </View>
+                    <TouchableOpacity
+                      style={[s.arrowBtn, { backgroundColor: color + '18', borderColor: color + '55' }]}
+                      onPress={() => cycleCat(idx, 1)}
+                      disabled={!canCycle}
+                      activeOpacity={0.7}>
+                      <ThemedText style={[s.arrowText, { color, opacity: canCycle ? 1 : 0.35 }]}>›</ThemedText>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>
@@ -1907,14 +1994,38 @@ const s = StyleSheet.create({
   centerFlex: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.three },
 
   // Selection
-  selectScroll: { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three, alignItems: 'center' },
-  catGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, alignSelf: 'stretch' },
-  catChip: {
-    width: '47%', flexDirection: 'row', alignItems: 'center',
-    gap: 8, padding: Spacing.two, borderRadius: C.radius.md, borderWidth: 1.5,
+  selectScroll:   { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three, alignItems: 'center' },
+  selectHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch' },
+  selectTitle:    { fontSize: 22, fontWeight: '900', letterSpacing: 0.2 },
+  slotsContainer: { gap: Spacing.two, alignSelf: 'stretch' },
+  slotCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: C.radius.lg,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    minHeight: 64,
   },
-  chipEmoji: { fontSize: 20, width: 26, textAlign: 'center' },
-  chipLabel: { fontSize: 12, fontWeight: '600', flex: 1, lineHeight: 16 },
+  slotAccent: { width: 4, alignSelf: 'stretch' },
+  arrowBtn: {
+    width: 48,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'transparent',
+  },
+  arrowText: { fontSize: 28, fontWeight: '900', lineHeight: 34 },
+  slotCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+  },
+  slotLabel: { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
 
   // Mode buttons
   modeRow: { flexDirection: 'row', gap: Spacing.two, alignSelf: 'stretch' },
@@ -1990,8 +2101,8 @@ const s = StyleSheet.create({
   catEmoji:    { fontSize: 22, width: 32, textAlign: 'center' },
   hintBtn:     { backgroundColor: C.gold + '22', borderRadius: C.radius.pill, paddingVertical: 3, paddingHorizontal: 8 },
   hintBtnText: { fontSize: 11, fontWeight: '800', color: C.gold },
-  shuffleBtn:  { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 10, alignItems: 'center' as const, alignSelf: 'stretch' as const, marginBottom: -4 },
-  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 13, letterSpacing: 0.5 },
+  shuffleBtn:     { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 7, paddingHorizontal: 12, alignItems: 'center' as const },
+  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 12, letterSpacing: 0.3 },
   input: {
     borderWidth: 1.5, borderRadius: C.radius.sm, paddingHorizontal: Spacing.two,
     paddingVertical: Platform.OS === 'ios' ? 8 : 6, fontSize: 15, fontWeight: '500',

@@ -38,7 +38,7 @@ export default function ConfiguracoesScreen() {
   const toggleTheme = () => {
     const next = isDark ? 'light' : 'dark';
     Appearance.setColorScheme(next);
-    AsyncStorage.setItem('@fideiplay:theme', next).catch(() => {});
+    AsyncStorage.setItem('@santosplay:theme', next).catch(() => {});
   };
 
   async function handleSendSupport() {
@@ -128,7 +128,7 @@ export default function ConfiguracoesScreen() {
                 <View>
                   <ThemedText type="smallBold">Versão do app</ThemedText>
                   <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                    FideiPlay v{APP_VERSION}
+                    SantosPlay v{APP_VERSION}
                   </ThemedText>
                 </View>
               </View>

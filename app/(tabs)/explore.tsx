@@ -38,7 +38,7 @@ const ACHIEVEMENTS = [
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
 
-const AD_LAST_TIME_KEY = '@fideiplay:last_ad_time';
+const AD_LAST_TIME_KEY = '@santosplay:last_ad_time';
 const COOLDOWN_MS = ECONOMY.COOLDOWN_ANUNCIO_MINUTOS * 60 * 1000;
 
 function useAdCooldown() {

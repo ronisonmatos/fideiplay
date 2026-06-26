@@ -28,7 +28,7 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     setError(null);
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: 'fideiplay://reset-password',
+      redirectTo: 'santosplay://reset-password',
     });
     setLoading(false);
     if (err) {
