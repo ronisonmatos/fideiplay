@@ -54,13 +54,15 @@ begin
   on conflict (user_id) do update set
     games_played          = greatest(user_progress.games_played, excluded.games_played),
     games_xp              = greatest(user_progress.games_xp, excluded.games_xp),
-    unlocked_achievements = (
-      select array_agg(distinct elem)
-      from unnest(user_progress.unlocked_achievements || coalesce(excluded.unlocked_achievements, '{}')) as elem
+    unlocked_achievements = coalesce(
+      (select array_agg(distinct elem)
+       from unnest(user_progress.unlocked_achievements || coalesce(excluded.unlocked_achievements, '{}')) as elem),
+      '{}'
     ),
-    licoes_concluidas     = (
-      select array_agg(distinct elem)
-      from unnest(user_progress.licoes_concluidas || coalesce(excluded.licoes_concluidas, '{}')) as elem
+    licoes_concluidas     = coalesce(
+      (select array_agg(distinct elem)
+       from unnest(user_progress.licoes_concluidas || coalesce(excluded.licoes_concluidas, '{}')) as elem),
+      '{}'
     ),
     trilhas_xp            = greatest(user_progress.trilhas_xp, excluded.trilhas_xp),
     updated_at            = now();
