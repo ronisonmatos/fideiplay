@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -6,9 +6,14 @@ import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
+import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeQuizQuestions } from '@/hooks/use-game-packs';
+import { supabase } from '@/lib/supabase';
+import { GameRewardBanner } from '@/components/game-reward-banner';
 
 type Difficulty = 'facil' | 'medio' | 'dificil';
 type Phase = 'idle' | 'difficulty' | 'playing' | 'result';
@@ -344,7 +349,11 @@ export default function QuizSantosScreen() {
   const theme  = useTheme();
   const scheme = useColorScheme() ?? 'light';
   const { reportResult } = useGameStore();
+  const { user, refreshProfile } = useAuth();
+  const { packs } = useGamePacks('quiz');
+  const allQuestions = useMemo(() => mergeQuizQuestions(ALL_QUESTIONS, packs), [packs]);
   const [phase, setPhase] = useState<Phase>('idle');
+  const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>('facil');
   const [questions, setQuestions] = useState<typeof ALL_QUESTIONS>([]);
   const [index, setIndex] = useState(0);
@@ -355,24 +364,29 @@ export default function QuizSantosScreen() {
   useEffect(() => {
     if (phase === 'result' && !reported.current) {
       reported.current = true;
-      reportResult({
-        gameId: 'quiz-santos',
-        score: score * 10,
-        perfectQuiz: score === questions.length,
-      });
+      const isPerfect = score === questions.length;
+      const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
+      reportResult({ gameId: 'quiz-santos', score: score * XP[difficulty], perfectQuiz: isPerfect });
+      if (user?.id) {
+        const coins = ECONOMY.COMPLETAR_QUIZ + (isPerfect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
+        supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
+          .then(() => { setCoinsEarned(coins); refreshProfile(); })
+          .catch(() => {});
+      }
     }
     if (phase === 'playing') reported.current = false;
-  }, [phase, score, questions.length, reportResult]);
+  }, [phase, score, questions.length, reportResult, user, refreshProfile]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
-    const filtered = ALL_QUESTIONS.filter(q => q.difficulty === diff);
+    setCoinsEarned(null);
+    const filtered = allQuestions.filter(q => q.difficulty === diff);
     setDifficulty(diff);
     setQuestions(filtered);
     setIndex(0);
     setSelected(null);
     setScore(0);
     setPhase('playing');
-  }, []);
+  }, [allQuestions]);
 
   const handleSelect = useCallback(
     (i: number) => {
@@ -413,7 +427,7 @@ export default function QuizSantosScreen() {
               Quiz Católico
             </ThemedText>
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
-              45 perguntas sobre doutrina, santos e história da Igreja.{'\n'}Escolha seu nível e teste o seu conhecimento!
+              {allQuestions.length} perguntas sobre doutrina, santos e história da Igreja.{'\n'}Escolha seu nível e teste o seu conhecimento!
             </ThemedText>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => setPhase('difficulty')} activeOpacity={0.8}>
               <ThemedText style={styles.primaryBtnText}>ESCOLHER NÍVEL</ThemedText>
@@ -444,7 +458,9 @@ export default function QuizSantosScreen() {
                       <ThemedText style={[styles.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
                     </View>
                     <ThemedText themeColor="textSecondary" style={styles.diffDesc}>{dc.desc}</ThemedText>
-                    <ThemedText style={[styles.diffCount, { color: dc.color }]}>15 perguntas</ThemedText>
+                    <ThemedText style={[styles.diffCount, { color: dc.color }]}>
+                      {allQuestions.filter(q => q.difficulty === diff).length} perguntas
+                    </ThemedText>
                   </View>
                 </TouchableOpacity>
               );
@@ -471,6 +487,7 @@ export default function QuizSantosScreen() {
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               {resultMsg}
             </ThemedText>
+            <GameRewardBanner xp={score * { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL }[difficulty]} coins={coinsEarned} />
             <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: cfg.color }]} onPress={() => startWithDifficulty(difficulty)} activeOpacity={0.8}>
               <ThemedText style={styles.primaryBtnText}>JOGAR NOVAMENTE</ThemedText>
             </TouchableOpacity>

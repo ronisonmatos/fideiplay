@@ -252,13 +252,6 @@ export default function AdRewardScreen() {
         <Pressable style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}>
-          {isPaused && (
-            <View style={s.pauseOverlay}>
-              <ThemedText style={s.pauseIcon}>⏸</ThemedText>
-              <ThemedText style={s.pauseText}>PAUSADO</ThemedText>
-              <ThemedText style={s.pauseSub}>Solte para continuar</ThemedText>
-            </View>
-          )}
         </Pressable>
 
         {/* Rodapé do anúncio */}
@@ -394,19 +387,6 @@ const s = StyleSheet.create({
   ctaArrow:   { color: '#fff', fontSize: 16, fontWeight: '900' },
 
   // Pausa
-  pauseOverlay: {
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 20,
-    paddingHorizontal: 32,
-    paddingVertical: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  pauseIcon: { fontSize: 40, lineHeight: 50 },
-  pauseText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 2 },
-  pauseSub:  { color: 'rgba(255,255,255,0.55)', fontSize: 12 },
 
   // Resultado
   resultEmoji: { fontSize: 72, lineHeight: 86 },

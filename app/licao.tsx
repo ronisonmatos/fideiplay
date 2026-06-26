@@ -103,15 +103,16 @@ export default function LicaoScreen() {
   const passoAtual = fase === 'conteudo' ? 0 : perguntaIdx;
 
   async function concluirLicao() {
-    const key = `${trilhaId}-${licaoId}`;
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    const prog: Progresso = raw ? JSON.parse(raw) : { licoesConcluidas: [], xpTotal: 0 };
-    if (!prog.licoesConcluidas.includes(key)) {
-      prog.licoesConcluidas.push(key);
-      prog.xpTotal += licao?.xp ?? 80;
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prog));
-      // Sincroniza com o banco em background (sem bloquear a UI)
-      if (user?.id) pushProgress(user.id).catch(() => {});
+    if (user?.id) {
+      const key = `${trilhaId}-${licaoId}`;
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const prog: Progresso = raw ? JSON.parse(raw) : { licoesConcluidas: [], xpTotal: 0 };
+      if (!prog.licoesConcluidas.includes(key)) {
+        prog.licoesConcluidas.push(key);
+        prog.xpTotal += licao.xp;
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prog));
+        pushProgress(user.id).catch((e: unknown) => console.warn('[licao] pushProgress error:', e));
+      }
     }
     setFase('conclusao');
   }
@@ -378,8 +379,8 @@ export default function LicaoScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
-  backBtn: { padding: 4 },
-  backText: { fontSize: 20, fontWeight: '700', color: C.purple },
+  backBtn: { padding: Spacing.two },
+  backText: { fontSize: 24, fontWeight: '700', color: C.purple },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

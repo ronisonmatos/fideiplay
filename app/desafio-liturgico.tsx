@@ -3,11 +3,16 @@ import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
+import { GameRewardBanner } from '@/components/game-reward-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
+import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeLiturgQuestions } from '@/hooks/use-game-packs';
+import { supabase } from '@/lib/supabase';
 
 type Difficulty = 'facil' | 'medio' | 'dificil';
 type Phase = 'idle' | 'difficulty' | 'playing' | 'result';
@@ -367,7 +372,10 @@ function shuffleQuestion(q: LiturgQuestion): LiturgQuestion {
 export default function DesafioLiturgicoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { user, refreshProfile } = useAuth();
+  const { packs } = useGamePacks('liturgico');
   const [phase, setPhase] = useState<Phase>('idle');
+  const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>('facil');
   const [questions, setQuestions] = useState<LiturgQuestion[]>([]);
   const [index, setIndex] = useState(0);
@@ -383,17 +391,22 @@ export default function DesafioLiturgicoScreen() {
   useEffect(() => {
     if (phase === 'result' && !reported.current) {
       reported.current = true;
-      reportResult({
-        gameId: 'desafio-liturgico',
-        score: score * 10,
-        liturgyTimeLeft: finalTimeRef.current,
-      });
+      const isPerfect = questions.length > 0 && score === questions.length;
+      const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
+      reportResult({ gameId: 'desafio-liturgico', score: score * XP[difficulty], liturgyTimeLeft: finalTimeRef.current });
+      if (user?.id) {
+        const coins = ECONOMY.COMPLETAR_QUIZ + (isPerfect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
+        supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
+          .then(() => { setCoinsEarned(coins); refreshProfile(); })
+          .catch(() => {});
+      }
     }
     if (phase === 'playing') {
       reported.current = false;
       finalTimeRef.current = cfg.time;
+      setCoinsEarned(null);
     }
-  }, [phase, score, cfg.time, reportResult]);
+  }, [phase, score, questions.length, cfg.time, reportResult, user, refreshProfile]);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -418,7 +431,8 @@ export default function DesafioLiturgicoScreen() {
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
     const totalTime = DIFFICULTY_CONFIG[diff].time;
-    const filtered = shuffle(ALL_QUESTIONS.filter(q => q.difficulty === diff)).map(shuffleQuestion);
+    const allQ = mergeLiturgQuestions(ALL_QUESTIONS, packs);
+    const filtered = shuffle(allQ.filter(q => q.difficulty === diff)).map(shuffleQuestion);
     setDifficulty(diff);
     setQuestions(filtered);
     setIndex(0);
@@ -516,6 +530,7 @@ export default function DesafioLiturgicoScreen() {
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               {pct >= 80 ? 'Excelente! Você domina a liturgia!' : pct >= 50 ? 'Bom resultado! Continue aprendendo.' : 'Estude mais sobre o calendário litúrgico!'}
             </ThemedText>
+            <GameRewardBanner xp={score * { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL }[difficulty]} coins={coinsEarned} />
             <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: cfg.color }]} onPress={() => startWithDifficulty(difficulty)} activeOpacity={0.8}>
               <ThemedText style={styles.btnText}>JOGAR NOVAMENTE</ThemedText>
             </TouchableOpacity>

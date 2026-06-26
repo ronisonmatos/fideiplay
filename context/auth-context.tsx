@@ -2,18 +2,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
 export interface Profile {
-  id:               string;
-  name:             string;
-  avatar_emoji:     string;
-  total_score:      number;
-  coins:            number;
-  last_coin_reward: string | null;
-  ad_watches_today: number | null;
-  ad_watches_date:  string | null;
-  is_admin:         boolean;
+  id:                string;
+  name:              string;
+  avatar_emoji:      string;
+  total_score:       number;
+  coins:             number;
+  last_coin_reward:  string | null;
+  ad_watches_today:  number | null;
+  ad_watches_date:   string | null;
+  is_admin:          boolean;
+  birth_date:        string | null;
+  accepted_terms_at: string | null;
 }
 
 interface AuthCtx {
@@ -23,7 +26,7 @@ interface AuthCtx {
   loading:  boolean;
   isGuest:  boolean;
   setGuest: (v: boolean) => void;
-  signUp:   (email: string, password: string, name: string, avatar: string) => Promise<string | null>;
+  signUp:   (email: string, password: string, name: string, avatar: string, birthDate: string) => Promise<string | null>;
   signIn:   (email: string, password: string) => Promise<string | null>;
   signOut:  () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -53,14 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadTrilhas = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('user_trilhas')
       .select('trilha_id')
       .eq('user_id', userId);
-    if (error) {
-      console.warn('[loadTrilhas] erro:', error.message, error.code);
-    }
-    console.log('[loadTrilhas] data:', JSON.stringify(data));
     setTrilhasDesbloqueadas(data?.map(r => Number(r.trilha_id)) ?? []);
   }, []);
 
@@ -94,7 +93,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Quando o app volta do background, reinicia o auto-refresh do token.
+    // Sem isso, o JWT expira enquanto o app está parado e queries falham com 401.
+    const appStateSub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        supabase.auth.startAutoRefresh();
+        // Força re-leitura da sessão para garantir token válido em memória
+        const { data: { session: current } } = await supabase.auth.getSession();
+        if (current?.user.id) {
+          setSession(current);
+          loadProfile(current.user.id).catch(() => {});
+        }
+      } else {
+        supabase.auth.stopAutoRefresh();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateSub.remove();
+    };
   }, [loadProfile, loadTrilhas]);
 
   const signUp = useCallback(async (
@@ -102,11 +120,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     name: string,
     avatar: string,
+    birthDate: string,
   ): Promise<string | null> => {
+    const acceptedTermsAt = new Date().toISOString();
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, avatar } },
+      options: { data: { name, avatar, birth_date: birthDate, accepted_terms_at: acceptedTermsAt } },
     });
     return error?.message ?? null;
   }, []);

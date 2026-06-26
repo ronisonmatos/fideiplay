@@ -6,8 +6,13 @@ import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
+import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeVersiculo } from '@/hooks/use-game-packs';
+import { supabase } from '@/lib/supabase';
+import { GameRewardBanner } from '@/components/game-reward-banner';
 
 type EntryType = 'versículo' | 'santo' | 'papa' | 'documento';
 type Difficulty = 'facil' | 'medio' | 'dificil';
@@ -380,7 +385,10 @@ function shuffle<T>(arr: T[]): T[] {
 export default function VersiculoMisteriosoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
+  const { user, refreshProfile } = useAuth();
+  const { packs } = useGamePacks('versiculo');
   const [phase, setPhase] = useState<Phase>('idle');
+  const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>('facil');
   const [frases, setFrases] = useState<FraseSagrada[]>([]);
   const [idx, setIdx] = useState(0);
@@ -394,19 +402,28 @@ export default function VersiculoMisteriosoScreen() {
   useEffect(() => {
     if (phase === 'done' && !reported.current) {
       reported.current = true;
+      const allCorrect = correctCount === frases.length;
       const maxScore = frases.length * 5;
+      const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
       reportResult({
         gameId: 'versiculo',
-        score: score * 10,
-        allVersesCorrect: correctCount === frases.length,
+        score: correctCount * XP[difficulty],
+        allVersesCorrect: allCorrect,
         pct: maxScore > 0 ? Math.round((score / maxScore) * 100) : 0,
       });
+      if (user?.id) {
+        const coins = ECONOMY.COMPLETAR_QUIZ + (allCorrect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
+        supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
+          .then(() => { setCoinsEarned(coins); refreshProfile(); })
+          .catch(() => {});
+      }
     }
     if (phase === 'playing') reported.current = false;
-  }, [phase, score, correctCount, frases.length, reportResult]);
+  }, [phase, score, correctCount, frases.length, reportResult, user, refreshProfile]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
-    const filtered = shuffle(ALL_FRASES.filter(f => f.difficulty === diff))
+    const allF = mergeVersiculo(ALL_FRASES, packs);
+    const filtered = shuffle(allF.filter(f => f.difficulty === diff))
       .map(f => ({ ...f, options: shuffle(f.options) }));
     setDifficulty(diff);
     setFrases(filtered);
@@ -416,6 +433,7 @@ export default function VersiculoMisteriosoScreen() {
     setScore(0);
     setCorrectCount(0);
     setRoundPoints(0);
+    setCoinsEarned(null);
     setPhase('playing');
   }, []);
 
@@ -531,6 +549,7 @@ export default function VersiculoMisteriosoScreen() {
                   ? 'Bom resultado! Continue mergulhando na fé.'
                   : 'Continue lendo e orando para crescer na sabedoria!'}
             </ThemedText>
+            <GameRewardBanner xp={correctCount * { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL }[difficulty]} coins={coinsEarned} />
             <TouchableOpacity style={[s.primaryBtn, { backgroundColor: cfg.color }]} onPress={() => startWithDifficulty(difficulty)} activeOpacity={0.8}>
               <ThemedText style={s.primaryBtnText}>JOGAR NOVAMENTE</ThemedText>
             </TouchableOpacity>

@@ -15,12 +15,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { GameHeader } from '@/components/game-header';
+import { GameRewardBanner } from '@/components/game-reward-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
 import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
 import { useAuth } from '@/context/auth-context';
+import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { supabase } from '@/lib/supabase';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
@@ -35,9 +39,13 @@ type AnswerMap = Partial<Record<string, string>>;
 
 export default function StopCatolicoScreen() {
   const theme   = useTheme();
+  const { reportResult } = useGameStore();
   const { user, profile, refreshProfile } = useAuth();
+  const { packs } = useGamePacks('stop');
+  const allCategories = mergeStopCategories(ALL_STOP_CATEGORIES, packs);
 
   const [phase,       setPhase]       = useState<Phase>('idle');
+  const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => randomDefaultKeys());
   const [activeCategories, setActiveCategories] = useState<StopCategory[]>([]);
   const [letter,      setLetter]      = useState('A');
@@ -87,18 +95,22 @@ export default function StopCatolicoScreen() {
   const bankScore      = bankValidCount !== null ? bankValidCount * 10 + (bankValidCount === activeCategories.length ? 20 : 0) : null;
 
   useEffect(() => {
-    if (phase === 'playing') { reported.current = false; return; }
+    if (phase === 'playing') { reported.current = false; setCoinsEarned(null); return; }
     if (phase !== 'result' || reported.current || bankScore === null) return;
     reported.current = true;
 
+    const xp = (bankValidCount ?? 0) * ECONOMY.XP_MEDIO;
+    reportResult({ gameId: 'stop-solo', score: xp });
+
     const uid = user?.id;
-    if (uid && bankScore > 0) {
-      const perfect = activeCategories.length > 0 && bankValidCount === activeCategories.length;
-      if (perfect) {
-        void supabase.rpc('add_coins', { p_user_id: uid, p_amount: 1 });
-      }
+    if (uid && bankValidCount !== null && bankValidCount > 0) {
+      supabase.rpc('add_coins', { p_user_id: uid, p_amount: bankValidCount })
+        .then(() => { setCoinsEarned(bankValidCount); refreshProfile(); })
+        .catch(() => {});
+    } else {
+      setCoinsEarned(0);
     }
-  }, [phase, bankScore, bankValidCount, activeCategories.length, user?.id]);
+  }, [phase, bankScore, bankValidCount, activeCategories.length, user?.id, reportResult, refreshProfile]);
 
   useEffect(() => {
     if (phase !== 'result') return;
@@ -256,9 +268,9 @@ export default function StopCatolicoScreen() {
   }, [clearSpinTimeouts, scaleAnim]);
 
   const handleVamosJogar = useCallback(() => {
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
-    startGame(cats);
-  }, [selectedKeys, startGame]);
+    const cats = allCategories.filter(c => selectedKeys.has(c.key));
+    startGame(cats as StopCategory[]);
+  }, [allCategories, selectedKeys, startGame]);
 
   const callStop  = useCallback(() => { stopTimer(); setPhase('result'); }, [stopTimer]);
   const setAnswer = useCallback((key: string, value: string) => {
@@ -341,7 +353,7 @@ export default function StopCatolicoScreen() {
             </TouchableOpacity>
 
             <View style={s.catGrid}>
-              {ALL_STOP_CATEGORIES.map(cat => {
+              {allCategories.map(cat => {
                 const on = selectedKeys.has(cat.key);
                 const canDeselect = on && numSelected > MIN_CATS;
                 return (
@@ -495,6 +507,7 @@ export default function StopCatolicoScreen() {
               );
             })}
 
+            <GameRewardBanner xp={(bankValidCount ?? 0) * ECONOMY.XP_MEDIO} coins={coinsEarned} />
             <TouchableOpacity
               style={[s.primaryBtn, { backgroundColor: BRAND }]}
               onPress={() => setPhase('selecting')}

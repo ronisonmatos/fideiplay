@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -20,26 +21,68 @@ import { useTheme } from '@/hooks/use-theme';
 
 const AVATARS = ['🙏', '✝️', '📖', '🕊️', '⭐', '🏆', '👼', '🌟'];
 
+// URLs das páginas legais — substitua pelas URLs reais quando publicadas
+const URL_TERMOS   = 'https://fideiplay.com.br/termos';
+const URL_PRIVACIDADE = 'https://fideiplay.com.br/privacidade';
+
+function maskDate(val: string): string {
+  const d = val.replace(/\D/g, '').slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+function calcAge(date: string): number {
+  const [dd, mm, yyyy] = date.split('/').map(Number);
+  if (!dd || !mm || !yyyy || yyyy < 1900 || yyyy > new Date().getFullYear()) return -1;
+  const birth = new Date(yyyy, mm - 1, dd);
+  if (isNaN(birth.getTime())) return -1;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+function toISODate(date: string): string {
+  const [dd, mm, yyyy] = date.split('/');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function RegisterScreen() {
   const theme = useTheme();
   const { signUp, setGuest } = useAuth();
 
-  const [name,     setName]     = useState('');
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [avatar,   setAvatar]   = useState('🙏');
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
+  const [name,          setName]          = useState('');
+  const [email,         setEmail]         = useState('');
+  const [password,      setPassword]      = useState('');
+  const [avatar,        setAvatar]        = useState('🙏');
+  const [birthDate,     setBirthDate]     = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState<string | null>(null);
 
   async function handleRegister() {
-    if (!name.trim())     { setError('Digite seu nome.'); return; }
-    if (!email.trim())    { setError('Digite seu e-mail.'); return; }
-    if (password.length < 6) { setError('Senha deve ter pelo menos 6 caracteres.'); return; }
-
-    setLoading(true);
     setError(null);
 
-    const err = await signUp(email.trim().toLowerCase(), password, name.trim(), avatar);
+    if (!name.trim())         { setError('Digite seu nome.'); return; }
+    if (!email.trim())        { setError('Digite seu e-mail.'); return; }
+    if (password.length < 6)  { setError('Senha deve ter pelo menos 6 caracteres.'); return; }
+    if (birthDate.length < 10){ setError('Digite sua data de nascimento completa.'); return; }
+
+    const age = calcAge(birthDate);
+    if (age < 0)  { setError('Data de nascimento inválida.'); return; }
+    if (age < 13) { setError('É necessário ter pelo menos 13 anos para se cadastrar (LGPD).'); return; }
+    if (!acceptedTerms) { setError('Você precisa aceitar os Termos de Uso e a Política de Privacidade.'); return; }
+
+    setLoading(true);
+    const err = await signUp(
+      email.trim().toLowerCase(),
+      password,
+      name.trim(),
+      avatar,
+      toISODate(birthDate),
+    );
     setLoading(false);
 
     if (err) {
@@ -51,7 +94,6 @@ export default function RegisterScreen() {
         setError(err);
       }
     }
-    // AuthProvider detecta sessão e _layout redireciona automaticamente
   }
 
   return (
@@ -91,7 +133,7 @@ export default function RegisterScreen() {
               </View>
             </View>
 
-            {/* Inputs */}
+            {/* Nome */}
             <View style={s.section}>
               <ThemedText style={[s.label, { color: theme.textSecondary }]}>NOME</ThemedText>
               <TextInput
@@ -105,6 +147,7 @@ export default function RegisterScreen() {
               />
             </View>
 
+            {/* E-mail */}
             <View style={s.section}>
               <ThemedText style={[s.label, { color: theme.textSecondary }]}>E-MAIL</ThemedText>
               <TextInput
@@ -120,6 +163,7 @@ export default function RegisterScreen() {
               />
             </View>
 
+            {/* Senha */}
             <View style={s.section}>
               <ThemedText style={[s.label, { color: theme.textSecondary }]}>SENHA</ThemedText>
               <TextInput
@@ -129,12 +173,69 @@ export default function RegisterScreen() {
                 placeholder="Mínimo 6 caracteres"
                 placeholderTextColor={theme.textSecondary}
                 secureTextEntry
-                returnKeyType="done"
-                onSubmitEditing={handleRegister}
+                returnKeyType="next"
               />
             </View>
 
-            {/* Error */}
+            {/* Data de nascimento */}
+            <View style={s.section}>
+              <ThemedText style={[s.label, { color: theme.textSecondary }]}>DATA DE NASCIMENTO</ThemedText>
+              <TextInput
+                style={[s.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}
+                value={birthDate}
+                onChangeText={v => setBirthDate(maskDate(v))}
+                placeholder="DD/MM/AAAA"
+                placeholderTextColor={theme.textSecondary}
+                keyboardType="numeric"
+                maxLength={10}
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+              />
+              <ThemedText style={[s.inputHint, { color: theme.textSecondary }]}>
+                Necessário para verificação de idade (LGPD)
+              </ThemedText>
+            </View>
+
+            {/* Aceite de termos */}
+            <TouchableOpacity
+              style={s.termsRow}
+              onPress={() => setAcceptedTerms(v => !v)}
+              activeOpacity={0.75}>
+              <View style={[
+                s.checkbox,
+                { borderColor: acceptedTerms ? C.purple : theme.textSecondary },
+                acceptedTerms && { backgroundColor: C.purple },
+              ]}>
+                {acceptedTerms && <ThemedText style={s.checkmark}>✓</ThemedText>}
+              </View>
+              <View style={s.termsText}>
+                <ThemedText style={[s.termsBase, { color: theme.text }]}>
+                  Li e aceito os{' '}
+                  <ThemedText
+                    style={[s.termsLink, { color: C.purple }]}
+                    onPress={() => Linking.openURL(URL_TERMOS)}>
+                    Termos de Uso
+                  </ThemedText>
+                  {' '}e a{' '}
+                  <ThemedText
+                    style={[s.termsLink, { color: C.purple }]}
+                    onPress={() => Linking.openURL(URL_PRIVACIDADE)}>
+                    Política de Privacidade
+                  </ThemedText>
+                  , incluindo o tratamento dos meus dados pessoais.
+                </ThemedText>
+              </View>
+            </TouchableOpacity>
+
+            {/* Aviso LGPD */}
+            <View style={[s.lgpdNotice, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
+              <ThemedText style={[s.lgpdText, { color: theme.textSecondary }]}>
+                🔒 Seus dados são protegidos pela Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).
+                Coletamos apenas o necessário para o funcionamento do app.
+              </ThemedText>
+            </View>
+
+            {/* Erro */}
             {error ? (
               <View style={[s.errorBox, { backgroundColor: C.red + '22', borderColor: C.red }]}>
                 <ThemedText style={{ color: C.red, fontSize: 13 }}>{error}</ThemedText>
@@ -199,6 +300,38 @@ const s = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 14 : 11,
     fontSize: 15,
   },
+  inputHint: { fontSize: 11, marginTop: 2 },
+
+  // Checkbox de termos
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  checkmark: { color: '#fff', fontSize: 13, fontWeight: '900', lineHeight: 17 },
+  termsText: { flex: 1 },
+  termsBase: { fontSize: 13, lineHeight: 20 },
+  termsLink: { fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+
+  // Aviso LGPD
+  lgpdNotice: {
+    borderRadius: C.radius.md,
+    borderWidth: 1,
+    padding: Spacing.two,
+  },
+  lgpdText: { fontSize: 12, lineHeight: 18 },
+
   errorBox: { borderWidth: 1, borderRadius: C.radius.md, padding: Spacing.two },
   btn: {
     paddingVertical: 15,

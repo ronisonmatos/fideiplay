@@ -29,15 +29,19 @@ create policy "Usuário atualiza o próprio progresso"
 
 -- 3. Função de upsert atômico com merge (nunca perde dados)
 --    Usa MAX para números e array_union para listas
+--    COALESCE nos arrays protege contra o cliente JS enviar null para text[]
 create or replace function merge_user_progress(
   p_user_id               uuid,
-  p_games_played          int,
-  p_games_xp              int,
-  p_unlocked_achievements text[],
-  p_licoes_concluidas     text[],
-  p_trilhas_xp            int
+  p_games_played          int     default 0,
+  p_games_xp              int     default 0,
+  p_unlocked_achievements text[]  default '{}',
+  p_licoes_concluidas     text[]  default '{}',
+  p_trilhas_xp            int     default 0
 )
 returns void language plpgsql security definer as $$
+declare
+  v_achievements text[] := coalesce(p_unlocked_achievements, '{}');
+  v_licoes       text[] := coalesce(p_licoes_concluidas,     '{}');
 begin
   insert into user_progress (
     user_id, games_played, games_xp,
@@ -45,18 +49,20 @@ begin
   )
   values (
     p_user_id, p_games_played, p_games_xp,
-    p_unlocked_achievements, p_licoes_concluidas, p_trilhas_xp, now()
+    v_achievements, v_licoes, p_trilhas_xp, now()
   )
   on conflict (user_id) do update set
     games_played          = greatest(user_progress.games_played, excluded.games_played),
     games_xp              = greatest(user_progress.games_xp, excluded.games_xp),
-    unlocked_achievements = (
-      select array_agg(distinct elem)
-      from unnest(user_progress.unlocked_achievements || excluded.unlocked_achievements) as elem
+    unlocked_achievements = coalesce(
+      (select array_agg(distinct elem)
+       from unnest(user_progress.unlocked_achievements || coalesce(excluded.unlocked_achievements, '{}')) as elem),
+      '{}'
     ),
-    licoes_concluidas     = (
-      select array_agg(distinct elem)
-      from unnest(user_progress.licoes_concluidas || excluded.licoes_concluidas) as elem
+    licoes_concluidas     = coalesce(
+      (select array_agg(distinct elem)
+       from unnest(user_progress.licoes_concluidas || coalesce(excluded.licoes_concluidas, '{}')) as elem),
+      '{}'
     ),
     trilhas_xp            = greatest(user_progress.trilhas_xp, excluded.trilhas_xp),
     updated_at            = now();

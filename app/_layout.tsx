@@ -16,10 +16,10 @@ AsyncStorage.getItem('@fideiplay:theme').then(saved => {
   Appearance.setColorScheme(saved === 'light' ? 'light' : 'dark');
 });
 
-// ── Sincronização de progresso offline-first ─────────────────────────────────
+// ── Sincronização de progresso (somente quando logado) ───────────────────────
 function ProgressSyncBridge() {
   const { user } = useAuth();
-  const { totalScore, gamesPlayed, unlockedAchievements, hydrate } = useGameStore();
+  const { totalScore, gamesPlayed, unlockedAchievements, hydrate, reset } = useGameStore();
 
   const didPullRef   = useRef(false);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,42 +31,43 @@ function ProgressSyncBridge() {
     }, 4000);
   }, []);
 
-  // Ao fazer login (ou quando guest se loga):
-  // 1. Baixa do banco e mescla com dados offline (guest ou não)
-  // 2. Atualiza estado em memória com o melhor dos dois
-  // 3. Faz push imediato para garantir que dados offline subam ao banco
+  // Ao fazer login: descarta progresso offline e carrega exclusivamente do banco
   useEffect(() => {
     if (!user?.id) {
       didPullRef.current = false;
       return;
     }
     if (didPullRef.current) return;
+
+    // Limpa progresso offline antes de carregar dados do banco
+    reset();
+    AsyncStorage.removeItem('@santosplay:trilhas_progresso').catch(() => {});
+
     didPullRef.current = true;
 
     pullProgress(user.id)
-      .then(merged => {
-        if (merged) {
-          // O pull já fez o merge e escreveu no AsyncStorage.
-          // Atualiza o estado em memória com os dados do banco (sempre o maior).
+      .then(remote => {
+        if (remote) {
           hydrate({
-            totalScore:           merged.gamesXp,
-            gamesPlayed:          merged.gamesPlayed,
-            unlockedAchievements: merged.unlockedAchievements,
+            totalScore:           remote.gamesXp,
+            gamesPlayed:          remote.gamesPlayed,
+            unlockedAchievements: remote.unlockedAchievements,
           });
+          // Escreve trilha no AsyncStorage para trilhas.tsx ler
+          AsyncStorage.setItem('@santosplay:trilhas_progresso', JSON.stringify({
+            licoesConcluidas: remote.licoesConcluidas,
+            xpTotal:          remote.trilhasXp,
+          })).catch(() => {});
         }
-        // Push garante que dados offline (ex: guest) subam ao banco,
-        // mesmo que o pull não tenha retornado nada (conta nova).
-        pushProgress(user.id).catch(() => {});
       })
-      .catch(() => {
-        // Sem internet no login: apenas sobe o que temos localmente
-        pushProgress(user.id).catch(() => {});
-      });
-  }, [user?.id, hydrate, schedulePush]);
+      .catch(() => {});
+  }, [user?.id, reset, hydrate]);
 
   // Quando XP/conquistas mudam (após jogar): envia para o banco com debounce
+  // Ignora estado inicial/reset (tudo zero) para não enviar arrays vazios ao banco
   useEffect(() => {
     if (!user?.id || !didPullRef.current) return;
+    if (totalScore === 0 && gamesPlayed === 0) return;
     schedulePush(user.id);
     return () => {
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);

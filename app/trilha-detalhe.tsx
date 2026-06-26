@@ -185,8 +185,8 @@ export default function TrilhaDetalheScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
-  backBtn: { alignSelf: 'flex-start', marginBottom: Spacing.two },
-  backText: { fontSize: 16, fontWeight: '700', color: C.purple },
+  backBtn: { alignSelf: 'flex-start', marginBottom: Spacing.two, padding: Spacing.two },
+  backText: { fontSize: 22, fontWeight: '700', color: C.purple },
   headerCard: {
     borderRadius: 20,
     padding: Spacing.four,

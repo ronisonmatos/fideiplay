@@ -3,12 +3,10 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Appearance,
   Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -23,11 +21,13 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import type { Profile } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+import { pullProgress } from '@/lib/progress-sync';
 import { getWeeklyRanking, RankingEntry } from '@/lib/score-events';
 import { scheduleCoinBonusReminder } from '@/lib/notifications';
+import { ECONOMY } from '@/constants/economy';
+import { CoinsAnimation } from '@/components/coins-animation';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -38,40 +38,99 @@ const ACHIEVEMENTS = [
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
 
-const AD_MAX_DAILY   = 3;
-const AD_COINS       = 50;
+const AD_LAST_TIME_KEY = '@fideiplay:last_ad_time';
+const COOLDOWN_MS = ECONOMY.COOLDOWN_ANUNCIO_MINUTOS * 60 * 1000;
+
+function useAdCooldown() {
+  const [cooldownLeft, setCooldownLeft] = useState(0); // ms restantes
+  const [limitCountdown, setLimitCountdown] = useState('');
+
+  // Lê do AsyncStorage e recalcula ao montar
+  useEffect(() => {
+    AsyncStorage.getItem(AD_LAST_TIME_KEY).then(raw => {
+      if (!raw) return;
+      const elapsed = Date.now() - parseInt(raw, 10);
+      if (elapsed < COOLDOWN_MS) setCooldownLeft(COOLDOWN_MS - elapsed);
+    });
+  }, []);
+
+  // Tick: decrementa cooldown entre anúncios
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const id = setInterval(() => {
+      setCooldownLeft(prev => {
+        const next = prev - 1000;
+        return next <= 0 ? 0 : next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldownLeft > 0]);
+
+  // Tick: countdown até meia-noite (limite diário)
+  useEffect(() => {
+    const tick = () => {
+      const now      = new Date();
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 0);
+      const diff = midnight.getTime() - now.getTime();
+      const h = Math.floor(diff / 3_600_000).toString().padStart(2, '0');
+      const m = Math.floor((diff % 3_600_000) / 60_000).toString().padStart(2, '0');
+      const s = Math.floor((diff % 60_000) / 1_000).toString().padStart(2, '0');
+      setLimitCountdown(`${h}:${m}:${s}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const cooldownSecs = Math.ceil(cooldownLeft / 1000);
+  const cooldownStr  = cooldownLeft > 0
+    ? `${Math.floor(cooldownSecs / 60).toString().padStart(2, '0')}:${(cooldownSecs % 60).toString().padStart(2, '0')}`
+    : '';
+
+  return { inCooldown: cooldownLeft > 0, cooldownStr, limitCountdown };
+}
 
 function AdRewardCard({ profile }: { profile: Profile }) {
-  const today      = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  const isToday    = profile.ad_watches_date === today;
-  const watched    = isToday ? (profile.ad_watches_today ?? 0) : 0;
-  const remaining  = Math.max(0, AD_MAX_DAILY - watched);
+  const today        = new Date().toISOString().slice(0, 10);
+  const isToday      = profile.ad_watches_date === today;
+  const watched      = isToday ? (profile.ad_watches_today ?? 0) : 0;
+  const remaining    = Math.max(0, ECONOMY.LIMITE_ANUNCIOS_DIA - watched);
   const limitReached = remaining === 0;
+  const { inCooldown, cooldownStr, limitCountdown } = useAdCooldown();
+
+  const blocked  = limitReached || inCooldown;
+  const subLabel = limitReached
+    ? (limitCountdown ? `Próximo amanhã em ${limitCountdown}` : 'Volte amanhã')
+    : inCooldown
+      ? `Próximo anúncio em ${cooldownStr}`
+      : `${watched}/${ECONOMY.LIMITE_ANUNCIOS_DIA} vídeos hoje`;
+
+  function handlePress() {
+    AsyncStorage.setItem(AD_LAST_TIME_KEY, String(Date.now())).catch(() => {});
+    router.push('/ad-reward');
+  }
 
   return (
     <>
       <ThemedText style={styles.sectionLabel}>GANHAR MOEDAS</ThemedText>
       <TouchableOpacity
-        style={[styles.adCard, limitReached && { opacity: 0.5 }]}
-        onPress={() => router.push('/ad-reward')}
+        style={[styles.adCard, blocked && { opacity: 0.6 }]}
+        onPress={handlePress}
         activeOpacity={0.82}
-        disabled={limitReached}>
+        disabled={blocked}>
         <View style={styles.adCardLeft}>
           <ThemedText style={{ fontSize: 28, lineHeight: 36 }}>📺</ThemedText>
           <View style={{ gap: 2, flex: 1 }}>
             <ThemedText style={styles.adCardTitle} numberOfLines={2}>
-              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${AD_COINS} 🪙`}
+              {limitReached ? 'Limite diário atingido' : `Assistir anúncio → +${ECONOMY.ASSISTIR_ANUNCIO} 🪙`}
             </ThemedText>
-            <ThemedText style={styles.adCardSub}>
-              {limitReached
-                ? 'Volte amanhã para mais moedas'
-                : `${watched}/${AD_MAX_DAILY} vídeos assistidos hoje`}
-            </ThemedText>
+            <ThemedText style={styles.adCardSub}>{subLabel}</ThemedText>
           </View>
         </View>
-        {!limitReached && (
+        {!blocked && (
           <View style={styles.adCardDots}>
-            {Array.from({ length: AD_MAX_DAILY }).map((_, i) => (
+            {Array.from({ length: ECONOMY.LIMITE_ANUNCIOS_DIA }).map((_, i) => (
               <View
                 key={i}
                 style={[styles.adDot, i < watched && { backgroundColor: C.gold }]}
@@ -84,45 +143,17 @@ function AdRewardCard({ profile }: { profile: Profile }) {
   );
 }
 
-function PrefsCard({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
-  return (
-    <>
-      <ThemedText style={styles.sectionLabel}>PREFERÊNCIAS</ThemedText>
-      <ThemedView type="backgroundElement" style={styles.prefCard}>
-        <View style={styles.prefRow}>
-          <View style={styles.prefLeft}>
-            <ThemedText style={{ fontSize: 20 }}>{isDark ? '🌙' : '☀️'}</ThemedText>
-            <View>
-              <ThemedText type="smallBold">Tema</ThemedText>
-              <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                {isDark ? 'Modo escuro ativo' : 'Modo claro ativo'}
-              </ThemedText>
-            </View>
-          </View>
-          <Switch
-            value={isDark}
-            onValueChange={onToggle}
-            trackColor={{ false: '#3a3a5c', true: C.purple }}
-            thumbColor="#ffffff"
-          />
-        </View>
-      </ThemedView>
-    </>
-  );
-}
-
 const MEDAL = ['🥇', '🥈', '🥉'];
 
 export default function ContaScreen() {
   const theme        = useTheme();
-  const colorScheme  = useColorScheme();
-  const isDark       = colorScheme === 'dark';
-  const { totalScore, gamesPlayed, unlockedAchievements } = useGameStore();
+  const { totalScore, gamesPlayed, unlockedAchievements, hydrate } = useGameStore();
   const { user, profile, refreshProfile, signOut, loading } = useAuth();
 
   const [ranking,      setRanking]      = useState<RankingEntry[]>([]);
   const [rankingLoad,  setRankingLoad]  = useState(false);
   const [justClaimed,  setJustClaimed]  = useState(false);
+  const [coinAnim,     setCoinAnim]     = useState(false);
   const [claiming,     setClaiming]     = useState(false);
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
@@ -132,12 +163,6 @@ export default function ContaScreen() {
   const msLeft      = lastReward && !eligible ? TWO_HOURS - (Date.now() - lastReward.getTime()) : 0;
   const hoursLeft   = Math.floor(msLeft / (60 * 60 * 1000));
   const minutesLeft = Math.ceil((msLeft % (60 * 60 * 1000)) / 60000);
-
-  const toggleTheme = () => {
-    const next = isDark ? 'light' : 'dark';
-    Appearance.setColorScheme(next);
-    AsyncStorage.setItem('@fideiplay:theme', next).catch(() => {});
-  };
 
   const loadRanking = useCallback(async () => {
     setRankingLoad(true);
@@ -163,6 +188,7 @@ export default function ContaScreen() {
     if (!error && result > 0) {
       await refreshProfile();
       setJustClaimed(true);
+      setCoinAnim(true);
       showRewardToast();
       scheduleCoinBonusReminder();
     } else {
@@ -174,9 +200,20 @@ export default function ContaScreen() {
     setClaiming(false);
   }, [claiming, user, refreshProfile, showRewardToast]);
 
+  const refreshProgress = useCallback(async () => {
+    if (!user?.id) return;
+    const remote = await pullProgress(user.id).catch(() => null);
+    if (remote) hydrate({
+      totalScore:           remote.gamesXp,
+      gamesPlayed:          remote.gamesPlayed,
+      unlockedAchievements: remote.unlockedAchievements,
+    });
+  }, [user, hydrate]);
+
   useFocusEffect(useCallback(() => {
     loadRanking();
-  }, [loadRanking]));
+    refreshProgress();
+  }, [loadRanking, refreshProgress]));
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -185,16 +222,20 @@ export default function ContaScreen() {
     await Promise.all([
       refreshProfile().catch(() => {}),
       loadRanking(),
+      refreshProgress(),
     ]);
     setRefreshing(false);
-  }, [refreshProfile, loadRanking]);
+  }, [refreshProfile, loadRanking, refreshProgress]);
 
-  if (loading) {
+  // Skeleton: mostra durante loading inicial OU quando user existe mas profile ainda não chegou
+  if (loading || (user && !profile)) {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <View style={styles.centerFlex}>
-            <ActivityIndicator color={C.purple} size="large" />
+          <View style={[styles.mainScroll, { paddingTop: 24, gap: 16 }]}>
+            {[80, 120, 60, 60].map((h, i) => (
+              <View key={i} style={[styles.skeletonBlock, { height: h }]} />
+            ))}
           </View>
         </SafeAreaView>
       </ThemedView>
@@ -205,6 +246,11 @@ export default function ContaScreen() {
   if (user && profile) {
     return (
       <ThemedView style={styles.fill}>
+        <CoinsAnimation
+          amount={ECONOMY.BONUS_2_HORAS}
+          visible={coinAnim}
+          onDone={() => setCoinAnim(false)}
+        />
         <SafeAreaView style={styles.fill} edges={['top']}>
           <ScrollView
             contentContainerStyle={[styles.mainScroll, { paddingBottom: BottomTabInset + Spacing.four }]}
@@ -282,7 +328,7 @@ export default function ContaScreen() {
               <ThemedView type="backgroundElement" style={styles.scoreCard}>
                 <Image source={require('@/assets/images/trofeu.png')} style={styles.scoreImg} resizeMode="contain" />
                 <ThemedText type="subtitle" style={[styles.scoreValue, { color: C.gold }]}>{totalScore}</ThemedText>
-                <ThemedText themeColor="textSecondary" style={styles.scoreSmall}>Pontos totais</ThemedText>
+                <ThemedText themeColor="textSecondary" style={styles.scoreSmall}>XP nos jogos</ThemedText>
               </ThemedView>
               <ThemedView type="backgroundElement" style={styles.scoreCard}>
                 <ThemedText style={styles.scoreEmoji}>🎮</ThemedText>
@@ -350,8 +396,6 @@ export default function ContaScreen() {
               })}
             </View>
 
-            <PrefsCard isDark={isDark} onToggle={toggleTheme} />
-
             <TouchableOpacity style={styles.logoutBtn} onPress={signOut} activeOpacity={0.75}>
               <ThemedText style={styles.logoutText}>Sair da conta</ThemedText>
             </TouchableOpacity>
@@ -390,7 +434,6 @@ export default function ContaScreen() {
             </TouchableOpacity>
           </View>
 
-          <PrefsCard isDark={isDark} onToggle={toggleTheme} />
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -398,8 +441,13 @@ export default function ContaScreen() {
 }
 
 const styles = StyleSheet.create({
-  fill:         { flex: 1 },
-  centerFlex:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  fill:          { flex: 1 },
+  centerFlex:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  skeletonBlock: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(128,128,128,0.15)',
+    marginHorizontal: Spacing.four,
+  },
   textCenter:   { textAlign: 'center' },
   sectionLabel: {
     fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
@@ -445,11 +493,6 @@ const styles = StyleSheet.create({
   achievementDesc:  { fontSize: 11, lineHeight: 15 },
   lockIcon:         { fontSize: 14, position: 'absolute', top: 8, right: 8 },
   locked:           { opacity: 0.35 },
-
-  // Preferences
-  prefCard: { borderRadius: C.radius.lg, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
-  prefRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  prefLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
 
   // Logout
   logoutBtn: {

@@ -12,9 +12,9 @@ export interface ProgressSnapshot {
   trilhasXp:            number;
 }
 
-// ── Leitura local ────────────────────────────────────────────────────────────
+// ── Leitura local (usada pelo pushProgress) ──────────────────────────────────
 
-export async function readLocalProgress(): Promise<ProgressSnapshot> {
+async function readLocalProgress(): Promise<ProgressSnapshot> {
   const [gameRaw, trilhaRaw] = await Promise.all([
     AsyncStorage.getItem(GAME_KEY),
     AsyncStorage.getItem(TRILHA_KEY),
@@ -30,38 +30,12 @@ export async function readLocalProgress(): Promise<ProgressSnapshot> {
   };
 }
 
-// ── Escrita local ────────────────────────────────────────────────────────────
-
-async function writeLocalProgress(snap: ProgressSnapshot): Promise<void> {
-  await Promise.all([
-    AsyncStorage.setItem(GAME_KEY, JSON.stringify({
-      totalScore:           snap.gamesXp,
-      gamesPlayed:          snap.gamesPlayed,
-      unlockedAchievements: snap.unlockedAchievements,
-    })),
-    AsyncStorage.setItem(TRILHA_KEY, JSON.stringify({
-      licoesConcluidas: snap.licoesConcluidas,
-      xpTotal:          snap.trilhasXp,
-    })),
-  ]);
-}
-
-// ── Merge (nunca perde dados) ────────────────────────────────────────────────
-
-function mergeSnapshots(a: ProgressSnapshot, b: ProgressSnapshot): ProgressSnapshot {
-  return {
-    gamesXp:              Math.max(a.gamesXp, b.gamesXp),
-    gamesPlayed:          Math.max(a.gamesPlayed, b.gamesPlayed),
-    unlockedAchievements: [...new Set([...a.unlockedAchievements, ...b.unlockedAchievements])],
-    licoesConcluidas:     [...new Set([...a.licoesConcluidas,     ...b.licoesConcluidas])],
-    trilhasXp:            Math.max(a.trilhasXp, b.trilhasXp),
-  };
-}
-
 // ── Push → Supabase ──────────────────────────────────────────────────────────
 
 export async function pushProgress(userId: string): Promise<void> {
   const local = await readLocalProgress();
+  // Não envia se não há nada significativo — evita enviar arrays vazios ao banco
+  if (local.gamesXp === 0 && local.gamesPlayed === 0 && local.licoesConcluidas.length === 0 && local.trilhasXp === 0) return;
   const { error } = await supabase.rpc('merge_user_progress', {
     p_user_id:               userId,
     p_games_played:          local.gamesPlayed,
@@ -73,7 +47,28 @@ export async function pushProgress(userId: string): Promise<void> {
   if (error) console.warn('[progressSync] push error:', error.message);
 }
 
-// ── Pull ← Supabase + merge com local ────────────────────────────────────────
+// Versão que recebe os valores de jogo diretamente (sem ler AsyncStorage),
+// evitando race condition quando o push é chamado logo após a escrita no AS.
+export async function pushGameProgress(
+  userId:               string,
+  gamesXp:              number,
+  gamesPlayed:          number,
+  unlockedAchievements: string[],
+): Promise<void> {
+  const trilhaRaw = await AsyncStorage.getItem(TRILHA_KEY);
+  const trilha    = trilhaRaw ? (JSON.parse(trilhaRaw) as Record<string, unknown>) : {};
+  const { error } = await supabase.rpc('merge_user_progress', {
+    p_user_id:               userId,
+    p_games_played:          gamesPlayed,
+    p_games_xp:              gamesXp,
+    p_unlocked_achievements: unlockedAchievements,
+    p_licoes_concluidas:     Array.isArray(trilha.licoesConcluidas) ? trilha.licoesConcluidas : [],
+    p_trilhas_xp:            typeof trilha.xpTotal === 'number'     ? trilha.xpTotal          : 0,
+  });
+  if (error) console.warn('[progressSync] pushGame error:', error.message);
+}
+
+// ── Pull ← Supabase (sem merge com dados offline) ────────────────────────────
 
 export async function pullProgress(userId: string): Promise<ProgressSnapshot | null> {
   const { data, error } = await supabase
@@ -84,19 +79,11 @@ export async function pullProgress(userId: string): Promise<ProgressSnapshot | n
 
   if (error || !data) return null;
 
-  const remote: ProgressSnapshot = {
+  return {
     gamesXp:              typeof data.games_xp    === 'number' ? data.games_xp    : 0,
     gamesPlayed:          typeof data.games_played === 'number' ? data.games_played : 0,
     unlockedAchievements: Array.isArray(data.unlocked_achievements) ? data.unlocked_achievements : [],
     licoesConcluidas:     Array.isArray(data.licoes_concluidas)     ? data.licoes_concluidas     : [],
     trilhasXp:            typeof data.trilhas_xp  === 'number' ? data.trilhas_xp  : 0,
   };
-
-  const local  = await readLocalProgress();
-  const merged = mergeSnapshots(local, remote);
-
-  // Salva o resultado mesclado localmente
-  await writeLocalProgress(merged);
-
-  return merged;
 }

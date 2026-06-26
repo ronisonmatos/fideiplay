@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  Modal,
   ScrollView,
   Share,
   StyleSheet,
@@ -38,6 +39,7 @@ export default function PagamentoScreen() {
   const theme = useTheme();
 
   const [aba, setAba] = useState<Aba>(coinsPrice > 0 ? 'moedas' : 'pix');
+  const [showCoinsModal, setShowCoinsModal] = useState(false);
   const [fase, setFase] = useState<Fase>('idle');
   const [pixCode, setPixCode] = useState('');
   const [pixBase64, setPixBase64] = useState('');
@@ -82,15 +84,7 @@ export default function PagamentoScreen() {
       const { data, error } = await supabase.functions.invoke('create-payment', {
         body: { trilha_id: Number(trilhaId), method: 'pix', trilha_titulo: titulo, preco },
       });
-      console.log('[pagarPix] data:', JSON.stringify(data));
-      console.log('[pagarPix] error:', JSON.stringify(error));
-      if (error) {
-        try {
-          const body = await (error as any).context?.json?.();
-          console.log('[pagarPix] error body:', JSON.stringify(body));
-        } catch (_) {}
-        throw new Error(error?.message ?? 'Erro ao gerar PIX');
-      }
+      if (error) throw new Error(error?.message ?? 'Erro ao gerar PIX');
       if (!data?.qr_code) throw new Error(JSON.stringify(data) ?? 'Erro ao gerar PIX');
       setPixCode(data.qr_code);
       setPixBase64(data.qr_code_base64 ?? '');
@@ -172,8 +166,41 @@ export default function PagamentoScreen() {
     }
   }
 
+  const falta = coinsPrice - (profile?.coins ?? 0);
+
   return (
     <ThemedView style={{ flex: 1 }}>
+
+      {/* Modal de saldo insuficiente */}
+      <Modal visible={showCoinsModal} transparent animationType="fade" onRequestClose={() => setShowCoinsModal(false)}>
+        <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setShowCoinsModal(false)}>
+          <View style={[s.modalBox, { backgroundColor: theme.backgroundElement }]}>
+            <Image source={require('@/assets/images/moedas.png')} style={{ width: 48, height: 48, alignSelf: 'center' }} resizeMode="contain" />
+            <ThemedText style={[s.modalTitle, { color: theme.text }]}>Moedas insuficientes</ThemedText>
+            <ThemedText style={[s.modalSub, { color: theme.textSecondary }]}>
+              Você tem <ThemedText style={{ color: C.gold, fontWeight: '800' }}>{profile?.coins ?? 0} moedas</ThemedText> e precisa de{' '}
+              <ThemedText style={{ color: C.gold, fontWeight: '800' }}>{coinsPrice}</ThemedText>.{' '}
+              Faltam <ThemedText style={{ fontWeight: '800' }}>{falta}</ThemedText> moedas.
+            </ThemedText>
+            <ThemedText style={[s.modalHow, { color: theme.textSecondary }]}>Como ganhar moedas:</ThemedText>
+            {[
+              '🎮 Jogue e complete jogos (+5 a +10)',
+              '📺 Assista anúncios (+50 por vídeo)',
+              '🪙 Resgate bônus de 2h na aba Conta (+5)',
+              '🎓 Complete lições das trilhas (+8)',
+            ].map(tip => (
+              <ThemedText key={tip} style={[s.modalTip, { color: theme.textSecondary }]}>{tip}</ThemedText>
+            ))}
+            <TouchableOpacity
+              style={[s.btnPrincipal, { backgroundColor: C.purple, marginTop: Spacing.two }]}
+              onPress={() => setShowCoinsModal(false)}
+              activeOpacity={0.8}>
+              <ThemedText style={s.btnText}>ENTENDIDO</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={[s.header, { borderBottomColor: C.border }]}>
           <TouchableOpacity onPress={() => { pararPolling(); router.back(); }} style={s.backBtn}>
@@ -249,9 +276,9 @@ export default function PagamentoScreen() {
                     </View>
                   )}
                   <TouchableOpacity
-                    style={[s.btnPrincipal, { backgroundColor: C.gold }, (fase === 'loading' || (profile?.coins ?? 0) < coinsPrice) && { opacity: 0.5 }]}
-                    onPress={comprarComMoedas}
-                    disabled={fase === 'loading' || (profile?.coins ?? 0) < coinsPrice}
+                    style={[s.btnPrincipal, { backgroundColor: C.gold }, fase === 'loading' && { opacity: 0.5 }]}
+                    onPress={(profile?.coins ?? 0) >= coinsPrice ? comprarComMoedas : () => setShowCoinsModal(true)}
+                    disabled={fase === 'loading'}
                     activeOpacity={0.8}>
                     {fase === 'loading'
                       ? <ActivityIndicator color="#fff" />
@@ -464,6 +491,19 @@ const s = StyleSheet.create({
   coinIcon:    { width: 36, height: 36 },
   coinIconTab: { width: 18, height: 18 },
   coinIconBtn: { width: 22, height: 22 },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.four,
+  },
+  modalBox: {
+    borderRadius: 20, padding: Spacing.four, gap: Spacing.two,
+    width: '100%', maxWidth: 360,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  modalSub:   { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  modalHow:   { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: Spacing.one },
+  modalTip:   { fontSize: 13, lineHeight: 20 },
   btnPrincipal: { paddingVertical: 16, borderRadius: 99, alignItems: 'center' },
   btnSecundario: { paddingVertical: 14, borderRadius: 99, alignItems: 'center', borderWidth: 1 },
   btnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
