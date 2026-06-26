@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -18,12 +18,24 @@ import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { supabase } from '@/lib/supabase';
 
 const AVATARS = ['🙏', '✝️', '📖', '🕊️', '⭐', '🏆', '👼', '🌟'];
 
-// URLs das páginas legais — substitua pelas URLs reais quando publicadas
-const URL_TERMOS   = 'https://fideiplay.com.br/termos';
-const URL_PRIVACIDADE = 'https://fideiplay.com.br/privacidade';
+async function fetchLegalUrls(): Promise<{ termos: string; privacidade: string }> {
+  const { data } = await supabase
+    .from('app_config')
+    .select('key, value')
+    .in('key', ['url_termos', 'url_privacidade']);
+
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) map[row.key] = row.value;
+
+  return {
+    termos:      map['url_termos']      ?? '',
+    privacidade: map['url_privacidade'] ?? '',
+  };
+}
 
 function maskDate(val: string): string {
   const d = val.replace(/\D/g, '').slice(0, 8);
@@ -61,6 +73,15 @@ export default function RegisterScreen() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [error,         setError]         = useState<string | null>(null);
+  const [urlTermos,     setUrlTermos]     = useState('');
+  const [urlPriv,       setUrlPriv]       = useState('');
+
+  useEffect(() => {
+    fetchLegalUrls().then(({ termos, privacidade }) => {
+      setUrlTermos(termos);
+      setUrlPriv(privacidade);
+    }).catch(() => {});
+  }, []);
 
   async function handleRegister() {
     setError(null);
@@ -212,14 +233,14 @@ export default function RegisterScreen() {
                 <ThemedText style={[s.termsBase, { color: theme.text }]}>
                   Li e aceito os{' '}
                   <ThemedText
-                    style={[s.termsLink, { color: C.purple }]}
-                    onPress={() => Linking.openURL(URL_TERMOS)}>
+                    style={[s.termsLink, { color: C.purple, opacity: urlTermos ? 1 : 0.5 }]}
+                    onPress={() => urlTermos && Linking.openURL(urlTermos)}>
                     Termos de Uso
                   </ThemedText>
                   {' '}e a{' '}
                   <ThemedText
-                    style={[s.termsLink, { color: C.purple }]}
-                    onPress={() => Linking.openURL(URL_PRIVACIDADE)}>
+                    style={[s.termsLink, { color: C.purple, opacity: urlPriv ? 1 : 0.5 }]}
+                    onPress={() => urlPriv && Linking.openURL(urlPriv)}>
                     Política de Privacidade
                   </ThemedText>
                   , incluindo o tratamento dos meus dados pessoais.

@@ -20,19 +20,19 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
-import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
+import { ALL_LETTERS, computeAvailableLetters, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
+import { useStopCategories } from '@/hooks/use-stop-categories';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { supabase } from '@/lib/supabase';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 
-const BRAND        = '#EF9F27';
+const BRAND          = '#EF9F27';
 const TIMER_DURATION = 90;
-const LETTERS      = ['A','B','C','D','E','F','G','H','J','L','M','N','O','P','R','S','T','V'];
-const MIN_CATS     = 4;
+const MIN_CATS       = 4;
 
 type Phase = 'idle' | 'selecting' | 'spinning' | 'playing' | 'result';
 type AnswerMap = Partial<Record<string, string>>;
@@ -42,7 +42,8 @@ export default function StopCatolicoScreen() {
   const { reportResult } = useGameStore();
   const { user, profile, refreshProfile } = useAuth();
   const { packs } = useGamePacks('stop');
-  const allCategories = mergeStopCategories(ALL_STOP_CATEGORIES, packs);
+  const baseCategories = useStopCategories();
+  const allCategories  = mergeStopCategories(baseCategories, packs, ALL_LETTERS) as StopCategory[];
 
   const [phase,       setPhase]       = useState<Phase>('idle');
   const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
@@ -222,12 +223,13 @@ export default function StopCatolicoScreen() {
     setAnswers({});
     setTimeLeft(TIMER_DURATION);
 
-    const targetIdx    = Math.floor(Math.random() * LETTERS.length);
-    const targetLetter = LETTERS[targetIdx];
+    const availableLetters = computeAvailableLetters(cats);
+    const targetIdx        = Math.floor(Math.random() * availableLetters.length);
+    const targetLetter     = availableLetters[targetIdx];
     targetLetterRef.current = targetLetter;
     setLetter(targetLetter);
 
-    const LC     = LETTERS.length;
+    const LC     = availableLetters.length;
     const phases = [
       { count: 10, ms: 60 },
       { count: 8,  ms: 110 },
@@ -242,7 +244,7 @@ export default function StopCatolicoScreen() {
 
     for (const { count, ms } of phases) {
       for (let i = 0; i < count; i++) {
-        const l = LETTERS[idx % LC], ct = t;
+        const l = availableLetters[idx % LC], ct = t;
         const peak = 1 + (ms / 380) * 0.18;
         refs.push(setTimeout(() => {
           setSpinLetter(l);
