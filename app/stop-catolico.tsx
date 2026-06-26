@@ -122,26 +122,18 @@ export default function StopCatolicoScreen() {
       setBankMap(map);
 
       const toCheck = activeCategories.filter(c => map[c.key] === 'unverified');
-      // 'padre' já marcado como 'valid' no banco; verificamos apenas palavrão via IA
-      const padreCat = activeCategories.find(c => c.key === 'padre' && map['padre'] === 'valid');
-      if (toCheck.length === 0 && !padreCat) return;
+      if (toCheck.length === 0) return;
 
       setAiLoading(true);
       try {
-        await Promise.all([
-          ...toCheck.map(async (cat) => {
+        await Promise.all(
+          toCheck.map(async (cat) => {
             const ans = (answers[cat.key] ?? '').trim();
             const result = await validateWithAI(letter, ans, cat.key, cat.label);
             if (result === null) return;
             setBankMap(prev => ({ ...prev, [cat.key]: result ? 'ai_valid' : 'ai_invalid' }));
           }),
-          ...(padreCat ? [(async () => {
-            const ans = (answers['padre'] ?? '').trim();
-            if (!ans) return;
-            const result = await validateWithAI(letter, ans, 'padre', padreCat.label);
-            if (result === false) setBankMap(prev => ({ ...prev, padre: 'ai_invalid' }));
-          })()] : []),
-        ]);
+        );
       } finally {
         setAiLoading(false);
       }

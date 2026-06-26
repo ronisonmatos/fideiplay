@@ -44,12 +44,6 @@ INSERT INTO public.stop_categories (key, label, emoji, valid_letters, sort_order
 ('animal_biblico',    'Animal bíblico',                '🐑',
   ARRAY['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V','Z'], 6),
 
-('parabola',          'Parábola de Jesus',             '📚',
-  ARRAY['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V','Z'], 7),
-
-('milagre',           'Milagre bíblico',               '🌊',
-  ARRAY['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V','Z'], 8),
-
 ('dogma',             'Dogma / Verdade de Fé',         '✡️',
   ARRAY['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V','Z'], 9),
 
@@ -85,10 +79,7 @@ INSERT INTO public.stop_categories (key, label, emoji, valid_letters, sort_order
   ARRAY['A','B','C','D','E','F','G','H','L','M','O','P','R','S','T','U','V'], 19),
 
 ('missa',             'Coisa da Santa Missa',          '🍷',
-  ARRAY['A','C','D','E','F','G','H','I','L','M','O','P','R','S','T'], 20),
-
-('padre',             'Padre famoso',                  '🙏',
-  ARRAY['A','B','C','D','F','H','I','J','L','M','N','P','R','T','Z'], 21)
+  ARRAY['A','C','D','E','F','G','H','I','L','M','O','P','R','S','T'], 20)
 
 ON CONFLICT (key) DO UPDATE SET
   label         = EXCLUDED.label,

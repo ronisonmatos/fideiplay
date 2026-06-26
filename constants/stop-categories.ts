@@ -45,19 +45,7 @@ export const ALL_STOP_CATEGORIES: StopCategory[] = [
     emoji: '🐑',
     validLetters: ALL_LETTERS,
   },
-  {
-    key: 'parabola',
-    label: 'Parábola de Jesus',
-    emoji: '📚',
-    validLetters: ALL_LETTERS,
-  },
-  {
-    key: 'milagre',
-    label: 'Milagre bíblico',
-    emoji: '🌊',
-    validLetters: ALL_LETTERS,
-  },
-  {
+{
     key: 'dogma',
     label: 'Dogma / Verdade de Fé',
     emoji: '✡️',
@@ -128,12 +116,6 @@ export const ALL_STOP_CATEGORIES: StopCategory[] = [
     label: 'Coisa da Santa Missa',
     emoji: '🍷',
     validLetters: ['A','C','D','E','F','G','H','I','L','M','O','P','R','S','T'],
-  },
-  {
-    key: 'padre',
-    label: 'Padre famoso',
-    emoji: '🙏',
-    validLetters: ['A','B','C','D','F','H','I','J','L','M','N','P','R','T','Z'],
   },
 ];
 
