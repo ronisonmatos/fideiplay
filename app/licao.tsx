@@ -12,6 +12,7 @@ import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { Bloco, TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
+import { pushProgress } from '@/lib/progress-sync';
 import { supabase } from '@/lib/supabase';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
@@ -110,12 +111,7 @@ export default function LicaoScreen() {
         prog.licoesConcluidas.push(key);
         prog.xpTotal += licao.xp;
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prog));
-        // Grava direto no banco só os campos de trilha — evita mandar unlocked_achievements vazio
-        supabase.rpc('merge_user_progress', {
-          p_user_id:           user.id,
-          p_licoes_concluidas: prog.licoesConcluidas,
-          p_trilhas_xp:        prog.xpTotal,
-        }).then(() => {}).catch(() => {});
+        pushProgress(user.id).catch((e: unknown) => console.warn('[licao] pushProgress error:', e));
       }
     }
     setFase('conclusao');
@@ -383,8 +379,8 @@ export default function LicaoScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
-  backBtn: { padding: 4 },
-  backText: { fontSize: 20, fontWeight: '700', color: C.purple },
+  backBtn: { padding: Spacing.two },
+  backText: { fontSize: 24, fontWeight: '700', color: C.purple },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

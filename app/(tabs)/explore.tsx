@@ -3,12 +3,10 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Appearance,
   Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -23,7 +21,6 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import type { Profile } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { pullProgress } from '@/lib/progress-sync';
@@ -146,39 +143,10 @@ function AdRewardCard({ profile }: { profile: Profile }) {
   );
 }
 
-function PrefsCard({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
-  return (
-    <>
-      <ThemedText style={styles.sectionLabel}>PREFERÊNCIAS</ThemedText>
-      <ThemedView type="backgroundElement" style={styles.prefCard}>
-        <View style={styles.prefRow}>
-          <View style={styles.prefLeft}>
-            <ThemedText style={{ fontSize: 20 }}>{isDark ? '🌙' : '☀️'}</ThemedText>
-            <View>
-              <ThemedText type="smallBold">Tema</ThemedText>
-              <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                {isDark ? 'Modo escuro ativo' : 'Modo claro ativo'}
-              </ThemedText>
-            </View>
-          </View>
-          <Switch
-            value={isDark}
-            onValueChange={onToggle}
-            trackColor={{ false: '#3a3a5c', true: C.purple }}
-            thumbColor="#ffffff"
-          />
-        </View>
-      </ThemedView>
-    </>
-  );
-}
-
 const MEDAL = ['🥇', '🥈', '🥉'];
 
 export default function ContaScreen() {
   const theme        = useTheme();
-  const colorScheme  = useColorScheme();
-  const isDark       = colorScheme === 'dark';
   const { totalScore, gamesPlayed, unlockedAchievements, hydrate } = useGameStore();
   const { user, profile, refreshProfile, signOut, loading } = useAuth();
 
@@ -195,12 +163,6 @@ export default function ContaScreen() {
   const msLeft      = lastReward && !eligible ? TWO_HOURS - (Date.now() - lastReward.getTime()) : 0;
   const hoursLeft   = Math.floor(msLeft / (60 * 60 * 1000));
   const minutesLeft = Math.ceil((msLeft % (60 * 60 * 1000)) / 60000);
-
-  const toggleTheme = () => {
-    const next = isDark ? 'light' : 'dark';
-    Appearance.setColorScheme(next);
-    AsyncStorage.setItem('@fideiplay:theme', next).catch(() => {});
-  };
 
   const loadRanking = useCallback(async () => {
     setRankingLoad(true);
@@ -434,8 +396,6 @@ export default function ContaScreen() {
               })}
             </View>
 
-            <PrefsCard isDark={isDark} onToggle={toggleTheme} />
-
             <TouchableOpacity style={styles.logoutBtn} onPress={signOut} activeOpacity={0.75}>
               <ThemedText style={styles.logoutText}>Sair da conta</ThemedText>
             </TouchableOpacity>
@@ -474,7 +434,6 @@ export default function ContaScreen() {
             </TouchableOpacity>
           </View>
 
-          <PrefsCard isDark={isDark} onToggle={toggleTheme} />
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -534,11 +493,6 @@ const styles = StyleSheet.create({
   achievementDesc:  { fontSize: 11, lineHeight: 15 },
   lockIcon:         { fontSize: 14, position: 'absolute', top: 8, right: 8 },
   locked:           { opacity: 0.35 },
-
-  // Preferences
-  prefCard: { borderRadius: C.radius.lg, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
-  prefRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  prefLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
 
   // Logout
   logoutBtn: {

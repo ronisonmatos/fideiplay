@@ -6,15 +6,17 @@ import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
 export interface Profile {
-  id:               string;
-  name:             string;
-  avatar_emoji:     string;
-  total_score:      number;
-  coins:            number;
-  last_coin_reward: string | null;
-  ad_watches_today: number | null;
-  ad_watches_date:  string | null;
-  is_admin:         boolean;
+  id:                string;
+  name:              string;
+  avatar_emoji:      string;
+  total_score:       number;
+  coins:             number;
+  last_coin_reward:  string | null;
+  ad_watches_today:  number | null;
+  ad_watches_date:   string | null;
+  is_admin:          boolean;
+  birth_date:        string | null;
+  accepted_terms_at: string | null;
 }
 
 interface AuthCtx {
@@ -24,7 +26,7 @@ interface AuthCtx {
   loading:  boolean;
   isGuest:  boolean;
   setGuest: (v: boolean) => void;
-  signUp:   (email: string, password: string, name: string, avatar: string) => Promise<string | null>;
+  signUp:   (email: string, password: string, name: string, avatar: string, birthDate: string) => Promise<string | null>;
   signIn:   (email: string, password: string) => Promise<string | null>;
   signOut:  () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -118,11 +120,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     name: string,
     avatar: string,
+    birthDate: string,
   ): Promise<string | null> => {
+    const acceptedTermsAt = new Date().toISOString();
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, avatar } },
+      options: { data: { name, avatar, birth_date: birthDate, accepted_terms_at: acceptedTermsAt } },
     });
     return error?.message ?? null;
   }, []);
