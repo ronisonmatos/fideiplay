@@ -20,7 +20,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
-import { ALL_LETTERS, computeAvailableLetters, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
+import { ALL_LETTERS, ALL_STOP_CATEGORIES, computeAvailableLetters, StopCategory } from '@/constants/stop-categories';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useTheme } from '@/hooks/use-theme';
@@ -32,7 +32,12 @@ import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 
 const BRAND          = '#EF9F27';
 const TIMER_DURATION = 90;
-const MIN_CATS       = 4;
+const SLOT_COUNT     = 6;
+const SLOT_COLORS    = [C.purple, BRAND, C.green, '#4A9EDB', '#C97BD4', '#E05555'];
+
+function pickSixKeys(cats: StopCategory[]): string[] {
+  return [...cats].sort(() => Math.random() - 0.5).slice(0, SLOT_COUNT).map(c => c.key);
+}
 
 type Phase = 'idle' | 'selecting' | 'spinning' | 'playing' | 'result';
 type AnswerMap = Partial<Record<string, string>>;
@@ -47,7 +52,7 @@ export default function StopCatolicoScreen() {
 
   const [phase,       setPhase]       = useState<Phase>('idle');
   const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => randomDefaultKeys());
+  const [slots,       setSlots]       = useState<string[]>(() => pickSixKeys(ALL_STOP_CATEGORIES));
   const [activeCategories, setActiveCategories] = useState<StopCategory[]>([]);
   const [letter,      setLetter]      = useState('A');
   const [answers,     setAnswers]     = useState<AnswerMap>({});
@@ -161,24 +166,36 @@ export default function StopCatolicoScreen() {
 
   useEffect(() => () => clearSpinTimeouts(), [clearSpinTimeouts]);
 
-  const toggleCat = useCallback((key: string) => {
-    setSelectedKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        if (next.size > MIN_CATS) next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
+  const cycleCat = useCallback(async (slotIdx: number, dir: 1 | -1) => {
+    if (!user || !profile) return;
+    if (profile.coins < 1) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para trocar uma categoria.');
+      return;
+    }
+    const cats       = allCategories;
+    const currentKey = slots[slotIdx];
+    const usedKeys   = new Set(slots.filter((_, i) => i !== slotIdx));
+    let   nextIdx    = ((cats.findIndex(c => c.key === currentKey) + dir) + cats.length) % cats.length;
+    let   attempts   = 0;
+    while (usedKeys.has(cats[nextIdx].key) && attempts < cats.length) {
+      nextIdx = ((nextIdx + dir) + cats.length) % cats.length;
+      attempts++;
+    }
+    const newSlots = [...slots];
+    newSlots[slotIdx] = cats[nextIdx].key;
+    setSlots(newSlots);
+    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 }).then(() => refreshProfile());
+  }, [user, profile, slots, allCategories, refreshProfile]);
 
   const handleShuffle = useCallback(async () => {
-    if (!user || !profile || profile.coins < 1) return;
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
-    setSelectedKeys(randomDefaultKeys(6));
+    if (!user || !profile || profile.coins < 5) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 5 🪙 para sortear novas categorias.');
+      return;
+    }
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -5 });
+    setSlots(pickSixKeys(allCategories));
     refreshProfile();
-  }, [user, profile, refreshProfile]);
+  }, [user, profile, allCategories, refreshProfile]);
 
   const handleHint = useCallback(async (cat: StopCategory) => {
     if (!user || !profile) return;
@@ -262,9 +279,9 @@ export default function StopCatolicoScreen() {
   }, [clearSpinTimeouts, scaleAnim]);
 
   const handleVamosJogar = useCallback(() => {
-    const cats = allCategories.filter(c => selectedKeys.has(c.key));
-    startGame(cats as StopCategory[]);
-  }, [allCategories, selectedKeys, startGame]);
+    const cats = slots.map(k => allCategories.find(c => c.key === k)).filter(Boolean) as StopCategory[];
+    startGame(cats);
+  }, [slots, allCategories, startGame]);
 
   const callStop  = useCallback(() => { stopTimer(); setPhase('result'); }, [stopTimer]);
   const setAnswer = useCallback((key: string, value: string) => {
@@ -324,7 +341,8 @@ export default function StopCatolicoScreen() {
 
   // ── SELECTING ───────────────────────────────────────────────────────────────
   if (phase === 'selecting') {
-    const numSelected = selectedKeys.size;
+    const canShuffle  = !!profile && profile.coins >= 5;
+    const canCycle    = !!profile && profile.coins >= 1;
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
@@ -333,45 +351,69 @@ export default function StopCatolicoScreen() {
             contentContainerStyle={[s.selectScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             showsVerticalScrollIndicator={false}>
 
-            <ThemedText type="subtitle" style={s.center}>Escolha as categorias</ThemedText>
-            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
-              Selecione pelo menos {MIN_CATS}. Selecionadas: {numSelected}
+            {/* Header */}
+            <View style={s.selectHeader}>
+              <ThemedText style={[s.selectTitle, { color: theme.text }]}>Categorias</ThemedText>
+              <TouchableOpacity
+                style={[s.shuffleBtn, !canShuffle && { opacity: 0.35 }]}
+                onPress={handleShuffle}
+                disabled={!canShuffle}
+                activeOpacity={0.8}>
+                <ThemedText style={s.shuffleBtnText}>🔀 Novas  −5 🪙</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            <ThemedText themeColor="textSecondary" style={s.selectHint}>
+              Use ‹ › para trocar cada categoria  (−1 🪙)
             </ThemedText>
 
-            <TouchableOpacity
-              style={[s.shuffleBtn, profile && profile.coins < 1 && { opacity: 0.4 }]}
-              onPress={handleShuffle}
-              disabled={!profile || profile.coins < 1}
-              activeOpacity={0.8}>
-              <ThemedText style={s.shuffleBtnText}>🔀  Novas categorias  −1 🪙</ThemedText>
-            </TouchableOpacity>
-
-            <View style={s.catGrid}>
-              {allCategories.map(cat => {
-                const on = selectedKeys.has(cat.key);
-                const canDeselect = on && numSelected > MIN_CATS;
+            {/* Slots */}
+            <View style={s.slotsContainer}>
+              {slots.map((key, idx) => {
+                const cat   = allCategories.find(c => c.key === key);
+                const color = SLOT_COLORS[idx];
+                if (!cat) return null;
                 return (
-                  <TouchableOpacity
-                    key={cat.key}
-                    onPress={() => toggleCat(cat.key)}
-                    activeOpacity={0.75}
-                    style={[
-                      s.catChip,
-                      on
-                        ? { backgroundColor: BRAND, borderColor: BRAND }
-                        : { backgroundColor: 'transparent', borderColor: C.border },
-                      !canDeselect && on && numSelected <= MIN_CATS && { opacity: 0.85 },
-                    ]}>
-                    <ThemedText
-                      style={[s.chipLabel, { color: on ? '#fff' : theme.textSecondary }]}
-                      numberOfLines={2}>
-                      {cat.label}
-                    </ThemedText>
-                  </TouchableOpacity>
+                  <View
+                    key={idx}
+                    style={[s.slotCard, { backgroundColor: theme.backgroundElement, borderColor: color + '44' }]}>
+                    {/* Left accent bar */}
+                    <View style={[s.slotAccent, { backgroundColor: color }]} />
+
+                    {/* Prev button */}
+                    <TouchableOpacity
+                      style={[s.arrowBtn, { backgroundColor: color + '18', borderColor: color + '55' }]}
+                      onPress={() => cycleCat(idx, -1)}
+                      disabled={!canCycle}
+                      activeOpacity={0.7}>
+                      <ThemedText style={[s.arrowText, { color, opacity: canCycle ? 1 : 0.35 }]}>‹</ThemedText>
+                    </TouchableOpacity>
+
+                    {/* Category center */}
+                    <View style={s.slotCenter}>
+                      <ThemedText style={s.slotEmoji}>{cat.emoji}</ThemedText>
+                      <ThemedText
+                        style={[s.slotLabel, { color: theme.text }]}
+                        numberOfLines={2}
+                        adjustsFontSizeToFit>
+                        {cat.label}
+                      </ThemedText>
+                    </View>
+
+                    {/* Next button */}
+                    <TouchableOpacity
+                      style={[s.arrowBtn, { backgroundColor: color + '18', borderColor: color + '55' }]}
+                      onPress={() => cycleCat(idx, 1)}
+                      disabled={!canCycle}
+                      activeOpacity={0.7}>
+                      <ThemedText style={[s.arrowText, { color, opacity: canCycle ? 1 : 0.35 }]}>›</ThemedText>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>
 
+            {/* Play button */}
             <TouchableOpacity
               style={[s.playBtn, { backgroundColor: BRAND }]}
               onPress={handleVamosJogar}
@@ -605,19 +647,40 @@ const s = StyleSheet.create({
   modeDesc:   { color: 'rgba(255,255,255,0.75)', fontSize: 11, textAlign: 'center' },
 
   // Selecting
-  selectScroll: { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three, alignItems: 'center' },
-  catGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, alignSelf: 'stretch' },
-  catChip: {
-    width: '47%',
+  selectScroll:   { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three, alignItems: 'center' },
+  selectHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch' },
+  selectTitle:    { fontSize: 22, fontWeight: '900', letterSpacing: 0.2 },
+  selectHint:     { fontSize: 12, textAlign: 'center', marginTop: -Spacing.one },
+  slotsContainer: { gap: Spacing.two, alignSelf: 'stretch' },
+  slotCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: Spacing.two,
-    borderRadius: C.radius.md,
+    borderRadius: C.radius.lg,
     borderWidth: 1.5,
+    overflow: 'hidden',
+    minHeight: 64,
   },
-  chipEmoji:  { fontSize: 20, width: 26, textAlign: 'center' },
-  chipLabel:  { fontSize: 12, fontWeight: '600', flex: 1, lineHeight: 16 },
+  slotAccent: { width: 4, alignSelf: 'stretch' },
+  arrowBtn: {
+    width: 48,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'transparent',
+  },
+  arrowText: { fontSize: 28, fontWeight: '900', lineHeight: 34 },
+  slotCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+  },
+  slotEmoji: { fontSize: 26, lineHeight: 32, width: 32, textAlign: 'center' },
+  slotLabel: { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
   playBtn: {
     alignSelf: 'stretch',
     paddingVertical: 16,
@@ -659,8 +722,8 @@ const s = StyleSheet.create({
   catEmoji:    { fontSize: 22, width: 32, textAlign: 'center' },
   hintBtn:     { backgroundColor: C.gold + '22', borderRadius: C.radius.pill, paddingVertical: 3, paddingHorizontal: 8 },
   hintBtnText: { fontSize: 11, fontWeight: '800', color: C.gold },
-  shuffleBtn:  { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 10, alignItems: 'center' as const, alignSelf: 'stretch' as const, marginBottom: -4 },
-  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 13, letterSpacing: 0.5 },
+  shuffleBtn:     { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 7, paddingHorizontal: 12, alignItems: 'center' as const },
+  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 12, letterSpacing: 0.3 },
   input: {
     borderWidth: 1.5, borderRadius: C.radius.sm,
     paddingHorizontal: Spacing.two,
