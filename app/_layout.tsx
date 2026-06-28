@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState, Appearance, Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, router, useSegments } from 'expo-router';
 import * as ExpoNotifications from 'expo-notifications';
 import Constants from 'expo-constants';
@@ -167,16 +168,18 @@ function AuthGate() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <GameStoreProvider>
-        <NotificationsProvider>
-          <ProgressSyncBridge />
-          <NotificationBridge />
-          <AnimatedSplashOverlay />
-          <AuthGate />
-          <Stack screenOptions={{ headerShown: false }} />
-        </NotificationsProvider>
-      </GameStoreProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <GameStoreProvider>
+          <NotificationsProvider>
+            <ProgressSyncBridge />
+            <NotificationBridge />
+            <AnimatedSplashOverlay />
+            <AuthGate />
+            <Stack screenOptions={{ headerShown: false }} />
+          </NotificationsProvider>
+        </GameStoreProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

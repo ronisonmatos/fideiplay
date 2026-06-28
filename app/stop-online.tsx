@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Easing,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -13,6 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Audio } from 'expo-av';
+import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useNavigation } from 'expo-router';
 
@@ -86,6 +89,8 @@ interface AsyncGame {
   player1_name: string | null; player2_name: string | null;
   deadline: string | null;
   p1_elapsed_seconds: number | null;
+  p1_dismissed_at: string | null;
+  p2_dismissed_at: string | null;
 }
 interface PendingResults {
   meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean;
@@ -177,8 +182,10 @@ export default function StopOnlineScreen() {
   const [joinCodeInput,   setJoinCodeInput]    = useState('');
   const [myBankMap,   setMyBankMap]   = useState<Partial<Record<string, BankResult>>>({});
   const [oppBankMap,  setOppBankMap]  = useState<Partial<Record<string, BankResult>>>({});
-  const [aiLoading,   setAiLoading]   = useState(false);
-  const [waitingOpp,  setWaitingOpp]  = useState(false);
+  const [aiLoading,      setAiLoading]      = useState(false);
+  const [waitingOpp,     setWaitingOpp]     = useState(false);
+  const [validatingStep, setValidatingStep] = useState(0); // 0=banco 1=ia/save 2=aguardando adv
+  const validatingAnim  = useRef(new Animated.Value(0)).current;
   const [hints,       setHints]       = useState<HintMap>({});
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
   const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
@@ -211,6 +218,7 @@ export default function StopOnlineScreen() {
   const isCountUpRef        = useRef(false);         // true somente para P2 async
   const timeLeftRef         = useRef<number>(TIMER);
   const oppNameRef          = useRef('Adversário');
+  const timerSoundRef       = useRef<Audio.Sound | null>(null);
   const isActiveGameRef     = useRef(false);
   const awardCoinsRef       = useRef<(delta: number) => void>(() => {});
   const coinsAwardedRef     = useRef(false);
@@ -222,6 +230,45 @@ export default function StopOnlineScreen() {
   useEffect(() => { letterRef.current   = letter;   }, [letter]);
   useEffect(() => { timeLeftRef.current = timeLeft;  }, [timeLeft]);
   useEffect(() => { oppNameRef.current  = oppName;   }, [oppName]);
+
+  // ── Animação da barra de validação ───────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'validating') { validatingAnim.setValue(0); return; }
+    const targets   = [0.28, 0.68, 0.93];
+    const durations = [1400, 9000, 20000];
+    Animated.timing(validatingAnim, {
+      toValue:         targets[validatingStep] ?? 0.93,
+      duration:        durations[validatingStep] ?? 9000,
+      easing:          Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [phase, validatingStep, validatingAnim]);
+
+  // ── Sons de resultado ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'result' || !myResult) return;
+    const isAbandon   = abandoned === 'me';
+    const oppLeft     = abandoned === 'opp';
+    const isMulti     = multiResults.length > 2;
+    const myRank      = multiResults.find(r => r.playerId === (user?.id ?? ''))?.rank ?? 1;
+    const tiedAtFirst = isMulti && myRank === 1 && multiResults.filter(r => r.rank === 1).length > 1;
+    const iWon = isMulti ? (myRank === 1 && !tiedAtFirst) : (isAbandon ? false : oppLeft ? true : (myResult.score > (oppResult?.score ?? 0)));
+    const tied = (!isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0)) || tiedAtFirst;
+
+    const file = iWon || oppLeft
+      ? require('@/assets/audio/floraphonic-marimba-win-f-2-209688.mp3')
+      : tied ? null
+      : require('@/assets/audio/freesound_community-negative_beeps-6008.mp3');
+
+    if (!file) return;
+    let sound: Audio.Sound | null = null;
+    Audio.Sound.createAsync(file, { shouldPlay: true, volume: 0.9 })
+      .then(({ sound: s }) => { sound = s; }).catch(() => {});
+    return () => {
+      sound?.stopAsync().catch(() => {});
+      sound?.unloadAsync().catch(() => {});
+    };
+  }, [phase, myResult, oppResult, abandoned, multiResults, user?.id]);
 
   // ── Back-button abandon guard ──────────────────────────────────────────────
   const isActiveGame = (phase === 'spinning' || phase === 'playing' || phase === 'waiting')
@@ -248,13 +295,30 @@ export default function StopOnlineScreen() {
   }, [navigation]);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
+  const stopTimerSound = useCallback(async () => {
+    if (timerSoundRef.current) {
+      await timerSoundRef.current.stopAsync().catch(() => {});
+      await timerSoundRef.current.unloadAsync().catch(() => {});
+      timerSoundRef.current = null;
+    }
+  }, []);
+
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-  }, []);
+    stopTimerSound();
+  }, [stopTimerSound]);
 
   useEffect(() => {
     if (phase !== 'playing') return;
     setTimeLeft(TIMER);
+
+    Audio.Sound.createAsync(
+      require('@/assets/audio/som_relogio_stop.mp3'),
+      { shouldPlay: true, volume: 0.7 },
+    ).then(({ sound }) => {
+      timerSoundRef.current = sound;
+    }).catch(() => {});
+
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
         const next = t - 1;
@@ -728,22 +792,54 @@ export default function StopOnlineScreen() {
     if (!silent) setLoadingAsync(true);
     const pid = playerIdRef.current;
 
-    // Somente partidas onde eu sou jogador (P1 ou P2 já definido)
     const { data } = await supabase
       .from('stop_rooms')
-      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status, p1_elapsed_seconds')
+      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status, p1_elapsed_seconds, p1_dismissed_at, p2_dismissed_at')
       .eq('mode', 'async')
       .in('status', ['async_wait_p2', 'async_p2', 'completed'])
       .or(`player1_id.eq.${pid},player2_id.eq.${pid}`)
       .order('created_at', { ascending: false })
       .limit(20);
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const filtered = ((data as AsyncGame[]) ?? []).filter(g =>
-      g.status !== 'completed' || !g.deadline || g.deadline > oneDayAgo
-    );
+    const games = (data as AsyncGame[]) ?? [];
+
+    // Auto-dismiss: partidas concluídas com prazo há mais de 7 dias
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const toAutoDismiss = games.filter(g => {
+      if (g.status !== 'completed') return false;
+      if (!g.deadline || g.deadline > sevenDaysAgo) return false;
+      const isP1 = g.player1_id === pid;
+      return isP1 ? !g.p1_dismissed_at : !g.p2_dismissed_at;
+    });
+    for (const g of toAutoDismiss) {
+      const field = g.player1_id === pid ? 'p1_dismissed_at' : 'p2_dismissed_at';
+      supabase.from('stop_rooms').update({ [field]: new Date().toISOString() }).eq('id', g.id).then(() => {});
+    }
+    const autoDismissedIds = new Set(toAutoDismiss.map(g => g.id));
+
+    // Filtra: exclui partidas que o jogador atual já dispensou
+    const filtered = games.filter(g => {
+      if (autoDismissedIds.has(g.id)) return false;
+      const isP1 = g.player1_id === pid;
+      return isP1 ? !g.p1_dismissed_at : !g.p2_dismissed_at;
+    });
     setAsyncGames(filtered);
     if (!silent) setLoadingAsync(false);
+  }, []);
+
+  const dismissAsyncGame = useCallback(async (game: AsyncGame) => {
+    const pid = playerIdRef.current;
+    if (!pid) return;
+    const field = game.player1_id === pid ? 'p1_dismissed_at' : 'p2_dismissed_at';
+    const now = new Date().toISOString();
+    setDismissedIds(prev => new Set([...prev, game.id]));
+    await supabase.from('stop_rooms').update({ [field]: now }).eq('id', game.id);
+    // Hard delete quando os dois dispensaram
+    const otherField = field === 'p1_dismissed_at' ? 'p2_dismissed_at' : 'p1_dismissed_at';
+    const otherDismissed = field === 'p1_dismissed_at' ? game.p2_dismissed_at : game.p1_dismissed_at;
+    if (otherDismissed) {
+      supabase.from('stop_rooms').delete().eq('id', game.id).then(() => {});
+    }
   }, []);
 
   // Auto-refresh selection screen data
@@ -780,11 +876,13 @@ export default function StopOnlineScreen() {
     const run = async () => {
       setAiLoading(false);
       setWaitingOpp(false);
+      setValidatingStep(0);
       console.log('[StopOnline] Iniciando validação. letra:', ltr, 'categorias:', cats.map(c => c.key));
 
       // ── Step 1: Validate MY answers (bank + AI) ──────────────────────────
       const myMap = await validateWithBank(ltr, pending.meAnswers, cats);
       setMyBankMap(myMap);
+      setValidatingStep(1);
       console.log('[StopOnline] Banco (minhas):', myMap);
 
       const finalMyMap = { ...myMap };
@@ -832,6 +930,7 @@ export default function StopOnlineScreen() {
       const hasOpp = Object.keys(pending.oppAnswers).length > 0;
 
       if (rId && myId && hasOpp && !pending.skipCoins) {
+        setValidatingStep(2);
         setWaitingOpp(true);
         const MAX_ATTEMPTS = 8;
         const WAIT_MS      = 2500;
@@ -1507,25 +1606,42 @@ export default function StopOnlineScreen() {
               }
 
               return (
-                <ThemedView key={game.id} type="backgroundElement" style={s.asyncCard}>
-                  <View style={s.asyncCardLeft}>
-                    <ThemedText style={{ fontSize: 22 }}>{icon}</ThemedText>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText type="smallBold" numberOfLines={1}>{label}</ThemedText>
-                      <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>{sub}</ThemedText>
+                <Swipeable
+                  key={game.id}
+                  overshootRight={false}
+                  containerStyle={{ alignSelf: 'stretch' }}
+                  renderRightActions={() => (
+                    <TouchableOpacity
+                      style={s.deleteAction}
+                      onPress={() => dismissAsyncGame(game)}
+                      activeOpacity={0.8}
+                    >
+                      <ThemedText style={{ fontSize: 20 }}>🗑️</ThemedText>
+                      <ThemedText style={s.deleteActionTxt}>Excluir</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                >
+                  <ThemedView type="backgroundElement" style={s.asyncCard}>
+                    <View style={s.asyncCardLeft}>
+                      <ThemedText style={{ fontSize: 22 }}>{icon}</ThemedText>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold" numberOfLines={1}>{label}</ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>{sub}</ThemedText>
+                      </View>
                     </View>
-                  </View>
-                  {isOpen && !expired ? (
-                    <TouchableOpacity style={s.enterBtn} onPress={() => joinAsyncGame(game)} activeOpacity={0.8}>
-                      <ThemedText style={s.enterBtnTxt}>JOGAR</ThemedText>
-                    </TouchableOpacity>
-                  ) : canAct ? (
-                    <TouchableOpacity style={[s.enterBtn, { backgroundColor: C.purple }]}
-                      onPress={() => viewAsyncResult(game)} activeOpacity={0.8}>
-                      <ThemedText style={s.enterBtnTxt}>RESULTADO</ThemedText>
-                    </TouchableOpacity>
-                  ) : null}
-                </ThemedView>
+                    {isOpen && !expired ? (
+                      <TouchableOpacity style={[s.enterBtn, s.asyncBtn]} onPress={() => joinAsyncGame(game)} activeOpacity={0.8}>
+                        <ThemedText style={s.enterBtnTxt}>JOGAR</ThemedText>
+                      </TouchableOpacity>
+                    ) : canAct ? (
+                      <TouchableOpacity style={[s.enterBtn, s.asyncBtn, { backgroundColor: C.purple }]}
+                        onPress={() => viewAsyncResult(game)} activeOpacity={0.8}>
+                        <ThemedText style={s.enterBtnTxt}>RESULTADO</ThemedText>
+                      </TouchableOpacity>
+                    ) : null}
+                    <View style={s.asyncSwipeHint} pointerEvents="none" />
+                  </ThemedView>
+                </Swipeable>
               );
             })}
 
@@ -1646,20 +1762,63 @@ export default function StopOnlineScreen() {
   );
 
   // ── Validating answers ─────────────────────────────────────────────────────
-  if (phase === 'validating') return (
-    <ThemedView style={s.fill}>
-      <SafeAreaView style={s.fill} edges={['top']}>
-        <GameHeader title="Stop Online" subtitle="VERIFICANDO" />
-        <View style={s.centerFlex}>
-          <ThemedText style={{ fontSize: 48, lineHeight: 56 }}>🔍</ThemedText>
-          <ThemedText type="subtitle" style={s.center}>Verificando respostas...</ThemedText>
-          <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
-            {aiLoading ? 'Consultando IA...' : waitingOpp ? 'Aguardando validação do adversário...' : 'Consultando banco de palavras...'}
-          </ThemedText>
-        </View>
-      </SafeAreaView>
-    </ThemedView>
-  );
+  if (phase === 'validating') {
+    const barWidth = validatingAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+    const VSTEPS = [
+      { icon: '📖', label: 'Banco de palavras',         done: validatingStep > 0, active: validatingStep === 0 },
+      { icon: '🤖', label: 'Inteligência artificial',   done: validatingStep > 1, active: validatingStep === 1 },
+      { icon: '🤝', label: 'Aguardando adversário',     done: false,              active: validatingStep === 2 },
+    ];
+    return (
+      <ThemedView style={s.fill}>
+        <SafeAreaView style={s.fill} edges={['top']}>
+          <GameHeader title="Stop Online" subtitle="VERIFICANDO" />
+          <View style={[s.centerFlex, { paddingHorizontal: Spacing.four, gap: Spacing.four }]}>
+
+            <ThemedText style={{ fontSize: 56, lineHeight: 68 }}>🔍</ThemedText>
+
+            <View style={{ alignItems: 'center', gap: Spacing.one }}>
+              <ThemedText type="subtitle" style={s.center}>Estamos validando...</ThemedText>
+              <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
+                Cada jogador valida suas próprias respostas
+              </ThemedText>
+            </View>
+
+            {/* Barra de progresso */}
+            <View style={{ alignSelf: 'stretch', gap: Spacing.one }}>
+              <View style={s.validatingTrack}>
+                <Animated.View style={[s.validatingFill, { width: barWidth }]} />
+              </View>
+            </View>
+
+            {/* Passos */}
+            <View style={{ alignSelf: 'stretch', gap: Spacing.two }}>
+              {VSTEPS.map((step, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                  <ThemedText style={{ fontSize: 22, width: 30, textAlign: 'center' }}>
+                    {step.done ? '✅' : step.icon}
+                  </ThemedText>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={{
+                      fontSize: 14,
+                      fontWeight: step.active ? '800' : '400',
+                      color: step.done ? C.green : step.active ? theme.text : theme.textSecondary,
+                    }}>
+                      {step.label}{step.active ? '...' : ''}
+                    </ThemedText>
+                  </View>
+                  {step.active && (
+                    <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>⏳</ThemedText>
+                  )}
+                </View>
+              ))}
+            </View>
+
+          </View>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
 
   // ── Waiting for opponent (realtime) ────────────────────────────────────────
   if (phase === 'waiting') return (
@@ -1711,8 +1870,8 @@ export default function StopOnlineScreen() {
     const tied    = (!isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0)) || tiedAtFirst;
 
     let resEmoji = isMulti
-      ? (tiedAtFirst ? '🤝' : myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '📿')
-      : (tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '📿');
+      ? (tiedAtFirst ? '🤝' : myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '😔')
+      : (tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '😔');
     let resMsg = isMulti
       ? (tiedAtFirst ? 'Empate!' : myRank === 1 ? 'Você ganhou!' : `${myRank}º lugar`)
       : (tied ? 'Empate!' : iWon ? 'Você ganhou!' : isAbandon ? 'Você abandonou' : 'Adversário ganhou!');
@@ -1744,14 +1903,6 @@ export default function StopOnlineScreen() {
         <SafeAreaView style={s.fill} edges={['top']}>
           <GameHeader title="Stop Online" subtitle="RESULTADO" />
           <ScrollView contentContainerStyle={[s.resultScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
-
-            {coinDelta !== null && (
-              <View style={[s.coinBadge, { backgroundColor: coinDelta >= 0 ? C.green : C.red }]}>
-                <ThemedText style={s.coinBadgeTxt}>
-                  {coinDelta >= 0 ? '+' : ''}{coinDelta} 🪙
-                </ThemedText>
-              </View>
-            )}
 
             <View style={[s.resBanner, { backgroundColor: resColor + '22', borderColor: resColor }]}>
               <ThemedText style={{ fontSize: 40, lineHeight: 48 }}>{resEmoji}</ThemedText>
@@ -1951,14 +2102,16 @@ export default function StopOnlineScreen() {
                   const myRes  = myBankMap[c.key];
                   const oppRes = oppBankMap[c.key];
 
-                  const cellColor = (res: BankResult | undefined) =>
-                    (res === 'valid' || res === 'ai_valid') ? C.green
-                    : res === 'unverified'                  ? C.gold
-                    : res === 'ai_invalid'                  ? C.red
+                  const cellColor = (res: BankResult | undefined, hasAns: boolean) =>
+                    !hasAns                                    ? theme.textSecondary
+                    : (res === 'valid' || res === 'ai_valid') ? C.green
+                    : res === 'unverified'                    ? C.gold
+                    : res === 'ai_invalid'                    ? C.red
                     : theme.textSecondary;
 
-                  const cellBg = (res: BankResult | undefined, startsOk: boolean) =>
-                    !res
+                  const cellBg = (res: BankResult | undefined, startsOk: boolean, hasAns: boolean) =>
+                    !hasAns                                      ? 'transparent'
+                    : !res
                       ? (startsOk ? C.green : C.red) + '18'
                       : (res === 'valid' || res === 'ai_valid') ? C.green + '18'
                       : res === 'unverified'                    ? C.gold  + '22'
@@ -1980,19 +2133,19 @@ export default function StopOnlineScreen() {
                         <ThemedText type="smallBold" style={{ flex: 1 }}>{c.label}</ThemedText>
                       </View>
                       <View style={s.compAnswers}>
-                        <View style={[s.compCell, { backgroundColor: cellBg(myRes, myV) }]}>
+                        <View style={[s.compCell, { backgroundColor: cellBg(myRes, myV, mine.length > 0) }]}>
                           <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: C.purple }}>VOCÊ</ThemedText>
-                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(myRes) }}>
+                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(myRes, mine.length > 0) }}>
                             {mine || '—'}
                           </ThemedText>
-                          <Badge res={myRes} />
+                          {mine.length > 0 && <Badge res={myRes} />}
                         </View>
-                        <View style={[s.compCell, { backgroundColor: cellBg(oppRes, theirV) }]}>
+                        <View style={[s.compCell, { backgroundColor: cellBg(oppRes, theirV, theirs.length > 0) }]}>
                           <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: BRAND }} numberOfLines={1}>{oppName.toUpperCase()}</ThemedText>
-                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(oppRes) }}>
+                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(oppRes, theirs.length > 0) }}>
                             {theirs || (oppLeft ? '(não respondeu)' : '—')}
                           </ThemedText>
-                          {!oppLeft && <Badge res={oppRes} />}
+                          {!oppLeft && theirs.length > 0 && <Badge res={oppRes} />}
                         </View>
                       </View>
                     </ThemedView>
@@ -2216,10 +2369,14 @@ const s = StyleSheet.create({
   roomCard:     { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: C.radius.md, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
   roomCardLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   enterBtn:     { backgroundColor: BRAND, paddingHorizontal: 16, paddingVertical: 8, borderRadius: C.radius.pill },
+  asyncBtn:     { paddingHorizontal: 18, paddingVertical: 10, marginRight: 14 },
   enterBtnTxt:  { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },
 
   // Async game cards
-  asyncCard:     { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: C.radius.md, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
+  asyncCard:     { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: C.radius.md, padding: Spacing.three, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  asyncSwipeHint:{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 7, backgroundColor: C.red },
+  deleteAction:  { backgroundColor: C.red, borderRadius: C.radius.md, marginLeft: 8, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, gap: 4, minWidth: 76 },
+  deleteActionTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
   asyncCardLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flex: 1 },
 
   // Buttons
@@ -2242,6 +2399,8 @@ const s = StyleSheet.create({
   playScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.two, gap: Spacing.two },
   timerBar:   { height: 8, borderRadius: 4, overflow: 'hidden' },
   timerFill:  { height: 8, borderRadius: 4 },
+  validatingTrack: { height: 14, borderRadius: 7, backgroundColor: '#ffffff18', overflow: 'hidden' },
+  validatingFill:  { height: 14, borderRadius: 7, backgroundColor: BRAND },
   letterRow:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
   letterCard: { width: 76, height: 76, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   letterText: { fontSize: 52, fontWeight: '900', color: '#fff', lineHeight: 60 },

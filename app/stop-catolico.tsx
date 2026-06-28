@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
@@ -73,9 +74,20 @@ export default function StopCatolicoScreen() {
   const spinTimeoutsRef  = useRef<ReturnType<typeof setTimeout>[]>([]);
   const targetLetterRef  = useRef('A');
 
+  const timerSoundRef = useRef<Audio.Sound | null>(null);
+
+  const stopTimerSound = useCallback(async () => {
+    if (timerSoundRef.current) {
+      await timerSoundRef.current.stopAsync().catch(() => {});
+      await timerSoundRef.current.unloadAsync().catch(() => {});
+      timerSoundRef.current = null;
+    }
+  }, []);
+
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-  }, []);
+    stopTimerSound();
+  }, [stopTimerSound]);
 
   const clearSpinTimeouts = useCallback(() => {
     spinTimeoutsRef.current.forEach(clearTimeout);
@@ -159,6 +171,14 @@ export default function StopCatolicoScreen() {
 
   useEffect(() => {
     if (phase !== 'playing') return;
+
+    Audio.Sound.createAsync(
+      require('@/assets/audio/som_relogio_stop.mp3'),
+      { shouldPlay: true, volume: 0.7 },
+    ).then(({ sound }) => {
+      timerSoundRef.current = sound;
+    }).catch(() => {});
+
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) { stopTimer(); setPhase('result'); return 0; }
