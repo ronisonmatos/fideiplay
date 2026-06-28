@@ -208,6 +208,7 @@ export default function StopOnlineScreen() {
   const rematchCreatingRef  = useRef(false);
   const asyncTimeLimitRef   = useRef<number>(TIMER); // tempo que P1 usou → limite de P2
   const isCountUpRef        = useRef(false);         // true somente para P2 async
+  const asyncWatchChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const timeLeftRef         = useRef<number>(TIMER);
   const oppNameRef          = useRef('Adversário');
   const isActiveGameRef     = useRef(false);
@@ -221,6 +222,25 @@ export default function StopOnlineScreen() {
   useEffect(() => { letterRef.current   = letter;   }, [letter]);
   useEffect(() => { timeLeftRef.current = timeLeft;  }, [timeLeft]);
   useEffect(() => { oppNameRef.current  = oppName;   }, [oppName]);
+
+  // Observa room até P1 salvar p1_elapsed_seconds (modo simultâneo)
+  const watchP1Elapsed = useCallback((roomId: string) => {
+    asyncWatchChannelRef.current?.unsubscribe();
+    asyncWatchChannelRef.current = supabase
+      .channel(`async_p1watch_${roomId}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'stop_rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          const elapsed = (payload.new as Record<string, unknown>).p1_elapsed_seconds;
+          if (typeof elapsed === 'number' && elapsed > 0) {
+            asyncTimeLimitRef.current = elapsed;
+            asyncWatchChannelRef.current?.unsubscribe();
+            asyncWatchChannelRef.current = null;
+          }
+        }
+      )
+      .subscribe();
+  }, []);
 
   // ── Back-button abandon guard ──────────────────────────────────────────────
   const isActiveGame = (phase === 'spinning' || phase === 'playing' || phase === 'waiting')
@@ -275,6 +295,7 @@ export default function StopOnlineScreen() {
     stopTimer();
     spinTimeouts.current.forEach(clearTimeout);
     channelRef.current?.unsubscribe();
+    asyncWatchChannelRef.current?.unsubscribe();
     if (mmTimerRef.current) clearTimeout(mmTimerRef.current);
     if (mmIntervalRef.current) clearInterval(mmIntervalRef.current);
   }, [stopTimer]);
@@ -611,6 +632,8 @@ export default function StopOnlineScreen() {
     }, { onConflict: 'room_id,player_id' });
 
     if (isAsync) {
+      asyncWatchChannelRef.current?.unsubscribe();
+      asyncWatchChannelRef.current = null;
       if (isP1Ref.current) {
         // Salva o tempo que P1 utilizou para que P2 jogue no mesmo ritmo
         const elapsed = Math.max(1, TIMER - timeLeftRef.current);
@@ -1117,12 +1140,14 @@ export default function StopOnlineScreen() {
         roomIdRef.current = room.id;
         setLetter(room.letter); letterRef.current = room.letter;
         setStatusMsg('Partida encontrada! 🎯');
-        // Usa as categorias de P1 na mesma ordem em que ele jogou
         const p1Keys: string[] = room.category_keys ?? [];
         if (p1Keys.length > 0) {
           const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
           if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
         }
+        const p1Elapsed = (room as { p1_elapsed_seconds?: number | null }).p1_elapsed_seconds;
+        asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
+        if (asyncTimeLimitRef.current >= TIMER) watchP1Elapsed(room.id);
         startSpin(room.letter);
         return;
       }
@@ -1174,6 +1199,7 @@ export default function StopOnlineScreen() {
         }
         const p1Elapsed = (concurrent as { p1_elapsed_seconds?: number | null }).p1_elapsed_seconds;
         asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
+        if (asyncTimeLimitRef.current >= TIMER) watchP1Elapsed(concurrent.id);
         startSpin(concurrent.letter);
         return;
       }
@@ -1223,8 +1249,9 @@ export default function StopOnlineScreen() {
     } catch {
       asyncTimeLimitRef.current = TIMER;
     }
+    if (asyncTimeLimitRef.current >= TIMER) watchP1Elapsed(game.id);
     startSpin(game.letter);
-  }, [startSpin, fetchAsyncGames]);
+  }, [startSpin, fetchAsyncGames, watchP1Elapsed]);
 
   // ── View result of a completed async game ─────────────────────────────────
   const viewAsyncResult = useCallback(async (game: AsyncGame) => {
