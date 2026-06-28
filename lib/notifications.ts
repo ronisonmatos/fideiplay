@@ -1,23 +1,29 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
 export const NOTIF_CHANNEL      = 'santosplay';
 export const NOTIF_CHANNEL_CHAT = 'santosplay_chat';
 
+// Push notifications remotas foram removidas do Expo Go no Android (SDK 53+)
+const isExpoGoAndroid = Platform.OS === 'android' && Constants.appOwnership === 'expo';
+
 // Como as notificações aparecem quando o app está aberto
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+if (!isExpoGoAndroid) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
+  if (Platform.OS === 'web' || isExpoGoAndroid) return false;
   const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === 'granted') return true;
   const { status } = await Notifications.requestPermissionsAsync();
@@ -26,7 +32,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 
 // Cria canais Android com sons customizados — chamar uma vez no startup
 export async function setupNotificationChannel(): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== 'android' || isExpoGoAndroid) return;
   await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL, {
     name: 'SantosPlay',
     importance: Notifications.AndroidImportance.HIGH,

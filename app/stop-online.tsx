@@ -323,6 +323,8 @@ export default function StopOnlineScreen() {
   // Funciona tanto para 1v1 (needed=2) quanto para N jogadores
   const checkBothSubmitted = useCallback(async (rId: string) => {
     if (phaseRef.current === 'validating' || phaseRef.current === 'result') return;
+    // Não processa resultado se o jogador ainda está no matchmaking (nunca jogou)
+    if (phaseRef.current === 'matchmaking') return;
 
     const needed = activePCountRef.current;
     const { data } = await supabase
@@ -380,6 +382,8 @@ export default function StopOnlineScreen() {
             const players: PlayerInfo[] = Array.isArray(room.players)
               ? (room.players as PlayerInfo[])
               : [];
+            const opp = players.find(p => p.id !== playerIdRef.current);
+            if (opp) setOppName(opp.name);
             startMatchFromRoom(room.letter as string, players);
           }
 
@@ -974,16 +978,21 @@ export default function StopOnlineScreen() {
     setMaxPlayers(room.max_players); maxPlayersRef.current = room.max_players;
     activePCountRef.current = room.max_players;
 
+    setOppName(room.player1_name ?? 'Adversário');
     subscribeToRoom(room.id);
 
     if (joinResult.is_full) {
-      // Sala cheia → subscription vai disparar startMatchFromRoom para todos
-      setStatusMsg('Sala completa! Iniciando... 🎯');
+      // Sala cheia → P2 inicia diretamente (não pode confiar na subscription,
+      // pois o evento 'active' pode ter disparado antes de P2 estar inscrito)
+      startMatchFromRoom(room.letter, [
+        { id: '', name: room.player1_name ?? 'Adversário' },
+        { id: playerIdRef.current, name: playerNameRef.current },
+      ]);
     } else {
       // Ainda há vagas: aguarda mais jogadores ou timeout de P1
       setStatusMsg(`${joinResult.player_count}/${joinResult.max_players} jogadores`);
     }
-  }, [subscribeToRoom, fetchRealtimeRooms]);
+  }, [subscribeToRoom, fetchRealtimeRooms, startMatchFromRoom]);
 
   // ── Join private room by code ─────────────────────────────────────────────
   const joinByCode = useCallback(async () => {

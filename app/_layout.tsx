@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef } from 'react';
-import { AppState, Appearance } from 'react-native';
+import { AppState, Appearance, Platform } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
 import * as ExpoNotifications from 'expo-notifications';
+import Constants from 'expo-constants';
+
+const isExpoGoAndroid = Platform.OS === 'android' && Constants.appOwnership === 'expo';
 
 import { AnimatedSplashOverlay } from '@/components/animated-splash';
 import { GameStoreProvider, useGameStore } from '@/context/game-store';
@@ -115,6 +118,7 @@ function NotificationBridge() {
 
   // Captura notificações Expo recebidas com o app aberto (lembrete diário, bônus etc.)
   useEffect(() => {
+    if (isExpoGoAndroid) return; // push não suportado no Expo Go Android (SDK 53+)
     const sub = ExpoNotifications.addNotificationReceivedListener(notification => {
       const { title, body, data } = notification.request.content;
       const identifier = notification.request.identifier;

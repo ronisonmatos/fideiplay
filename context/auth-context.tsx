@@ -89,7 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setTrilhasDesbloqueadas([]);
-        setLoading(false);
+        // Não chama setLoading(false) aqui: o getSession() abaixo é quem controla
+        // o estado de carregamento inicial. Se chamar aqui, pode disparar antes do
+        // getSession() resolver e mostrar a tela de login mesmo com sessão válida.
       }
     });
 
