@@ -84,7 +84,6 @@ interface AsyncGame {
   player1_id: string; player2_id: string | null;
   player1_name: string | null; player2_name: string | null;
   deadline: string | null;
-  category_keys: string[] | null;
 }
 interface PendingResults {
   meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean;
@@ -424,10 +423,10 @@ export default function StopOnlineScreen() {
         { event: '*', schema: 'public', table: 'stop_answers', filter: `room_id=eq.${rId}` },
         () => checkBothSubmitted(rId)
       )
-      // Não-P1 recebe as categorias de P1
+      // Não-P1 recebe as categorias de P1 — preserva a ordem exata de P1
       .on('broadcast', { event: 'cats_sync' }, ({ payload }) => {
         const keys = (payload as { cats: string[] }).cats;
-        const cats = allCategoriesRef.current.filter(c => keys.includes(c.key));
+        const cats = keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
         if (cats.length > 0) { setGameCategories(cats); gameCatsRef.current = cats; }
       })
       // Qualquer jogador clicou STOP → todos param
@@ -663,7 +662,7 @@ export default function StopOnlineScreen() {
     // Somente partidas onde eu sou jogador (P1 ou P2 já definido)
     const { data } = await supabase
       .from('stop_rooms')
-      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status, category_keys')
+      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status')
       .eq('mode', 'async')
       .in('status', ['async_wait_p2', 'async_p2', 'completed'])
       .or(`player1_id.eq.${pid},player2_id.eq.${pid}`)
@@ -1099,12 +1098,16 @@ export default function StopOnlineScreen() {
     isP1Ref.current = false; setIsPlayer1(false);
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
-    // Usa as categorias de P1 na mesma ordem em que ele jogou
-    const p1Keys: string[] = game.category_keys ?? [];
-    if (p1Keys.length > 0) {
-      const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
-      if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
-    }
+    // Busca a ordem das categorias de P1 (coluna category_keys — requer migration)
+    try {
+      const { data: rd } = await supabase
+        .from('stop_rooms').select('category_keys').eq('id', game.id).single();
+      const p1Keys: string[] = (rd as { category_keys?: string[] | null } | null)?.category_keys ?? [];
+      if (p1Keys.length > 0) {
+        const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
+        if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
+      }
+    } catch {}
     startSpin(game.letter);
   }, [startSpin, fetchAsyncGames]);
 
