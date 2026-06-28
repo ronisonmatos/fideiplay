@@ -253,20 +253,21 @@ export default function StopOnlineScreen() {
   useEffect(() => {
     if (phase !== 'playing') return;
     const isAsyncP2 = gameModeRef.current === 'async' && !isP1Ref.current;
-    const initial   = isAsyncP2 ? asyncTimeLimitRef.current : TIMER;
-    setTimeLeft(initial);
+    setTimeLeft(isAsyncP2 ? 0 : TIMER);
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (t <= 1) {
-          stopTimer();
-          if (isAsyncP2) {
-            // Tempo de P1 esgotado — mostra popup antes de enviar
+        if (isAsyncP2) {
+          // Conta para cima — P2 não sabe o limite (surpresa)
+          const next = t + 1;
+          if (next >= asyncTimeLimitRef.current) {
+            stopTimer();
             setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
-          } else {
-            doSubmitRef.current();
+            return asyncTimeLimitRef.current;
           }
-          return 0;
+          return next;
         }
+        // Realtime e P1 async: conta para baixo
+        if (t <= 1) { stopTimer(); doSubmitRef.current(); return 0; }
         return t - 1;
       });
     }, 1000);
@@ -2080,9 +2081,11 @@ export default function StopOnlineScreen() {
             contentContainerStyle={[s.playScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             keyboardShouldPersistTaps="handled">
 
-            <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
-              <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
-            </View>
+            {!(isAsync && !isPlayer1) && (
+              <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
+                <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
+              </View>
+            )}
 
             <View style={s.letterRow}>
               <View style={[s.letterCard, { backgroundColor: BRAND }]}>
@@ -2090,9 +2093,7 @@ export default function StopOnlineScreen() {
               </View>
               <ThemedText themeColor="textSecondary" style={{ fontSize: 13, lineHeight: 18, flex: 1 }}>
                 {isAsync
-                  ? (isPlayer1
-                      ? 'Preencha as categorias e clique em STOP quando terminar!'
-                      : `Você tem ${asyncTimeLimitRef.current}s — o mesmo tempo que seu adversário usou.`)
+                  ? 'Preencha as categorias e clique em STOP quando terminar!'
                   : 'Preencha as categorias com palavras que comecem com esta letra'}
               </ThemedText>
             </View>
