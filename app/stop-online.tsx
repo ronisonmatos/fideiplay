@@ -253,21 +253,18 @@ export default function StopOnlineScreen() {
 
   useEffect(() => {
     if (phase !== 'playing') return;
-    const countUp = isCountUpRef.current; // P2 async: cronômetro crescente (surpresa)
-    setTimeLeft(countUp ? 0 : TIMER);
+    setTimeLeft(TIMER);
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (countUp) {
-          const next = t + 1;
-          if (next >= asyncTimeLimitRef.current) {
-            stopTimer();
-            setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
-            return asyncTimeLimitRef.current;
-          }
-          return next;
+        const next = t - 1;
+        // P2 async: popup quando o timer bate no mesmo valor que P1 tinha ao dar Stop
+        if (isCountUpRef.current && asyncTimeLimitRef.current < TIMER && next <= (TIMER - asyncTimeLimitRef.current)) {
+          stopTimer();
+          setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
+          return TIMER - asyncTimeLimitRef.current;
         }
-        if (t <= 1) { stopTimer(); doSubmitRef.current(); return 0; }
-        return t - 1;
+        if (next <= 0) { stopTimer(); doSubmitRef.current(); return 0; }
+        return next;
       });
     }, 1000);
     return stopTimer;
@@ -2084,11 +2081,9 @@ export default function StopOnlineScreen() {
             contentContainerStyle={[s.playScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             keyboardShouldPersistTaps="handled">
 
-            {!isCountUpRef.current && (
-              <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
-                <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
-              </View>
-            )}
+            <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
+              <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
+            </View>
 
             <View style={s.letterRow}>
               <View style={[s.letterCard, { backgroundColor: BRAND }]}>
