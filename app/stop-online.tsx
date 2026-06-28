@@ -207,6 +207,7 @@ export default function StopOnlineScreen() {
   const doCreateRematchRef  = useRef<() => Promise<void>>(async () => {});
   const rematchCreatingRef  = useRef(false);
   const asyncTimeLimitRef   = useRef<number>(TIMER); // tempo que P1 usou → limite de P2
+  const isCountUpRef        = useRef(false);         // true somente para P2 async
   const timeLeftRef         = useRef<number>(TIMER);
   const oppNameRef          = useRef('Adversário');
   const isActiveGameRef     = useRef(false);
@@ -252,12 +253,11 @@ export default function StopOnlineScreen() {
 
   useEffect(() => {
     if (phase !== 'playing') return;
-    const isAsyncP2 = gameModeRef.current === 'async' && !isP1Ref.current;
-    setTimeLeft(isAsyncP2 ? 0 : TIMER);
+    const countUp = isCountUpRef.current; // P2 async: cronômetro crescente (surpresa)
+    setTimeLeft(countUp ? 0 : TIMER);
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (isAsyncP2) {
-          // Conta para cima — P2 não sabe o limite (surpresa)
+        if (countUp) {
           const next = t + 1;
           if (next >= asyncTimeLimitRef.current) {
             stopTimer();
@@ -266,7 +266,6 @@ export default function StopOnlineScreen() {
           }
           return next;
         }
-        // Realtime e P1 async: conta para baixo
         if (t <= 1) { stopTimer(); doSubmitRef.current(); return 0; }
         return t - 1;
       });
@@ -475,6 +474,7 @@ export default function StopOnlineScreen() {
   // ── Rematch ────────────────────────────────────────────────────────────────
   const joinRematchRoom = useCallback(async (newRoomId: string) => {
     isMatchedRef.current = true;
+    isCountUpRef.current = false; // revanche é sempre realtime
     roomIdRef.current = newRoomId;
     const { data: room } = await supabase
       .from('stop_rooms').select('letter').eq('id', newRoomId).single();
@@ -948,8 +948,9 @@ export default function StopOnlineScreen() {
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     setPhase('matchmaking');
     setPrivateRoomCode(null);
-    isMatchedRef.current    = false;
+    isMatchedRef.current      = false;
     asyncTimeLimitRef.current = TIMER;
+    isCountUpRef.current      = false;
 
     const mp       = nPlayers;
     const isMulti  = mp > 2 && visibility === 'public';
@@ -982,7 +983,7 @@ export default function StopOnlineScreen() {
 
     if (error || !newRoom) { setPhase('error'); setStatusMsg('Erro ao criar sala.'); return; }
 
-    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true);
+    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true); isCountUpRef.current = false;
     setLetter(newLetter); letterRef.current = newLetter;
     if (roomCode) setPrivateRoomCode(roomCode);
     subscribeToRoom(newRoom.id);
@@ -1115,6 +1116,7 @@ export default function StopOnlineScreen() {
       if (claimed && claimed.length > 0) {
         isMatchedRef.current = true;
         isP1Ref.current = false; setIsPlayer1(false);
+        isCountUpRef.current = true;
         roomIdRef.current = room.id;
         setLetter(room.letter); letterRef.current = room.letter;
         setStatusMsg('Partida encontrada! 🎯');
@@ -1164,6 +1166,7 @@ export default function StopOnlineScreen() {
         await supabase.from('stop_rooms').delete().eq('id', newRoom.id);
         isMatchedRef.current = true;
         isP1Ref.current = false; setIsPlayer1(false);
+        isCountUpRef.current = true;
         roomIdRef.current = concurrent.id;
         setLetter(concurrent.letter); letterRef.current = concurrent.letter;
         setStatusMsg('Partida encontrada! 🎯');
@@ -1179,7 +1182,7 @@ export default function StopOnlineScreen() {
       }
     }
 
-    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true);
+    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true); isCountUpRef.current = false;
     setLetter(newLetter); letterRef.current = newLetter;
     startSpin(newLetter);
   }, [startSpin]);
@@ -1206,6 +1209,7 @@ export default function StopOnlineScreen() {
     }
 
     isP1Ref.current = false; setIsPlayer1(false);
+    isCountUpRef.current = true;
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
     // Busca categorias de P1 e tempo que ele usou (ambas opcionais — requerem migration)
@@ -1294,8 +1298,7 @@ export default function StopOnlineScreen() {
 
   // ─────────────────────────────────── RENDERS ──────────────────────────────
 
-  const timerLimit = (gameMode === 'async' && !isPlayer1) ? asyncTimeLimitRef.current : TIMER;
-  const timerPct   = (timeLeft / (timerLimit || TIMER)) * 100;
+  const timerPct   = (timeLeft / TIMER) * 100; // P1/realtime: countdown de TIMER
   const timerColor = timeLeft > 30 ? C.green : timeLeft > 15 ? C.gold : C.red;
 
   // Login gate
@@ -2081,7 +2084,7 @@ export default function StopOnlineScreen() {
             contentContainerStyle={[s.playScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             keyboardShouldPersistTaps="handled">
 
-            {!(isAsync && !isPlayer1) && (
+            {!isCountUpRef.current && (
               <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
                 <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
               </View>
