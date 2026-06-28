@@ -1044,6 +1044,15 @@ export default function StopOnlineScreen() {
         roomIdRef.current = room.id;
         setLetter(room.letter); letterRef.current = room.letter;
         setStatusMsg('Partida encontrada! 🎯');
+        // Usa as categorias que P1 jogou (lidas das respostas salvas dele)
+        const { data: p1Sub } = await supabase
+          .from('stop_answers').select('answers')
+          .eq('room_id', room.id).neq('player_id', playerIdRef.current).limit(1);
+        if (p1Sub && p1Sub.length > 0 && p1Sub[0].answers) {
+          const p1Keys = Object.keys(p1Sub[0].answers as object);
+          const p1Cats = allCategoriesRef.current.filter(c => p1Keys.includes(c.key));
+          if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
+        }
         startSpin(room.letter);
         return;
       }
@@ -1089,6 +1098,15 @@ export default function StopOnlineScreen() {
     isP1Ref.current = false; setIsPlayer1(false);
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
+    // Usa as categorias que P1 jogou (lidas das respostas salvas dele)
+    const { data: p1Sub } = await supabase
+      .from('stop_answers').select('answers')
+      .eq('room_id', game.id).neq('player_id', playerIdRef.current).limit(1);
+    if (p1Sub && p1Sub.length > 0 && p1Sub[0].answers) {
+      const p1Keys = Object.keys(p1Sub[0].answers as object);
+      const p1Cats = allCategoriesRef.current.filter(c => p1Keys.includes(c.key));
+      if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
+    }
     startSpin(game.letter);
   }, [startSpin, fetchAsyncGames]);
 
@@ -1111,13 +1129,36 @@ export default function StopOnlineScreen() {
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
     if (cats.length > 0) { setGameCategories(cats); gameCatsRef.current = cats; }
+    setGameMode('async'); gameModeRef.current = 'async';
 
     setP1Rematch(false); setP2Rematch(false);
 
     if (opp) {
-      const pid = playerIdRef.current;
       const opponentName = (game.player1_id === pid ? game.player2_name : game.player1_name) ?? 'Adversário';
       setOppName(opponentName);
+
+      // Se ambos já têm validação salva no banco, vai direto ao resultado (sem re-validar com IA)
+      const myVal  = me.validation  as Partial<Record<string, BankResult>> | null;
+      const oppVal = opp.validation as Partial<Record<string, BankResult>> | null;
+      if (myVal && Object.keys(myVal).length > 0 && oppVal && Object.keys(oppVal).length > 0) {
+        setMyBankMap(myVal);
+        setOppBankMap(oppVal);
+        setAbandoned(null);
+        const theCats = cats.length > 0 ? cats : gameCatsRef.current;
+        const myVC  = theCats.filter(c => myVal[c.key]  === 'valid' || myVal[c.key]  === 'ai_valid').length;
+        const myS   = myVC  * 10 + (theCats.length > 0 && myVC  === theCats.length ? 20 : 0);
+        const oppVC = theCats.filter(c => oppVal[c.key] === 'valid' || oppVal[c.key] === 'ai_valid').length;
+        const oppS  = oppVC * 10 + (theCats.length > 0 && oppVC === theCats.length ? 20 : 0);
+        setMyResult({ answers: me.answers, score: myS, validCount: myVC });
+        setOppResult({ answers: opp.answers, score: oppS, validCount: oppVC });
+        const delta = myS > oppS ? COINS.WIN_AS : myS === oppS ? COINS.DRAW_AS : COINS.LOSE_AS;
+        awardCoinsRef.current(delta + myVC * 2);
+        if (myS > 0 && pid) recordScoreEvent(pid, myS, 'stop_online').catch(() => {});
+        setPhase('result');
+        return;
+      }
+
+      // Primeira vez visualizando — valida com IA e salva resultado no banco
       setAbandoned(null);
       pendingResultsRef.current = { meAnswers: me.answers, oppAnswers: opp.answers, oppName: opponentName };
       setPhase('validating');
