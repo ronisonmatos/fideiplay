@@ -85,6 +85,7 @@ interface AsyncGame {
   player1_id: string; player2_id: string | null;
   player1_name: string | null; player2_name: string | null;
   deadline: string | null;
+  p1_elapsed_seconds: number | null;
 }
 interface PendingResults {
   meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean;
@@ -208,7 +209,6 @@ export default function StopOnlineScreen() {
   const rematchCreatingRef  = useRef(false);
   const asyncTimeLimitRef   = useRef<number>(TIMER); // tempo que P1 usou → limite de P2
   const isCountUpRef        = useRef(false);         // true somente para P2 async
-  const asyncWatchChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const timeLeftRef         = useRef<number>(TIMER);
   const oppNameRef          = useRef('Adversário');
   const isActiveGameRef     = useRef(false);
@@ -222,25 +222,6 @@ export default function StopOnlineScreen() {
   useEffect(() => { letterRef.current   = letter;   }, [letter]);
   useEffect(() => { timeLeftRef.current = timeLeft;  }, [timeLeft]);
   useEffect(() => { oppNameRef.current  = oppName;   }, [oppName]);
-
-  // Observa room até P1 salvar p1_elapsed_seconds (modo simultâneo)
-  const watchP1Elapsed = useCallback((roomId: string) => {
-    asyncWatchChannelRef.current?.unsubscribe();
-    asyncWatchChannelRef.current = supabase
-      .channel(`async_p1watch_${roomId}`)
-      .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'stop_rooms', filter: `id=eq.${roomId}` },
-        (payload) => {
-          const elapsed = (payload.new as Record<string, unknown>).p1_elapsed_seconds;
-          if (typeof elapsed === 'number' && elapsed > 0) {
-            asyncTimeLimitRef.current = elapsed;
-            asyncWatchChannelRef.current?.unsubscribe();
-            asyncWatchChannelRef.current = null;
-          }
-        }
-      )
-      .subscribe();
-  }, []);
 
   // ── Back-button abandon guard ──────────────────────────────────────────────
   const isActiveGame = (phase === 'spinning' || phase === 'playing' || phase === 'waiting')
@@ -295,7 +276,6 @@ export default function StopOnlineScreen() {
     stopTimer();
     spinTimeouts.current.forEach(clearTimeout);
     channelRef.current?.unsubscribe();
-    asyncWatchChannelRef.current?.unsubscribe();
     if (mmTimerRef.current) clearTimeout(mmTimerRef.current);
     if (mmIntervalRef.current) clearInterval(mmIntervalRef.current);
   }, [stopTimer]);
@@ -632,8 +612,6 @@ export default function StopOnlineScreen() {
     }, { onConflict: 'room_id,player_id' });
 
     if (isAsync) {
-      asyncWatchChannelRef.current?.unsubscribe();
-      asyncWatchChannelRef.current = null;
       if (isP1Ref.current) {
         // Salva o tempo que P1 utilizou para que P2 jogue no mesmo ritmo
         const elapsed = Math.max(1, TIMER - timeLeftRef.current);
@@ -753,7 +731,7 @@ export default function StopOnlineScreen() {
     // Somente partidas onde eu sou jogador (P1 ou P2 já definido)
     const { data } = await supabase
       .from('stop_rooms')
-      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status')
+      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status, p1_elapsed_seconds')
       .eq('mode', 'async')
       .in('status', ['async_wait_p2', 'async_p2', 'completed'])
       .or(`player1_id.eq.${pid},player2_id.eq.${pid}`)
@@ -1109,6 +1087,7 @@ export default function StopOnlineScreen() {
   }, [joinCodeInput, joinRealtimeRoom]);
 
   // ── Async flow (VAMOS JOGAR!) ──────────────────────────────────────────────
+  // P2 só entra em partidas que P1 já terminou (p1_elapsed_seconds definido)
   const handleVamosJogar = useCallback(async () => {
     if (!playerIdRef.current) return;
     const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
@@ -1117,13 +1096,14 @@ export default function StopOnlineScreen() {
     setPhase('matchmaking'); setStatusMsg('Procurando partida...');
     isMatchedRef.current = false;
 
-    // Find the oldest async game waiting for P2
+    // Busca a partida mais antiga onde P1 já terminou (p1_elapsed_seconds preenchido)
     const { data: available } = await supabase
       .from('stop_rooms').select('*')
       .eq('mode', 'async').eq('status', 'async_wait_p2')
       .is('player2_id', null)
       .neq('player1_id', playerIdRef.current)
       .gt('deadline', new Date().toISOString())
+      .not('p1_elapsed_seconds', 'is', null)
       .order('created_at', { ascending: true }).limit(1);
 
     if (available && available.length > 0) {
@@ -1139,22 +1119,21 @@ export default function StopOnlineScreen() {
         isCountUpRef.current = true;
         roomIdRef.current = room.id;
         setLetter(room.letter); letterRef.current = room.letter;
+        setOppName(room.player1_name ?? 'Adversário');
         setStatusMsg('Partida encontrada! 🎯');
         const p1Keys: string[] = room.category_keys ?? [];
         if (p1Keys.length > 0) {
           const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
           if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
         }
-        const p1Elapsed = (room as { p1_elapsed_seconds?: number | null }).p1_elapsed_seconds;
-        asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
-        if (asyncTimeLimitRef.current >= TIMER) watchP1Elapsed(room.id);
+        asyncTimeLimitRef.current = (room.p1_elapsed_seconds > 0) ? room.p1_elapsed_seconds : TIMER;
         startSpin(room.letter);
         return;
       }
-      // Another player grabbed it — create our own
+      // Outro jogador pegou antes — cria a própria sala
     }
 
-    // Cria a sala já visível para P2 (async_wait_p2 + deadline imediato)
+    // P1: cria a sala e joga. Fica visível para P2 somente após P1 terminar.
     const newLetter = pickOnlineLetter(cats);
     const deadline  = new Date(Date.now() + ASYNC_DEADLINE_MS).toISOString();
     const { data: newRoom, error } = await supabase
@@ -1166,44 +1145,6 @@ export default function StopOnlineScreen() {
       .select().single();
 
     if (error || !newRoom) { setPhase('error'); setStatusMsg('Erro ao criar partida.'); return; }
-
-    // Race condition: se outro jogador também criou uma sala ao mesmo tempo, entra na dele
-    const { data: concurrent } = await supabase
-      .from('stop_rooms')
-      .select('id, letter, category_keys, p1_elapsed_seconds')
-      .eq('mode', 'async').eq('status', 'async_wait_p2')
-      .is('player2_id', null)
-      .neq('player1_id', playerIdRef.current)
-      .gt('deadline', new Date().toISOString())
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (concurrent) {
-      const { data: claimed } = await supabase
-        .from('stop_rooms')
-        .update({ player2_id: playerIdRef.current, player2_name: playerNameRef.current, status: 'async_p2' })
-        .eq('id', concurrent.id).eq('status', 'async_wait_p2').select();
-      if (claimed && claimed.length > 0) {
-        await supabase.from('stop_rooms').delete().eq('id', newRoom.id);
-        isMatchedRef.current = true;
-        isP1Ref.current = false; setIsPlayer1(false);
-        isCountUpRef.current = true;
-        roomIdRef.current = concurrent.id;
-        setLetter(concurrent.letter); letterRef.current = concurrent.letter;
-        setStatusMsg('Partida encontrada! 🎯');
-        const p1Keys: string[] = (concurrent as { category_keys?: string[] | null }).category_keys ?? [];
-        if (p1Keys.length > 0) {
-          const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
-          if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
-        }
-        const p1Elapsed = (concurrent as { p1_elapsed_seconds?: number | null }).p1_elapsed_seconds;
-        asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
-        if (asyncTimeLimitRef.current >= TIMER) watchP1Elapsed(concurrent.id);
-        startSpin(concurrent.letter);
-        return;
-      }
-    }
 
     roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true); isCountUpRef.current = false;
     setLetter(newLetter); letterRef.current = newLetter;
@@ -1217,8 +1158,6 @@ export default function StopOnlineScreen() {
       Alert.alert('Prazo expirado', 'Esta partida já expirou.');
       fetchAsyncGames(true); return;
     }
-    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
-    setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('async'); gameModeRef.current = 'async';
     setPhase('matchmaking'); setStatusMsg('Entrando na partida...');
 
@@ -1235,7 +1174,8 @@ export default function StopOnlineScreen() {
     isCountUpRef.current = true;
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
-    // Busca categorias de P1 e tempo que ele usou (ambas opcionais — requerem migration)
+    setOppName(game.player1_name ?? 'Adversário');
+    // P1 sempre terminou antes de P2 entrar — busca categorias e tempo exato
     try {
       const { data: rd } = await supabase
         .from('stop_rooms').select('category_keys, p1_elapsed_seconds').eq('id', game.id).single();
@@ -1249,9 +1189,8 @@ export default function StopOnlineScreen() {
     } catch {
       asyncTimeLimitRef.current = TIMER;
     }
-    if (asyncTimeLimitRef.current >= TIMER) watchP1Elapsed(game.id);
     startSpin(game.letter);
-  }, [startSpin, fetchAsyncGames, watchP1Elapsed]);
+  }, [startSpin, fetchAsyncGames]);
 
   // ── View result of a completed async game ─────────────────────────────────
   const viewAsyncResult = useCallback(async (game: AsyncGame) => {
@@ -1543,7 +1482,7 @@ export default function StopOnlineScreen() {
               const pid    = playerIdRef.current;
               const amP1   = game.player1_id === pid;
               const amP2   = game.player2_id === pid;
-              const isOpen = !amP1 && !amP2 && game.status === 'async_wait_p2';
+              const isOpen = !amP1 && !amP2 && game.status === 'async_wait_p2' && (game.p1_elapsed_seconds ?? 0) > 0;
               const isDone = game.status === 'completed';
               const expired = game.deadline ? new Date(game.deadline) < new Date() : false;
               const opp    = amP1 ? (game.player2_name || '?') : (game.player1_name || '?');
