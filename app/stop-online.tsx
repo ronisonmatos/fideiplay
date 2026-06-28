@@ -84,6 +84,7 @@ interface AsyncGame {
   player1_id: string; player2_id: string | null;
   player1_name: string | null; player2_name: string | null;
   deadline: string | null;
+  category_keys: string[] | null;
 }
 interface PendingResults {
   meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean;
@@ -662,7 +663,7 @@ export default function StopOnlineScreen() {
     // Somente partidas onde eu sou jogador (P1 ou P2 já definido)
     const { data } = await supabase
       .from('stop_rooms')
-      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status')
+      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status, category_keys')
       .eq('mode', 'async')
       .in('status', ['async_wait_p2', 'async_p2', 'completed'])
       .or(`player1_id.eq.${pid},player2_id.eq.${pid}`)
@@ -758,13 +759,15 @@ export default function StopOnlineScreen() {
         else console.log('[StopOnline] Minha validation salva no DB:', finalMyMap);
       }
 
-      // ── Step 3: Read opponent's stored validation (max ~6 s wait) ────────
+      // ── Step 3: Read opponent's stored validation (até ~20 s — Magisterium pode ser lento) ──
       let finalOppMap: Partial<Record<string, BankResult>> = {};
       const hasOpp = Object.keys(pending.oppAnswers).length > 0;
 
       if (rId && myId && hasOpp && !pending.skipCoins) {
         setWaitingOpp(true);
-        for (let i = 0; i < 3; i++) {
+        const MAX_ATTEMPTS = 8;
+        const WAIT_MS      = 2500;
+        for (let i = 0; i < MAX_ATTEMPTS; i++) {
           const { data } = await supabase
             .from('stop_answers')
             .select('validation')
@@ -772,12 +775,12 @@ export default function StopOnlineScreen() {
             .neq('player_id', myId)
             .limit(1);
           const stored = data?.[0]?.validation;
-          console.log(`[StopOnline] Lendo validation do adv (tentativa ${i + 1}):`, stored ?? 'null');
+          console.log(`[StopOnline] Lendo validation do adv (${i + 1}/${MAX_ATTEMPTS}):`, stored ?? 'null');
           if (stored && Object.keys(stored).length > 0) {
             finalOppMap = stored as Partial<Record<string, BankResult>>;
             break;
           }
-          if (i < 2) await new Promise<void>(r => setTimeout(r, 2000));
+          if (i < MAX_ATTEMPTS - 1) await new Promise<void>(r => setTimeout(r, WAIT_MS));
         }
         setWaitingOpp(false);
       }
@@ -1044,13 +1047,10 @@ export default function StopOnlineScreen() {
         roomIdRef.current = room.id;
         setLetter(room.letter); letterRef.current = room.letter;
         setStatusMsg('Partida encontrada! 🎯');
-        // Usa as categorias que P1 jogou (lidas das respostas salvas dele)
-        const { data: p1Sub } = await supabase
-          .from('stop_answers').select('answers')
-          .eq('room_id', room.id).neq('player_id', playerIdRef.current).limit(1);
-        if (p1Sub && p1Sub.length > 0 && p1Sub[0].answers) {
-          const p1Keys = Object.keys(p1Sub[0].answers as object);
-          const p1Cats = allCategoriesRef.current.filter(c => p1Keys.includes(c.key));
+        // Usa as categorias de P1 na mesma ordem em que ele jogou
+        const p1Keys: string[] = room.category_keys ?? [];
+        if (p1Keys.length > 0) {
+          const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
           if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
         }
         startSpin(room.letter);
@@ -1059,12 +1059,13 @@ export default function StopOnlineScreen() {
       // Another player grabbed it — create our own
     }
 
-    // Create a new async room and play as P1
+    // Create a new async room and play as P1 (stores category order so P2 sees the same)
     const newLetter = pickOnlineLetter(cats);
     const { data: newRoom, error } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, player1_id: playerIdRef.current,
-                player1_name: playerNameRef.current, mode: 'async', status: 'waiting' })
+                player1_name: playerNameRef.current, mode: 'async', status: 'waiting',
+                category_keys: cats.map(c => c.key) })
       .select().single();
 
     if (error || !newRoom) { setPhase('error'); setStatusMsg('Erro ao criar partida.'); return; }
@@ -1098,13 +1099,10 @@ export default function StopOnlineScreen() {
     isP1Ref.current = false; setIsPlayer1(false);
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
-    // Usa as categorias que P1 jogou (lidas das respostas salvas dele)
-    const { data: p1Sub } = await supabase
-      .from('stop_answers').select('answers')
-      .eq('room_id', game.id).neq('player_id', playerIdRef.current).limit(1);
-    if (p1Sub && p1Sub.length > 0 && p1Sub[0].answers) {
-      const p1Keys = Object.keys(p1Sub[0].answers as object);
-      const p1Cats = allCategoriesRef.current.filter(c => p1Keys.includes(c.key));
+    // Usa as categorias de P1 na mesma ordem em que ele jogou
+    const p1Keys: string[] = game.category_keys ?? [];
+    if (p1Keys.length > 0) {
+      const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
       if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
     }
     startSpin(game.letter);
@@ -1123,8 +1121,13 @@ export default function StopOnlineScreen() {
 
     if (!me) { Alert.alert('Aguarde', 'Você ainda não enviou suas respostas.'); return; }
 
-    const answerKeys = Object.keys(me.answers ?? {});
-    const cats = allCategoriesRef.current.filter(c => answerKeys.includes(c.key));
+    // Reconstrói categorias na ordem original de P1 (via category_keys) ou fallback por chaves de resposta
+    const catKeyOrder: string[] = game.category_keys && game.category_keys.length > 0
+      ? game.category_keys
+      : Object.keys(me.answers ?? {});
+    const cats = catKeyOrder
+      .map(k => allCategoriesRef.current.find(c => c.key === k))
+      .filter(Boolean) as StopCategory[];
 
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
