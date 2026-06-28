@@ -480,7 +480,16 @@ export default function StopOnlineScreen() {
       .from('stop_rooms').select('player1_id,player2_id').eq('id', rId).single();
     if (!room) { rematchCreatingRef.current = false; return; }
 
-    const newLetter = pickOnlineLetter(gameCatsRef.current);
+    // Novas categorias e nova letra para a revanche
+    const newSlotKeys = pickSixKeys(allCategoriesRef.current);
+    const newCats = newSlotKeys
+      .map(k => allCategoriesRef.current.find(c => c.key === k))
+      .filter(Boolean) as StopCategory[];
+    setSlots(newSlotKeys);
+    setGameCategories(newCats);
+    gameCatsRef.current = newCats;
+
+    const newLetter = pickOnlineLetter(newCats);
     const { data: newRoom } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, status: 'active', mode: 'realtime',
@@ -495,6 +504,13 @@ export default function StopOnlineScreen() {
     setP1Rematch(false); setP2Rematch(false);
     setAbandoned(null);
     subscribeToRoom(newRoom.id);
+    // Envia novas categorias para P2 (aguarda subscription estar pronta)
+    setTimeout(() => {
+      channelRef.current?.send({
+        type: 'broadcast', event: 'cats_sync',
+        payload: { cats: newCats.map(c => c.key) },
+      });
+    }, 600);
     startSpin(newLetter);
   }, [startSpin, subscribeToRoom]);
 
