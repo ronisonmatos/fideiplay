@@ -4,6 +4,7 @@ import {
   Animated,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Share,
@@ -180,6 +181,7 @@ export default function StopOnlineScreen() {
   const [hints,       setHints]       = useState<HintMap>({});
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
   const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
+  const [stopPopup,   setStopPopup]   = useState<{ name: string; elapsed: number } | null>(null);
 
   // ── Spin state ─────────────────────────────────────────────────────────────
   const [spinLetter, setSpinLetter] = useState('A');
@@ -204,6 +206,9 @@ export default function StopOnlineScreen() {
   const joinRematchRoomRef  = useRef<((id: string) => Promise<void>) | null>(null);
   const doCreateRematchRef  = useRef<() => Promise<void>>(async () => {});
   const rematchCreatingRef  = useRef(false);
+  const asyncTimeLimitRef   = useRef<number>(TIMER); // tempo que P1 usou → limite de P2
+  const timeLeftRef         = useRef<number>(TIMER);
+  const oppNameRef          = useRef('Adversário');
   const isActiveGameRef     = useRef(false);
   const awardCoinsRef       = useRef<(delta: number) => void>(() => {});
   const coinsAwardedRef     = useRef(false);
@@ -211,8 +216,10 @@ export default function StopOnlineScreen() {
   // N-player: jogadores ativos na partida em curso (snapshot no momento do start)
   const activePCountRef     = useRef(2);
 
-  useEffect(() => { answersRef.current = answers; }, [answers]);
-  useEffect(() => { letterRef.current  = letter;  }, [letter]);
+  useEffect(() => { answersRef.current   = answers;  }, [answers]);
+  useEffect(() => { letterRef.current   = letter;   }, [letter]);
+  useEffect(() => { timeLeftRef.current = timeLeft;  }, [timeLeft]);
+  useEffect(() => { oppNameRef.current  = oppName;   }, [oppName]);
 
   // ── Back-button abandon guard ──────────────────────────────────────────────
   const isActiveGame = (phase === 'spinning' || phase === 'playing' || phase === 'waiting')
@@ -238,21 +245,33 @@ export default function StopOnlineScreen() {
     return unsub;
   }, [navigation]);
 
-  // ── Timer (realtime only) ──────────────────────────────────────────────────
+  // ── Timer ─────────────────────────────────────────────────────────────────
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
   useEffect(() => {
-    if (phase !== 'playing' || gameMode !== 'realtime') return;
+    if (phase !== 'playing') return;
+    const isAsyncP2 = gameModeRef.current === 'async' && !isP1Ref.current;
+    const initial   = isAsyncP2 ? asyncTimeLimitRef.current : TIMER;
+    setTimeLeft(initial);
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (t <= 1) { stopTimer(); doSubmitRef.current(); return 0; }
+        if (t <= 1) {
+          stopTimer();
+          if (isAsyncP2) {
+            // Tempo de P1 esgotado — mostra popup antes de enviar
+            setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
+          } else {
+            doSubmitRef.current();
+          }
+          return 0;
+        }
         return t - 1;
       });
     }, 1000);
     return stopTimer;
-  }, [phase, gameMode, stopTimer]);
+  }, [phase, stopTimer]);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
   useEffect(() => () => {
@@ -595,17 +614,20 @@ export default function StopOnlineScreen() {
 
     if (isAsync) {
       if (isP1Ref.current) {
-        // Sala já está async_wait_p2 desde a criação — verifica se P2 já jogou
-        const { data: bothAnswers } = await supabase
-          .from('stop_answers').select('player_id').eq('room_id', rId).eq('submitted', true);
-        if ((bothAnswers?.length ?? 0) >= 2) {
-          checkBothSubmitted(rId);
-        } else {
-          setPhase('async_submitted');
-        }
-      } else {
+        // Salva o tempo que P1 utilizou para que P2 jogue no mesmo ritmo
+        const elapsed = Math.max(1, TIMER - timeLeftRef.current);
+        await supabase.from('stop_rooms')
+          .update({ p1_elapsed_seconds: elapsed })
+          .eq('id', rId);
+      }
+      // Verifica se o outro jogador já enviou — quem terminar por último fecha a partida
+      const { data: bothAnswers } = await supabase
+        .from('stop_answers').select('player_id').eq('room_id', rId).eq('submitted', true);
+      if ((bothAnswers?.length ?? 0) >= 2) {
         await supabase.from('stop_rooms').update({ status: 'completed' }).eq('id', rId);
         checkBothSubmitted(rId);
+      } else {
+        setPhase('async_submitted');
       }
     } else {
       checkBothSubmitted(rId);
@@ -925,7 +947,8 @@ export default function StopOnlineScreen() {
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     setPhase('matchmaking');
     setPrivateRoomCode(null);
-    isMatchedRef.current = false;
+    isMatchedRef.current    = false;
+    asyncTimeLimitRef.current = TIMER;
 
     const mp       = nPlayers;
     const isMulti  = mp > 2 && visibility === 'public';
@@ -1122,7 +1145,7 @@ export default function StopOnlineScreen() {
     // Race condition: se outro jogador também criou uma sala ao mesmo tempo, entra na dele
     const { data: concurrent } = await supabase
       .from('stop_rooms')
-      .select('id, letter, category_keys')
+      .select('id, letter, category_keys, p1_elapsed_seconds')
       .eq('mode', 'async').eq('status', 'async_wait_p2')
       .is('player2_id', null)
       .neq('player1_id', playerIdRef.current)
@@ -1148,6 +1171,8 @@ export default function StopOnlineScreen() {
           const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
           if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
         }
+        const p1Elapsed = (concurrent as { p1_elapsed_seconds?: number | null }).p1_elapsed_seconds;
+        asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
         startSpin(concurrent.letter);
         return;
       }
@@ -1182,16 +1207,20 @@ export default function StopOnlineScreen() {
     isP1Ref.current = false; setIsPlayer1(false);
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
-    // Busca a ordem das categorias de P1 (coluna category_keys — requer migration)
+    // Busca categorias de P1 e tempo que ele usou (ambas opcionais — requerem migration)
     try {
       const { data: rd } = await supabase
-        .from('stop_rooms').select('category_keys').eq('id', game.id).single();
+        .from('stop_rooms').select('category_keys, p1_elapsed_seconds').eq('id', game.id).single();
       const p1Keys: string[] = (rd as { category_keys?: string[] | null } | null)?.category_keys ?? [];
       if (p1Keys.length > 0) {
         const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
         if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
       }
-    } catch {}
+      const p1Elapsed = (rd as { p1_elapsed_seconds?: number | null } | null)?.p1_elapsed_seconds;
+      asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
+    } catch {
+      asyncTimeLimitRef.current = TIMER;
+    }
     startSpin(game.letter);
   }, [startSpin, fetchAsyncGames]);
 
@@ -1264,7 +1293,8 @@ export default function StopOnlineScreen() {
 
   // ─────────────────────────────────── RENDERS ──────────────────────────────
 
-  const timerPct   = (timeLeft / TIMER) * 100;
+  const timerLimit = (gameMode === 'async' && !isPlayer1) ? asyncTimeLimitRef.current : TIMER;
+  const timerPct   = (timeLeft / (timerLimit || TIMER)) * 100;
   const timerColor = timeLeft > 30 ? C.green : timeLeft > 15 ? C.gold : C.red;
 
   // Login gate
@@ -2043,20 +2073,16 @@ export default function StopOnlineScreen() {
         <GameHeader
           title="Stop Online"
           subtitle={isAsync ? 'ASSÍNCRONO' : 'TEMPO REAL'}
-          right={!isAsync ? (
-            <ThemedText type="smallBold" style={{ color: timerColor, fontSize: 20 }}>{timeLeft}s</ThemedText>
-          ) : undefined}
+          right={<ThemedText type="smallBold" style={{ color: timerColor, fontSize: 20 }}>{timeLeft}s</ThemedText>}
         />
         <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView
             contentContainerStyle={[s.playScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             keyboardShouldPersistTaps="handled">
 
-            {!isAsync && (
-              <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
-                <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
-              </View>
-            )}
+            <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
+              <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
+            </View>
 
             <View style={s.letterRow}>
               <View style={[s.letterCard, { backgroundColor: BRAND }]}>
@@ -2064,7 +2090,9 @@ export default function StopOnlineScreen() {
               </View>
               <ThemedText themeColor="textSecondary" style={{ fontSize: 13, lineHeight: 18, flex: 1 }}>
                 {isAsync
-                  ? 'Responda com calma. Clique em Enviar quando terminar.'
+                  ? (isPlayer1
+                      ? 'Preencha as categorias e clique em STOP quando terminar!'
+                      : `Você tem ${asyncTimeLimitRef.current}s — o mesmo tempo que seu adversário usou.`)
                   : 'Preencha as categorias com palavras que comecem com esta letra'}
               </ThemedText>
             </View>
@@ -2102,27 +2130,45 @@ export default function StopOnlineScreen() {
               </ThemedView>
             ))}
 
-            {isAsync ? (
-              <TouchableOpacity style={[s.stopBtn, { backgroundColor: C.purple }]} onPress={callStop} activeOpacity={0.8}>
-                <ThemedText style={s.stopTxt}>✅  ENVIAR RESPOSTAS</ThemedText>
+            <TouchableOpacity style={[s.stopBtn, { backgroundColor: BRAND }]} onPress={callStop} activeOpacity={0.8}>
+              <Image source={require('@/assets/images/stop.png')} style={{ width: 26, height: 26, marginRight: 8 }} resizeMode="contain" />
+              <ThemedText style={s.stopTxt}>STOP!</ThemedText>
+            </TouchableOpacity>
+            {!isAsync && (
+              <TouchableOpacity style={[s.ghostBtn, { marginTop: 4 }]}
+                onPress={() => Alert.alert('Abandonar partida?', 'Você perderá automaticamente.',
+                  [{ text: 'Ficar', style: 'cancel' },
+                   { text: 'Abandonar', style: 'destructive', onPress: handleAbandon }]
+                )} activeOpacity={0.8}>
+                <ThemedText style={[s.btnTxt, { color: theme.textSecondary, fontSize: 13 }]}>ABANDONAR PARTIDA</ThemedText>
               </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity style={[s.stopBtn, { backgroundColor: BRAND }]} onPress={callStop} activeOpacity={0.8}>
-                  <ThemedText style={s.stopTxt}>🛑  STOP!</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.ghostBtn, { marginTop: 4 }]}
-                  onPress={() => Alert.alert('Abandonar partida?', 'Você perderá automaticamente.',
-                    [{ text: 'Ficar', style: 'cancel' },
-                     { text: 'Abandonar', style: 'destructive', onPress: handleAbandon }]
-                  )} activeOpacity={0.8}>
-                  <ThemedText style={[s.btnTxt, { color: theme.textSecondary, fontSize: 13 }]}>ABANDONAR PARTIDA</ThemedText>
-                </TouchableOpacity>
-              </>
             )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Popup: tempo de P1 esgotou na tela de P2 */}
+      {stopPopup && (
+        <Modal transparent animationType="fade" statusBarTranslucent>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
+            <ThemedView type="backgroundElement" style={{ borderRadius: 20, padding: 28, alignItems: 'center', gap: 14, maxWidth: 320, width: '100%' }}>
+              <Image source={require('@/assets/images/stop.png')} style={{ width: 80, height: 80 }} resizeMode="contain" />
+              <ThemedText type="title" style={{ textAlign: 'center', fontSize: 20 }}>
+                {stopPopup.name} clicou em Stop!
+              </ThemedText>
+              <ThemedText style={{ textAlign: 'center', color: BRAND, fontWeight: '800', fontSize: 15 }}>
+                Tempo: {stopPopup.elapsed}s
+              </ThemedText>
+              <TouchableOpacity
+                style={{ backgroundColor: BRAND, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28, marginTop: 6 }}
+                activeOpacity={0.85}
+                onPress={() => { setStopPopup(null); doSubmitRef.current(); }}>
+                <ThemedText style={{ color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 0.5 }}>VER RESULTADO</ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+          </View>
+        </Modal>
+      )}
     </ThemedView>
   );
 }
@@ -2247,7 +2293,7 @@ const s = StyleSheet.create({
     borderWidth: 1.5, borderRadius: C.radius.sm, paddingHorizontal: Spacing.two,
     paddingVertical: Platform.OS === 'ios' ? 8 : 6, fontSize: 15, fontWeight: '500',
   },
-  stopBtn: { paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', marginTop: Spacing.one },
+  stopBtn: { paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', marginTop: Spacing.one },
   stopTxt: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1.5 },
 
   // Player picker (selection screen)
