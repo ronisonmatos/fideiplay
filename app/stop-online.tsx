@@ -201,13 +201,15 @@ export default function StopOnlineScreen() {
   const inputRefs          = useRef<Partial<Record<string, TextInput | null>>>({});
   const doSubmitRef        = useRef<() => void>(() => {});
   const handleAbandonRef   = useRef<() => Promise<void>>(async () => {});
-  const joinRematchRoomRef = useRef<((id: string) => Promise<void>) | null>(null);
-  const isActiveGameRef    = useRef(false);
-  const awardCoinsRef      = useRef<(delta: number) => void>(() => {});
-  const coinsAwardedRef    = useRef(false);
-  const pendingResultsRef  = useRef<PendingResults | null>(null);
+  const joinRematchRoomRef  = useRef<((id: string) => Promise<void>) | null>(null);
+  const doCreateRematchRef  = useRef<() => Promise<void>>(async () => {});
+  const rematchCreatingRef  = useRef(false);
+  const isActiveGameRef     = useRef(false);
+  const awardCoinsRef       = useRef<(delta: number) => void>(() => {});
+  const coinsAwardedRef     = useRef(false);
+  const pendingResultsRef   = useRef<PendingResults | null>(null);
   // N-player: jogadores ativos na partida em curso (snapshot no momento do start)
-  const activePCountRef    = useRef(2);
+  const activePCountRef     = useRef(2);
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
   useEffect(() => { letterRef.current  = letter;  }, [letter]);
@@ -414,6 +416,10 @@ export default function StopOnlineScreen() {
 
           setP1Rematch(Boolean(room.p1_rematch));
           setP2Rematch(Boolean(room.p2_rematch));
+          // P1 cria sala de revanche quando ambos confirmam (resolve race condition)
+          if (Boolean(room.p1_rematch) && Boolean(room.p2_rematch) && isP1Ref.current && !isMatchedRef.current) {
+            doCreateRematchRef.current();
+          }
           if (room.rematch_room_id && !isP1Ref.current) {
             joinRematchRoomRef.current?.(room.rematch_room_id as string);
           }
@@ -448,6 +454,7 @@ export default function StopOnlineScreen() {
 
   // ── Rematch ────────────────────────────────────────────────────────────────
   const joinRematchRoom = useCallback(async (newRoomId: string) => {
+    isMatchedRef.current = true;
     roomIdRef.current = newRoomId;
     const { data: room } = await supabase
       .from('stop_rooms').select('letter').eq('id', newRoomId).single();
@@ -461,16 +468,17 @@ export default function StopOnlineScreen() {
 
   useEffect(() => { joinRematchRoomRef.current = joinRematchRoom; }, [joinRematchRoom]);
 
-  const requestRematch = useCallback(async () => {
+  // Criação efetiva da sala de revanche — idempotente via rematchCreatingRef
+  const doCreateRematch = useCallback(async () => {
+    if (rematchCreatingRef.current || !isP1Ref.current) return;
+    rematchCreatingRef.current = true;
+    isMatchedRef.current = true;
     const rId = roomIdRef.current;
-    if (!rId) return;
-    const col = isP1Ref.current ? 'p1_rematch' : 'p2_rematch';
-    await supabase.from('stop_rooms').update({ [col]: true }).eq('id', rId);
-    if (isP1Ref.current) setP1Rematch(true); else setP2Rematch(true);
+    if (!rId) { rematchCreatingRef.current = false; return; }
 
     const { data: room } = await supabase
-      .from('stop_rooms').select('p1_rematch,p2_rematch,player1_id,player2_id').eq('id', rId).single();
-    if (!room || !(room.p1_rematch && room.p2_rematch) || !isP1Ref.current) return;
+      .from('stop_rooms').select('player1_id,player2_id').eq('id', rId).single();
+    if (!room) { rematchCreatingRef.current = false; return; }
 
     const newLetter = pickOnlineLetter(gameCatsRef.current);
     const { data: newRoom } = await supabase
@@ -479,7 +487,7 @@ export default function StopOnlineScreen() {
                 player1_id: room.player1_id, player1_name: playerNameRef.current,
                 player2_id: room.player2_id })
       .select().single();
-    if (!newRoom) return;
+    if (!newRoom) { rematchCreatingRef.current = false; return; }
 
     await supabase.from('stop_rooms').update({ rematch_room_id: newRoom.id }).eq('id', rId);
     roomIdRef.current = newRoom.id;
@@ -489,6 +497,26 @@ export default function StopOnlineScreen() {
     subscribeToRoom(newRoom.id);
     startSpin(newLetter);
   }, [startSpin, subscribeToRoom]);
+
+  useEffect(() => { doCreateRematchRef.current = doCreateRematch; }, [doCreateRematch]);
+
+  const requestRematch = useCallback(async () => {
+    const rId = roomIdRef.current;
+    if (!rId) return;
+    const col = isP1Ref.current ? 'p1_rematch' : 'p2_rematch';
+    await supabase.from('stop_rooms').update({ [col]: true }).eq('id', rId);
+    if (isP1Ref.current) setP1Rematch(true); else setP2Rematch(true);
+
+    if (!isP1Ref.current) return; // P2 aguarda P1 criar via subscription
+
+    // P1: verifica imediatamente se P2 já marcou (clicou primeiro)
+    const { data: room } = await supabase
+      .from('stop_rooms').select('p1_rematch,p2_rematch').eq('id', rId).single();
+    if (room?.p1_rematch && room?.p2_rematch) {
+      doCreateRematchRef.current();
+    }
+    // Caso contrário, subscription dispara doCreateRematch quando P2 clicar
+  }, []);
 
   // ── Abandon ────────────────────────────────────────────────────────────────
   const handleAbandon = useCallback(async () => {
