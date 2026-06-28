@@ -595,10 +595,14 @@ export default function StopOnlineScreen() {
 
     if (isAsync) {
       if (isP1Ref.current) {
-        const deadline = new Date(Date.now() + ASYNC_DEADLINE_MS).toISOString();
-        await supabase.from('stop_rooms')
-          .update({ status: 'async_wait_p2', deadline }).eq('id', rId);
-        setPhase('async_submitted');
+        // Sala já está async_wait_p2 desde a criação — verifica se P2 já jogou
+        const { data: bothAnswers } = await supabase
+          .from('stop_answers').select('player_id').eq('room_id', rId).eq('submitted', true);
+        if ((bothAnswers?.length ?? 0) >= 2) {
+          checkBothSubmitted(rId);
+        } else {
+          setPhase('async_submitted');
+        }
       } else {
         await supabase.from('stop_rooms').update({ status: 'completed' }).eq('id', rId);
         checkBothSubmitted(rId);
@@ -1102,16 +1106,52 @@ export default function StopOnlineScreen() {
       // Another player grabbed it — create our own
     }
 
-    // Create a new async room and play as P1 (stores category order so P2 sees the same)
+    // Cria a sala já visível para P2 (async_wait_p2 + deadline imediato)
     const newLetter = pickOnlineLetter(cats);
+    const deadline  = new Date(Date.now() + ASYNC_DEADLINE_MS).toISOString();
     const { data: newRoom, error } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, player1_id: playerIdRef.current,
-                player1_name: playerNameRef.current, mode: 'async', status: 'waiting',
+                player1_name: playerNameRef.current, mode: 'async',
+                status: 'async_wait_p2', deadline,
                 category_keys: cats.map(c => c.key) })
       .select().single();
 
     if (error || !newRoom) { setPhase('error'); setStatusMsg('Erro ao criar partida.'); return; }
+
+    // Race condition: se outro jogador também criou uma sala ao mesmo tempo, entra na dele
+    const { data: concurrent } = await supabase
+      .from('stop_rooms')
+      .select('id, letter, category_keys')
+      .eq('mode', 'async').eq('status', 'async_wait_p2')
+      .is('player2_id', null)
+      .neq('player1_id', playerIdRef.current)
+      .gt('deadline', new Date().toISOString())
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (concurrent) {
+      const { data: claimed } = await supabase
+        .from('stop_rooms')
+        .update({ player2_id: playerIdRef.current, player2_name: playerNameRef.current, status: 'async_p2' })
+        .eq('id', concurrent.id).eq('status', 'async_wait_p2').select();
+      if (claimed && claimed.length > 0) {
+        await supabase.from('stop_rooms').delete().eq('id', newRoom.id);
+        isMatchedRef.current = true;
+        isP1Ref.current = false; setIsPlayer1(false);
+        roomIdRef.current = concurrent.id;
+        setLetter(concurrent.letter); letterRef.current = concurrent.letter;
+        setStatusMsg('Partida encontrada! 🎯');
+        const p1Keys: string[] = (concurrent as { category_keys?: string[] | null }).category_keys ?? [];
+        if (p1Keys.length > 0) {
+          const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
+          if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
+        }
+        startSpin(concurrent.letter);
+        return;
+      }
+    }
 
     roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true);
     setLetter(newLetter); letterRef.current = newLetter;
