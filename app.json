@@ -17,7 +17,8 @@
         "icon": "./assets/images/notification-icon.png",
         "color": "#208AEF"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "enableProguardInReleaseBuilds": true
     },
     "web": {
       "bundler": "metro",
