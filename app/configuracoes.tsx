@@ -225,22 +225,6 @@ export default function ConfiguracoesScreen() {
             </View>
           </ThemedView>
 
-          {/* Versão */}
-          <ThemedText style={s.sectionLabel}>SOBRE O APP</ThemedText>
-          <ThemedView type="backgroundElement" style={s.card}>
-            <View style={s.row}>
-              <View style={s.rowLeft}>
-                <ThemedText style={{ fontSize: 22 }}>📱</ThemedText>
-                <View>
-                  <ThemedText type="smallBold">Versão do app</ThemedText>
-                  <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                    SantosPlay v{APP_VERSION}
-                  </ThemedText>
-                </View>
-              </View>
-            </View>
-          </ThemedView>
-
           {/* Suporte */}
           <ThemedText style={s.sectionLabel}>SUPORTE</ThemedText>
           <ThemedView type="backgroundElement" style={s.card}>
@@ -283,6 +267,8 @@ export default function ConfiguracoesScreen() {
               </TouchableOpacity>
             </View>
           </ThemedView>
+
+          <ThemedText style={s.versionTxt}>SantosPlay v{APP_VERSION}</ThemedText>
 
         </ScrollView>
       </SafeAreaView>
@@ -336,6 +322,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   sendBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+  versionTxt:  { fontSize: 11, color: '#9B97D4', textAlign: 'center', marginTop: Spacing.two, opacity: 0.55 },
 
   // Modal de avatar
   modalOverlay: {

@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
+import { StyleSheet, Text, View } from 'react-native';
 import { getAvatarUrl, isSaintAvatar } from '@/constants/avatares';
 
 interface AvatarImageProps {
@@ -17,10 +18,11 @@ export function AvatarImage({ value, size = 56, borderColor }: AvatarImageProps)
   if (isSaintAvatar(value)) {
     return (
       <View style={style}>
-        <Image
+        <ExpoImage
           source={{ uri: getAvatarUrl(value) }}
           style={{ width: size, height: size, borderRadius: size / 2 }}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
         />
       </View>
     );
@@ -28,7 +30,7 @@ export function AvatarImage({ value, size = 56, borderColor }: AvatarImageProps)
 
   return (
     <View style={style}>
-      <Text style={{ fontSize: size * 0.5, lineHeight: size * 0.65 }}>{value}</Text>
+      <Text style={{ fontSize: size * 0.5, lineHeight: size }}>{value}</Text>
     </View>
   );
 }

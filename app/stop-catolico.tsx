@@ -31,6 +31,7 @@ import { useStopCategories } from '@/hooks/use-stop-categories';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { supabase } from '@/lib/supabase';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
+import { isContestable, submitContest } from '@/lib/stop-contests';
 
 const BRAND          = '#EF9F27';
 const TIMER_DURATION = 90;
@@ -64,6 +65,7 @@ export default function StopCatolicoScreen() {
   const [hints,       setHints]       = useState<HintMap>({});
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
   const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
+  const [contested,   setContested]   = useState<Set<string>>(new Set());
 
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRefs        = useRef<Partial<Record<string, TextInput | null>>>({});
@@ -117,7 +119,7 @@ export default function StopCatolicoScreen() {
   const bankScore      = bankValidCount !== null ? bankValidCount * 10 + (bankValidCount === activeCategories.length ? 20 : 0) : null;
 
   useEffect(() => {
-    if (phase === 'playing') { reported.current = false; setCoinsEarned(null); return; }
+    if (phase === 'playing') { reported.current = false; setCoinsEarned(null); setContested(new Set()); return; }
     if (phase !== 'result' || reported.current || bankScore === null) return;
     reported.current = true;
 
@@ -538,6 +540,9 @@ export default function StopCatolicoScreen() {
               </View>
             </View>
             <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 14 }]}>{msg}</ThemedText>
+            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 11, fontStyle: 'italic' }]}>
+              Segure uma resposta para contestar
+            </ThemedText>
 
             {activeCategories.map(c => {
               const answer   = (answers[c.key] ?? '').trim();
@@ -572,23 +577,60 @@ export default function StopCatolicoScreen() {
                 : res === 'ai_invalid'                  ? C.red
                 : C.gold;
 
+              const canContest = bankDone && isContestable(res, answer);
+              const alreadyContested = contested.has(c.key);
+
               return (
-                <ThemedView key={c.key} type="backgroundElement" style={s.resultCard}>
-                  <View style={s.resultCardTop}>
-                    <ThemedText type="smallBold" style={{ flex: 1 }}>{c.label}</ThemedText>
-                    <ThemedText style={{ fontSize: 20 }}>{icon}</ThemedText>
-                  </View>
-                  <View style={s.resultCardBottom}>
-                    <ThemedText style={[s.resultAnswer, { color }]}>
-                      {answer || '(sem resposta)'}
-                    </ThemedText>
-                    {badge ? (
-                      <View style={[s.resultBadge, { backgroundColor: badgeColor + '22' }]}>
-                        <ThemedText style={[s.resultBadgeTxt, { color: badgeColor }]}>{badge}</ThemedText>
-                      </View>
-                    ) : null}
-                  </View>
-                </ThemedView>
+                <TouchableOpacity
+                  key={c.key}
+                  activeOpacity={canContest && !alreadyContested ? 0.7 : 1}
+                  delayLongPress={500}
+                  onLongPress={canContest && !alreadyContested ? async () => {
+                    if (!user) return;
+                    Alert.alert(
+                      'Contestar resposta',
+                      `Contestar "${answer}" como resposta para "${c.label}"?`,
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        { text: '✋ Contestar', onPress: async () => {
+                          const { ok, error: err } = await submitContest({
+                            userId: user.id,
+                            roomId: null,
+                            categoryKey: c.key,
+                            letter,
+                            answer,
+                            originalResult: res!,
+                            gameMode: 'solo',
+                          });
+                          if (ok) {
+                            setContested(prev => new Set([...prev, c.key]));
+                          } else {
+                            Alert.alert('Erro', err ?? 'Não foi possível enviar a contestação.');
+                          }
+                        }},
+                      ]
+                    );
+                  } : undefined}>
+                  <ThemedView type="backgroundElement" style={s.resultCard}>
+                    <View style={s.resultCardTop}>
+                      <ThemedText type="smallBold" style={{ flex: 1 }}>{c.label}</ThemedText>
+                      <ThemedText style={{ fontSize: 20 }}>{icon}</ThemedText>
+                    </View>
+                    <View style={s.resultCardBottom}>
+                      <ThemedText style={[s.resultAnswer, { color }]}>
+                        {answer || '(sem resposta)'}
+                      </ThemedText>
+                      {badge ? (
+                        <View style={[s.resultBadge, { backgroundColor: badgeColor + '22' }]}>
+                          <ThemedText style={[s.resultBadgeTxt, { color: badgeColor }]}>{badge}</ThemedText>
+                        </View>
+                      ) : null}
+                    </View>
+                    {alreadyContested && (
+                      <ThemedText style={[s.contestBtnTxt, { color: C.green }]}>✓ Contestação enviada</ThemedText>
+                    )}
+                  </ThemedView>
+                </TouchableOpacity>
               );
             })}
 
@@ -796,4 +838,7 @@ const s = StyleSheet.create({
 
   primaryBtn: { paddingHorizontal: Spacing.five, paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', alignSelf: 'stretch' },
   btnText:    { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
+  contestBtn:    { marginTop: 6, alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10, borderRadius: C.radius.pill, borderWidth: 1, borderColor: C.gold + '88', backgroundColor: C.gold + '18' },
+  contestedBtn:  { borderColor: C.green + '88', backgroundColor: C.green + '18' },
+  contestBtnTxt: { fontSize: 11, fontWeight: '700', color: C.gold },
 });

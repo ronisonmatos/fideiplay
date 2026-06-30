@@ -12,7 +12,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-splash';
 import { GameStoreProvider, useGameStore } from '@/context/game-store';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { NotificationsProvider, useNotifications } from '@/context/notifications-context';
-import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications } from '@/lib/notifications';
+import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications, registerAndSavePushToken } from '@/lib/notifications';
 import { pullProgress, pushProgress } from '@/lib/progress-sync';
 
 // Aplica o tema salvo (padrão: escuro)
@@ -105,6 +105,12 @@ function NotificationBridge() {
   const onServerNotif = useCallback((title: string, body: string) => {
     addRef.current({ type: 'server', title, body, createdAt: new Date().toISOString() }, true);
   }, []);
+
+  // Registra o push token remoto ao fazer login (uma vez por sessão)
+  useEffect(() => {
+    if (!user?.id) return;
+    registerAndSavePushToken(user.id).catch(() => {});
+  }, [user?.id]);
 
   // Sync do banco ao abrir/focar o app
   useEffect(() => {

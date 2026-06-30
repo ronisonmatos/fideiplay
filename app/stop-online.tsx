@@ -28,6 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { recordScoreEvent } from '@/lib/score-events';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
+import { isContestable, submitContest } from '@/lib/stop-contests';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
@@ -192,6 +193,7 @@ export default function StopOnlineScreen() {
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
   const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
   const [stopPopup,   setStopPopup]   = useState<{ name: string; elapsed: number } | null>(null);
+  const [contested,   setContested]   = useState<Set<string>>(new Set());
   const [validationQuote, setValidationQuote] = useState<{ text: string; author: string | null } | null>(null);
   const [oppId,             setOppId]           = useState<string | null>(null);
   const [playersAvatarMap,  setPlayersAvatarMap] = useState<Record<string, string>>({});
@@ -401,6 +403,7 @@ export default function StopOnlineScreen() {
     coinsAwardedRef.current  = false;
     pendingResultsRef.current = null;
     setCoinDelta(null);
+    setContested(new Set());
 
     const targetIdx  = LETTERS.indexOf(targetLetter);
     const LC         = LETTERS.length;
@@ -2220,9 +2223,14 @@ export default function StopOnlineScreen() {
                   </ThemedView>
                 </View>
 
-                <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
-                  COMPARAÇÃO DE RESPOSTAS
-                </ThemedText>
+                <View style={{ gap: 2 }}>
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
+                    COMPARAÇÃO DE RESPOSTAS
+                  </ThemedText>
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11, fontStyle: 'italic' }}>
+                    Segure uma resposta para contestar
+                  </ThemedText>
+                </View>
                 {cats.map(c => {
                   const mine   = ((myResult.answers[c.key] ?? '') as string).trim();
                   const theirs = ((oppResult.answers[c.key] ?? '') as string).trim();
@@ -2256,19 +2264,54 @@ export default function StopOnlineScreen() {
                     return null;
                   };
 
+                  const canContest     = isContestable(myRes, mine);
+                  const alreadyContested = contested.has(c.key);
+
                   return (
                     <ThemedView key={c.key} type="backgroundElement" style={s.compCard}>
                       <View style={s.compHeader}>
                         <ThemedText type="smallBold" style={{ flex: 1 }}>{c.label}</ThemedText>
                       </View>
                       <View style={s.compAnswers}>
-                        <View style={[s.compCell, { backgroundColor: cellBg(myRes, myV, mine.length > 0) }]}>
+                        <TouchableOpacity
+                          style={[s.compCell, { backgroundColor: cellBg(myRes, myV, mine.length > 0) }]}
+                          activeOpacity={canContest && !alreadyContested ? 0.7 : 1}
+                          delayLongPress={500}
+                          onLongPress={canContest && !alreadyContested ? async () => {
+                            if (!user) return;
+                            Alert.alert(
+                              'Contestar resposta',
+                              `Contestar "${mine}" como resposta para "${c.label}"?`,
+                              [
+                                { text: 'Cancelar', style: 'cancel' },
+                                { text: '✋ Contestar', onPress: async () => {
+                                  const { ok, error: err } = await submitContest({
+                                    userId: user.id,
+                                    roomId: roomIdRef.current,
+                                    categoryKey: c.key,
+                                    letter,
+                                    answer: mine,
+                                    originalResult: myRes!,
+                                    gameMode: 'online',
+                                  });
+                                  if (ok) {
+                                    setContested(prev => new Set([...prev, c.key]));
+                                  } else {
+                                    Alert.alert('Erro', err ?? 'Não foi possível enviar a contestação.');
+                                  }
+                                }},
+                              ]
+                            );
+                          } : undefined}>
                           <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: C.purple }}>VOCÊ</ThemedText>
                           <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(myRes, mine.length > 0) }}>
                             {mine || '—'}
                           </ThemedText>
                           {mine.length > 0 && <Badge res={myRes} />}
-                        </View>
+                          {alreadyContested && (
+                            <ThemedText style={[s.compBadge, { color: C.green }]}>✓ Contestação enviada</ThemedText>
+                          )}
+                        </TouchableOpacity>
                         <View style={[s.compCell, { backgroundColor: cellBg(oppRes, theirV, theirs.length > 0) }]}>
                           <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: BRAND }} numberOfLines={1}>{oppName.toUpperCase()}</ThemedText>
                           <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(oppRes, theirs.length > 0) }}>
@@ -2593,6 +2636,9 @@ const s = StyleSheet.create({
   compAnswers:  { flexDirection: 'row', gap: Spacing.one },
   compCell:     { flex: 1, borderRadius: C.radius.sm, padding: Spacing.one, gap: 2 },
   compBadge:    { fontSize: 8, fontWeight: '800', color: C.green, letterSpacing: 0.3 },
+  contestBtn:    { marginTop: 4, alignSelf: 'flex-start', paddingVertical: 3, paddingHorizontal: 8, borderRadius: C.radius.pill, borderWidth: 1, borderColor: C.gold + '88', backgroundColor: C.gold + '18' },
+  contestedBtn:  { borderColor: C.green + '88', backgroundColor: C.green + '18' },
+  contestBtnTxt: { fontSize: 9, fontWeight: '700', color: C.gold },
 
   // Leaderboard
   leaderRow: {

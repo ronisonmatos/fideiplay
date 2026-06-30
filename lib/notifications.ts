@@ -75,6 +75,7 @@ export async function sendChatOSNotification(title: string, body: string): Promi
         title,
         body,
         sound: 'chat_beep.wav',
+        data: { type: 'chat' },
       },
       trigger: Platform.OS === 'android'
         ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: NOTIF_CHANNEL_CHAT, repeats: false }
@@ -142,6 +143,24 @@ export async function scheduleCoinBonusReminder() {
       channelId: NOTIF_CHANNEL,
     },
   });
+}
+
+// ── Registro e salvamento do Expo Push Token ─────────────────────────────────
+
+export async function registerAndSavePushToken(userId: string): Promise<void> {
+  if (Platform.OS === 'web' || isExpoGoAndroid) return;
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+  try {
+    const { data: token } = await Notifications.getExpoPushTokenAsync({
+      projectId: 'a7cd055d-5cfe-4f9f-a8af-37bb94f0dc51',
+    });
+    if (token) {
+      await supabase.from('profiles').update({ push_token: token }).eq('id', userId);
+    }
+  } catch {
+    // Silencioso — não bloqueia nada se falhar
+  }
 }
 
 // ── Notificações agendadas pelo servidor (tabela `notifications`) ─────────────
