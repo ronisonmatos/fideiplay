@@ -38,6 +38,24 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
+// A rede às vezes ainda não está pronta no exato momento em que o app volta
+// do background (ou logo após uma atualização). Sem retry, uma falha nesse
+// instante zera o profile/trilhas e o usuário fica com sessão válida mas
+// sem dados até fechar e reabrir o app.
+async function fetchWithRetry<T>(
+  label: string,
+  query: () => PromiseLike<{ data: T | null; error: unknown }>,
+  attempts = 3,
+): Promise<T | null> {
+  for (let i = 0; i < attempts; i++) {
+    const { data, error } = await query();
+    if (!error && data != null) return data;
+    if (error) console.warn(`[auth] ${label} falhou (tentativa ${i + 1}/${attempts}):`, error);
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, 500 * (i + 1)));
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession]   = useState<Session | null>(null);
   const [profile, setProfile]   = useState<Profile | null>(null);
@@ -49,23 +67,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (session) setGuest(false); }, [session]);
 
   const loadProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    setProfile(data ?? null);
-    if (data && isSaintAvatar(data.avatar_emoji)) {
+    const data = await fetchWithRetry<Profile>('loadProfile', () =>
+      supabase.from('profiles').select('*').eq('id', userId).single(),
+    );
+    // Em falha após os retries, mantém o profile anterior em vez de zerar
+    // (evita a tela "logado sem dados" — só atualiza quando há dado novo).
+    if (!data) return;
+    setProfile(data);
+    if (isSaintAvatar(data.avatar_emoji)) {
       ExpoImage.prefetch(getAvatarUrl(data.avatar_emoji));
     }
   }, []);
 
   const loadTrilhas = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from('user_trilhas')
-      .select('trilha_id')
-      .eq('user_id', userId);
-    setTrilhasDesbloqueadas(data?.map(r => Number(r.trilha_id)) ?? []);
+    const data = await fetchWithRetry<{ trilha_id: number | string }[]>('loadTrilhas', () =>
+      supabase.from('user_trilhas').select('trilha_id').eq('user_id', userId),
+    );
+    if (!data) return;
+    setTrilhasDesbloqueadas(data.map(r => Number(r.trilha_id)));
   }, []);
 
   const refreshProfile = useCallback(async () => {

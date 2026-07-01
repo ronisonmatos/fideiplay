@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   Appearance,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -13,7 +14,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -26,7 +29,12 @@ import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
 
-const APP_VERSION = '1.0.0';
+// No Expo Go, Application.native* retorna a versão do app Expo Go (host nativo),
+// não a do nosso projeto — por isso a versão em si vem sempre do app.json via
+// Constants, e o build number nativo só é usado fora do Expo Go.
+const isExpoGo   = Constants.appOwnership === 'expo';
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
+const APP_BUILD   = isExpoGo ? null : Application.nativeBuildVersion;
 
 export default function ConfiguracoesScreen() {
   const theme       = useTheme();
@@ -40,6 +48,7 @@ export default function ConfiguracoesScreen() {
   const [avatarModal,   setAvatarModal]   = useState(false);
   const [savingAvatar,  setSavingAvatar]  = useState(false);
   const [pickedAvatar,  setPickedAvatar]  = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   async function handleSaveAvatar() {
     const chosen = pickedAvatar ?? profile?.avatar_emoji;
@@ -156,9 +165,15 @@ export default function ConfiguracoesScreen() {
           <View style={{ width: 44 }} />
         </View>
 
+        <KeyboardAvoidingView
+          style={s.fill}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={[s.scroll, { paddingBottom: 40 }]}
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
 
           {/* Meu Perfil */}
           {user && profile && (
@@ -246,6 +261,7 @@ export default function ConfiguracoesScreen() {
                 }]}
                 value={message}
                 onChangeText={setMessage}
+                onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200)}
                 placeholder="Escreva sua mensagem aqui..."
                 placeholderTextColor={theme.textSecondary}
                 multiline
@@ -268,9 +284,12 @@ export default function ConfiguracoesScreen() {
             </View>
           </ThemedView>
 
-          <ThemedText style={s.versionTxt}>SantosPlay v{APP_VERSION}</ThemedText>
+          <ThemedText style={s.versionTxt}>
+            SantosPlay v{APP_VERSION}{APP_BUILD ? ` (${APP_BUILD})` : ''}
+          </ThemedText>
 
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
