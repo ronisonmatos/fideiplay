@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -15,15 +15,27 @@ import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { AvatarImage } from '@/components/avatar-image';
 import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { supabase } from '@/lib/supabase';
+import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
 
-const AVATARS = ['🙏', '✝️', '📖', '🕊️', '⭐', '🏆', '👼', '🌟'];
+async function fetchLegalUrls(): Promise<{ termos: string; privacidade: string }> {
+  const { data } = await supabase
+    .from('app_config')
+    .select('key, value')
+    .in('key', ['url_termos', 'url_privacidade']);
 
-// URLs das páginas legais — substitua pelas URLs reais quando publicadas
-const URL_TERMOS   = 'https://fideiplay.com.br/termos';
-const URL_PRIVACIDADE = 'https://fideiplay.com.br/privacidade';
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) map[row.key] = row.value;
+
+  return {
+    termos:      map['url_termos']      ?? '',
+    privacidade: map['url_privacidade'] ?? '',
+  };
+}
 
 function maskDate(val: string): string {
   const d = val.replace(/\D/g, '').slice(0, 8);
@@ -56,11 +68,20 @@ export default function RegisterScreen() {
   const [name,          setName]          = useState('');
   const [email,         setEmail]         = useState('');
   const [password,      setPassword]      = useState('');
-  const [avatar,        setAvatar]        = useState('🙏');
+  const [avatar,        setAvatar]        = useState(AVATARES_SANTOS[0].filename);
   const [birthDate,     setBirthDate]     = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [error,         setError]         = useState<string | null>(null);
+  const [urlTermos,     setUrlTermos]     = useState('');
+  const [urlPriv,       setUrlPriv]       = useState('');
+
+  useEffect(() => {
+    fetchLegalUrls().then(({ termos, privacidade }) => {
+      setUrlTermos(termos);
+      setUrlPriv(privacidade);
+    }).catch(() => {});
+  }, []);
 
   async function handleRegister() {
     setError(null);
@@ -115,21 +136,39 @@ export default function RegisterScreen() {
 
             {/* Avatar picker */}
             <View style={s.section}>
-              <ThemedText style={[s.label, { color: theme.textSecondary }]}>SEU AVATAR</ThemedText>
-              <View style={s.avatarRow}>
-                {AVATARS.map(a => (
-                  <TouchableOpacity
-                    key={a}
-                    onPress={() => setAvatar(a)}
-                    style={[
-                      s.avatarBtn,
-                      { backgroundColor: theme.backgroundElement },
-                      avatar === a && { backgroundColor: C.purple, borderColor: C.purple },
-                    ]}
-                    activeOpacity={0.75}>
-                    <ThemedText style={s.avatarEmoji}>{a}</ThemedText>
-                  </TouchableOpacity>
-                ))}
+              <ThemedText style={[s.label, { color: theme.textSecondary }]}>SEU SANTO PATRONO</ThemedText>
+
+              {/* Selected saint name */}
+              <View style={s.selectedSaintRow}>
+                <AvatarImage value={avatar} size={64} borderColor={C.purple} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText style={[s.selectedSaintLabel, { color: theme.textSecondary }]}>
+                    Santo selecionado
+                  </ThemedText>
+                  <ThemedText style={[s.selectedSaintName, { color: C.purple }]}>
+                    {getAvatarNome(avatar)}
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Grid de santos */}
+              <View style={s.avatarGrid}>
+                {AVATARES_SANTOS.map(a => {
+                  const selected = avatar === a.filename;
+                  return (
+                    <TouchableOpacity
+                      key={a.filename}
+                      onPress={() => setAvatar(a.filename)}
+                      style={[
+                        s.avatarBtn,
+                        { borderColor: selected ? C.purple : 'transparent' },
+                      ]}
+                      activeOpacity={0.75}>
+                      <AvatarImage value={a.filename} size={52} />
+                      {selected && <View style={s.avatarSelectedDot} />}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
@@ -212,14 +251,14 @@ export default function RegisterScreen() {
                 <ThemedText style={[s.termsBase, { color: theme.text }]}>
                   Li e aceito os{' '}
                   <ThemedText
-                    style={[s.termsLink, { color: C.purple }]}
-                    onPress={() => Linking.openURL(URL_TERMOS)}>
+                    style={[s.termsLink, { color: C.purple, opacity: urlTermos ? 1 : 0.5 }]}
+                    onPress={() => urlTermos && Linking.openURL(urlTermos)}>
                     Termos de Uso
                   </ThemedText>
                   {' '}e a{' '}
                   <ThemedText
-                    style={[s.termsLink, { color: C.purple }]}
-                    onPress={() => Linking.openURL(URL_PRIVACIDADE)}>
+                    style={[s.termsLink, { color: C.purple, opacity: urlPriv ? 1 : 0.5 }]}
+                    onPress={() => urlPriv && Linking.openURL(urlPriv)}>
                     Política de Privacidade
                   </ThemedText>
                   , incluindo o tratamento dos meus dados pessoais.
@@ -288,11 +327,27 @@ const s = StyleSheet.create({
   logoBlock:  { alignItems: 'center', gap: Spacing.one, marginBottom: Spacing.two },
   logo:       { width: 140, height: 140 },
   subtitle:   { fontSize: 14, textAlign: 'center' },
-  section:    { gap: Spacing.one },
+  section:    { gap: Spacing.two },
   label:      { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
-  avatarRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
-  avatarBtn:  { width: 48, height: 48, borderRadius: C.radius.md, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
-  avatarEmoji:{ fontSize: 24 },
+
+  selectedSaintRow:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.one },
+  selectedSaintLabel:{ fontSize: 11, fontWeight: '600', letterSpacing: 0.8 },
+  selectedSaintName: { fontSize: 16, fontWeight: '800' },
+
+  avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  avatarBtn: {
+    width: 60, height: 60,
+    borderRadius: C.radius.md,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5,
+    position: 'relative',
+  },
+  avatarSelectedDot: {
+    position: 'absolute', bottom: 3, right: 3,
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: C.purple,
+    borderWidth: 1.5, borderColor: '#fff',
+  },
   input: {
     borderWidth: 1.5,
     borderRadius: C.radius.md,

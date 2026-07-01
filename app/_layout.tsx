@@ -1,18 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef } from 'react';
-import { AppState, Appearance } from 'react-native';
+import { AppState, Appearance, Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, router, useSegments } from 'expo-router';
 import * as ExpoNotifications from 'expo-notifications';
+import Constants from 'expo-constants';
+
+const isExpoGoAndroid = Platform.OS === 'android' && Constants.appOwnership === 'expo';
 
 import { AnimatedSplashOverlay } from '@/components/animated-splash';
 import { GameStoreProvider, useGameStore } from '@/context/game-store';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { NotificationsProvider, useNotifications } from '@/context/notifications-context';
-import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications } from '@/lib/notifications';
+import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications, registerAndSavePushToken } from '@/lib/notifications';
 import { pullProgress, pushProgress } from '@/lib/progress-sync';
 
 // Aplica o tema salvo (padrão: escuro)
-AsyncStorage.getItem('@fideiplay:theme').then(saved => {
+AsyncStorage.getItem('@santosplay:theme').then(saved => {
   Appearance.setColorScheme(saved === 'light' ? 'light' : 'dark');
 });
 
@@ -102,10 +106,14 @@ function NotificationBridge() {
     addRef.current({ type: 'server', title, body, createdAt: new Date().toISOString() }, true);
   }, []);
 
-  // Sync do banco ao abrir/focar o app
+  // Sync do banco + push token ao fazer login e ao retornar ao foreground
   useEffect(() => {
     if (!user?.id) return;
-    const sync = () => syncServerNotifications(user.id, onServerNotif);
+    const userId = user.id;
+    const sync = () => {
+      syncServerNotifications(userId, onServerNotif);
+      registerAndSavePushToken(userId).catch(() => {});
+    };
     sync();
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') sync();
@@ -115,6 +123,7 @@ function NotificationBridge() {
 
   // Captura notificações Expo recebidas com o app aberto (lembrete diário, bônus etc.)
   useEffect(() => {
+    if (isExpoGoAndroid) return; // push não suportado no Expo Go Android (SDK 53+)
     const sub = ExpoNotifications.addNotificationReceivedListener(notification => {
       const { title, body, data } = notification.request.content;
       const identifier = notification.request.identifier;
@@ -163,16 +172,18 @@ function AuthGate() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <GameStoreProvider>
-        <NotificationsProvider>
-          <ProgressSyncBridge />
-          <NotificationBridge />
-          <AnimatedSplashOverlay />
-          <AuthGate />
-          <Stack screenOptions={{ headerShown: false }} />
-        </NotificationsProvider>
-      </GameStoreProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <GameStoreProvider>
+          <NotificationsProvider>
+            <ProgressSyncBridge />
+            <NotificationBridge />
+            <AnimatedSplashOverlay />
+            <AuthGate />
+            <Stack screenOptions={{ headerShown: false }} />
+          </NotificationsProvider>
+        </GameStoreProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

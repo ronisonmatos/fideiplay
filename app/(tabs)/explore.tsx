@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { AvatarImage } from '@/components/avatar-image';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import type { Profile } from '@/context/auth-context';
@@ -38,7 +39,7 @@ const ACHIEVEMENTS = [
   { id: 'relampago',     emoji: '⏱️', title: 'Relâmpago',      desc: 'Desafio Litúrgico com 30s sobrando' },
 ];
 
-const AD_LAST_TIME_KEY = '@fideiplay:last_ad_time';
+const AD_LAST_TIME_KEY = '@santosplay:last_ad_time';
 const COOLDOWN_MS = ECONOMY.COOLDOWN_ANUNCIO_MINUTOS * 60 * 1000;
 
 function useAdCooldown() {
@@ -260,9 +261,7 @@ export default function ContaScreen() {
 
             {/* Profile header */}
             <View style={styles.profileHeader}>
-              <View style={[styles.avatarCircle, { backgroundColor: C.purple }]}>
-                <ThemedText style={styles.avatarEmoji}>{profile.avatar_emoji}</ThemedText>
-              </View>
+              <AvatarImage value={profile.avatar_emoji} size={64} borderColor={C.purple} />
               <View style={styles.profileInfo}>
                 <ThemedText type="subtitle" style={{ fontSize: 22 }}>{profile.name}</ThemedText>
                 <ThemedText themeColor="textSecondary" style={{ fontSize: 13 }}>{user.email}</ThemedText>
@@ -271,7 +270,7 @@ export default function ContaScreen() {
                 onPress={() => router.push('/configuracoes')}
                 style={styles.settingsBtn}
                 activeOpacity={0.7}>
-                <ThemedText style={{ fontSize: 24 }}>⚙️</ThemedText>
+                <Image source={require('@/assets/images/config.png')} style={{ width: 34, height: 34 }} resizeMode="contain" />
               </TouchableOpacity>
             </View>
 
@@ -341,7 +340,7 @@ export default function ContaScreen() {
             )}
 
             {/* Weekly ranking */}
-            <ThemedText style={styles.sectionLabel}>RANKING SEMANAL</ThemedText>
+            <ThemedText style={styles.sectionLabel}>RANKING SEMANAL STOP</ThemedText>
             <ThemedView type="backgroundElement" style={styles.rankCard}>
               {rankingLoad ? (
                 <ActivityIndicator color={C.purple} style={{ paddingVertical: 16 }} />
@@ -363,7 +362,7 @@ export default function ContaScreen() {
                       <ThemedText style={styles.rankPos}>
                         {i < 3 ? MEDAL[i] : `${i + 1}.`}
                       </ThemedText>
-                      <ThemedText style={styles.rankAvatar}>{entry.avatar_emoji}</ThemedText>
+                      <AvatarImage value={entry.avatar_emoji} size={28} />
                       <ThemedText style={[styles.rankName, isMe && { color: C.purple, fontWeight: '800' }]}
                         numberOfLines={1}>
                         {entry.name}{isMe ? ' (você)' : ''}
@@ -416,9 +415,7 @@ export default function ContaScreen() {
           }>
 
           <View style={styles.loggedOutHero}>
-            <View style={[styles.heroLogo, { backgroundColor: C.purple }]}>
-              <ThemedText style={styles.heroLogoText}>✝</ThemedText>
-            </View>
+            <AvatarImage value="Nossa_Senhora.png" size={80} borderColor={C.purple} />
             <ThemedText type="subtitle" style={styles.textCenter}>Minha Conta</ThemedText>
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.heroDesc]}>
               Entre ou crie uma conta para salvar seus pontos, conquistas e competir no ranking.
@@ -457,8 +454,6 @@ const styles = StyleSheet.create({
 
   // Profile
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
-  avatarCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  avatarEmoji:   { fontSize: 32, lineHeight: 40 },
   profileInfo:   { gap: 2, flex: 1 },
   settingsBtn:   { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 

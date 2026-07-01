@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Easing,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Share,
@@ -11,6 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Audio } from 'expo-av';
+import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useNavigation } from 'expo-router';
 
@@ -18,18 +23,28 @@ import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
-import { ALL_STOP_CATEGORIES, randomDefaultKeys, StopCategory } from '@/constants/stop-categories';
+import { ALL_LETTERS, ALL_STOP_CATEGORIES, computeAvailableLetters, StopCategory } from '@/constants/stop-categories';
 import { supabase } from '@/lib/supabase';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { recordScoreEvent } from '@/lib/score-events';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
+import { isContestable, submitContest } from '@/lib/stop-contests';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
+import { useStopCategories } from '@/hooks/use-stop-categories';
+import { CoinsAnimation } from '@/components/coins-animation';
+import { AvatarImage } from '@/components/avatar-image';
 
 const BRAND            = '#EF9F27';
 const TIMER            = 90;
-const MIN_CATS         = 4;
+const SLOT_COUNT       = 6;
+const SLOT_COLORS      = [C.purple, BRAND, C.green, '#4A9EDB', '#C97BD4', '#E05555'];
 const ASYNC_DEADLINE_MS = 2 * 24 * 60 * 60 * 1000;
+
+function pickSixKeys(cats: StopCategory[]): string[] {
+  return [...cats].sort(() => Math.random() - 0.5).slice(0, SLOT_COUNT).map(c => c.key);
+}
 const ROOM_TIMEOUT_S   = 120; // 2 min para sala encher; depois inicia com quem entrou
 
 const COINS = {
@@ -43,10 +58,17 @@ const COINS = {
   OPP_OUT:  25,
 } as const;
 
-const LETTERS     = ['A','B','C','D','E','F','G','H','J','L','M','N','O','P','R','S','T','V'];
+const LETTERS     = ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V'];
 const CODE_CHARS  = 'ABCDEFGHJKLMNPRSTV23456789';
 const genRoomCode = () =>
   Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+
+function pickOnlineLetter(cats: StopCategory[]): string {
+  const catValid  = computeAvailableLetters(cats);
+  const pool      = catValid.filter(l => LETTERS.includes(l));
+  const draw      = pool.length > 0 ? pool : LETTERS;
+  return draw[Math.floor(Math.random() * draw.length)];
+}
 
 type Phase    = 'selecting' | 'matchmaking' | 'spinning' | 'playing' | 'waiting' | 'async_submitted' | 'validating' | 'result' | 'error';
 type GameMode = 'realtime' | 'async';
@@ -60,7 +82,7 @@ interface MultiResult  {
   bankMap: Partial<Record<string, BankResult>>;
 }
 interface RealtimeRoom {
-  id: string; letter: string; player1_name: string | null;
+  id: string; letter: string; player1_id: string | null; player1_name: string | null;
   created_at: string; max_players: number; player_count: number;
 }
 interface AsyncGame {
@@ -68,6 +90,10 @@ interface AsyncGame {
   player1_id: string; player2_id: string | null;
   player1_name: string | null; player2_name: string | null;
   deadline: string | null;
+  p1_elapsed_seconds: number | null;
+  p1_dismissed_at: string | null;
+  p2_dismissed_at: string | null;
+  category_keys?: string[] | null;
 }
 interface PendingResults {
   meAnswers: AnswerMap; oppAnswers: AnswerMap; skipCoins?: boolean;
@@ -98,6 +124,11 @@ export default function StopOnlineScreen() {
   const theme      = useTheme();
   const navigation = useNavigation();
   const { user, profile, refreshProfile } = useAuth();
+  const { packs }      = useGamePacks('stop');
+  const baseCategories = useStopCategories();
+  const allCategories  = mergeStopCategories(baseCategories, packs, ALL_LETTERS) as StopCategory[];
+  const allCategoriesRef = useRef<StopCategory[]>(ALL_STOP_CATEGORIES);
+  useEffect(() => { allCategoriesRef.current = allCategories; }, [allCategories]);
 
   const playerIdRef   = useRef('');   playerIdRef.current   = user?.id ?? '';
   const playerNameRef = useRef('Jogador'); playerNameRef.current = profile?.name ?? 'Jogador';
@@ -108,7 +139,9 @@ export default function StopOnlineScreen() {
   const [gameMode,       setGameMode]       = useState<GameMode>('realtime');
   const gameModeRef                         = useRef<GameMode>('realtime');
   const [statusMsg,      setStatusMsg]      = useState('');
-  const [selectedKeys,   setSelectedKeys]   = useState<Set<string>>(() => randomDefaultKeys());
+  const [slots,          setSlots]          = useState<string[]>(() => pickSixKeys(ALL_STOP_CATEGORIES));
+  const slotsRef = useRef<string[]>([]);
+  useEffect(() => { slotsRef.current = slots; }, [slots]);
   const [gameCategories, setGameCategories] = useState<StopCategory[]>([]);
   const gameCatsRef = useRef<StopCategory[]>([]);
   useEffect(() => { gameCatsRef.current = gameCategories; }, [gameCategories]);
@@ -152,10 +185,20 @@ export default function StopOnlineScreen() {
   const [joinCodeInput,   setJoinCodeInput]    = useState('');
   const [myBankMap,   setMyBankMap]   = useState<Partial<Record<string, BankResult>>>({});
   const [oppBankMap,  setOppBankMap]  = useState<Partial<Record<string, BankResult>>>({});
-  const [aiLoading,   setAiLoading]   = useState(false);
-  const [waitingOpp,  setWaitingOpp]  = useState(false);
+  const [aiLoading,      setAiLoading]      = useState(false);
+  const [waitingOpp,     setWaitingOpp]     = useState(false);
+  const [validatingStep, setValidatingStep] = useState(0); // 0=banco 1=ia/save 2=aguardando adv
+  const validatingAnim  = useRef(new Animated.Value(0)).current;
   const [hints,       setHints]       = useState<HintMap>({});
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
+  const [coinSpend,   setCoinSpend]   = useState<number | null>(null);
+  const [stopPopup,   setStopPopup]   = useState<{ name: string; elapsed: number } | null>(null);
+  const [contested,   setContested]   = useState<Set<string>>(new Set());
+  const [validationQuote, setValidationQuote] = useState<{ text: string; author: string | null } | null>(null);
+  const [oppId,             setOppId]           = useState<string | null>(null);
+  const [playersAvatarMap,  setPlayersAvatarMap] = useState<Record<string, string>>({});
+  const playersAvatarMapRef = useRef<Record<string, string>>({});
+  useEffect(() => { playersAvatarMapRef.current = playersAvatarMap; }, [playersAvatarMap]);
 
   // ── Spin state ─────────────────────────────────────────────────────────────
   const [spinLetter, setSpinLetter] = useState('A');
@@ -177,16 +220,101 @@ export default function StopOnlineScreen() {
   const inputRefs          = useRef<Partial<Record<string, TextInput | null>>>({});
   const doSubmitRef        = useRef<() => void>(() => {});
   const handleAbandonRef   = useRef<() => Promise<void>>(async () => {});
-  const joinRematchRoomRef = useRef<((id: string) => Promise<void>) | null>(null);
-  const isActiveGameRef    = useRef(false);
-  const awardCoinsRef      = useRef<(delta: number) => void>(() => {});
-  const coinsAwardedRef    = useRef(false);
-  const pendingResultsRef  = useRef<PendingResults | null>(null);
+  const joinRematchRoomRef  = useRef<((id: string) => Promise<void>) | null>(null);
+  const doCreateRematchRef  = useRef<() => Promise<void>>(async () => {});
+  const rematchCreatingRef  = useRef(false);
+  const asyncTimeLimitRef   = useRef<number>(TIMER); // tempo que P1 usou → limite de P2
+  const isCountUpRef        = useRef(false);         // true somente para P2 async
+  const timeLeftRef         = useRef<number>(TIMER);
+  const oppNameRef          = useRef('Adversário');
+  const timerSoundRef       = useRef<Audio.Sound | null>(null);
+  const isActiveGameRef     = useRef(false);
+  const awardCoinsRef       = useRef<(delta: number) => void>(() => {});
+  const coinsAwardedRef     = useRef(false);
+  const pendingResultsRef       = useRef<PendingResults | null>(null);
+  // Validação do adversário recebida via broadcast (realtime)
+  const oppValidationBroadcastRef = useRef<Partial<Record<string, BankResult>> | null>(null);
   // N-player: jogadores ativos na partida em curso (snapshot no momento do start)
-  const activePCountRef    = useRef(2);
+  const activePCountRef     = useRef(2);
 
-  useEffect(() => { answersRef.current = answers; }, [answers]);
-  useEffect(() => { letterRef.current  = letter;  }, [letter]);
+  useEffect(() => { answersRef.current   = answers;  }, [answers]);
+  useEffect(() => { letterRef.current   = letter;   }, [letter]);
+  useEffect(() => { timeLeftRef.current = timeLeft;  }, [timeLeft]);
+  useEffect(() => { oppNameRef.current  = oppName;   }, [oppName]);
+
+  // ── Animação da barra de validação ───────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'validating') { validatingAnim.setValue(0); return; }
+    // step 0 = banco, step 1 = IA/salvar, step 2 = aguardando adversário
+    const targets   = [0.45, 0.88, 0.95];
+    const durations = [1200, 3500, 18000];
+    Animated.timing(validatingAnim, {
+      toValue:         targets[validatingStep] ?? 0.95,
+      duration:        durations[validatingStep] ?? 3500,
+      easing:          Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [phase, validatingStep, validatingAnim]);
+
+  // ── Sons de resultado ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'result' || !myResult) return;
+    const isAbandon   = abandoned === 'me';
+    const oppLeft     = abandoned === 'opp';
+    const isMulti     = multiResults.length > 2;
+    const myRank      = multiResults.find(r => r.playerId === (user?.id ?? ''))?.rank ?? 1;
+    const tiedAtFirst = isMulti && myRank === 1 && multiResults.filter(r => r.rank === 1).length > 1;
+    const iWon = isMulti ? (myRank === 1 && !tiedAtFirst) : (isAbandon ? false : oppLeft ? true : (myResult.score > (oppResult?.score ?? 0)));
+    const tied = (!isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0)) || tiedAtFirst;
+
+    const file = iWon || oppLeft
+      ? require('@/assets/audio/floraphonic-marimba-win-f-2-209688.mp3')
+      : tied ? null
+      : require('@/assets/audio/freesound_community-negative_beeps-6008.mp3');
+
+    if (!file) return;
+    let sound: Audio.Sound | null = null;
+    Audio.Sound.createAsync(file, { shouldPlay: true, volume: 0.9 })
+      .then(({ sound: s }) => { sound = s; }).catch(() => {});
+    return () => {
+      sound?.stopAsync().catch(() => {});
+      sound?.unloadAsync().catch(() => {});
+    };
+  }, [phase, myResult, oppResult, abandoned, multiResults, user?.id]);
+
+  // ── Frase aleatória na tela de validação ─────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'validating') return;
+    supabase
+      .from('stop_validation_quotes')
+      .select('text, author')
+      .eq('active', true)
+      .limit(100)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        setValidationQuote(data[Math.floor(Math.random() * data.length)]);
+      });
+  }, [phase]);
+
+  // ── Fetch avatares ao entrar no resultado ─────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'result') return;
+    const myId = playerIdRef.current;
+    const ids: string[] = [];
+    if (oppId) ids.push(oppId);
+    multiResults.forEach(r => { if (r.playerId !== myId) ids.push(r.playerId); });
+    const missing = ids.filter(id => id && !playersAvatarMapRef.current[id]);
+    if (missing.length === 0) return;
+    supabase.from('profiles').select('id, avatar_emoji').in('id', missing)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const updates: Record<string, string> = {};
+          for (const p of data) updates[p.id] = p.avatar_emoji ?? '👤';
+          setPlayersAvatarMap(prev => ({ ...prev, ...updates }));
+        }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, oppId, multiResults]);
 
   // ── Back-button abandon guard ──────────────────────────────────────────────
   const isActiveGame = (phase === 'spinning' || phase === 'playing' || phase === 'waiting')
@@ -212,21 +340,46 @@ export default function StopOnlineScreen() {
     return unsub;
   }, [navigation]);
 
-  // ── Timer (realtime only) ──────────────────────────────────────────────────
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  // ── Timer ─────────────────────────────────────────────────────────────────
+  const stopTimerSound = useCallback(async () => {
+    if (timerSoundRef.current) {
+      await timerSoundRef.current.stopAsync().catch(() => {});
+      await timerSoundRef.current.unloadAsync().catch(() => {});
+      timerSoundRef.current = null;
+    }
   }, []);
 
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    stopTimerSound();
+  }, [stopTimerSound]);
+
   useEffect(() => {
-    if (phase !== 'playing' || gameMode !== 'realtime') return;
+    if (phase !== 'playing') return;
+    setTimeLeft(TIMER);
+
+    Audio.Sound.createAsync(
+      require('@/assets/audio/som_relogio_stop.mp3'),
+      { shouldPlay: true, volume: 0.7 },
+    ).then(({ sound }) => {
+      timerSoundRef.current = sound;
+    }).catch(() => {});
+
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (t <= 1) { stopTimer(); doSubmitRef.current(); return 0; }
-        return t - 1;
+        const next = t - 1;
+        // P2 async: popup quando o timer bate no mesmo valor que P1 tinha ao dar Stop
+        if (isCountUpRef.current && asyncTimeLimitRef.current < TIMER && next <= (TIMER - asyncTimeLimitRef.current)) {
+          stopTimer();
+          setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
+          return TIMER - asyncTimeLimitRef.current;
+        }
+        if (next <= 0) { stopTimer(); doSubmitRef.current(); return 0; }
+        return next;
       });
     }, 1000);
     return stopTimer;
-  }, [phase, gameMode, stopTimer]);
+  }, [phase, stopTimer]);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
   useEffect(() => () => {
@@ -250,6 +403,7 @@ export default function StopOnlineScreen() {
     coinsAwardedRef.current  = false;
     pendingResultsRef.current = null;
     setCoinDelta(null);
+    setContested(new Set());
 
     const targetIdx  = LETTERS.indexOf(targetLetter);
     const LC         = LETTERS.length;
@@ -279,7 +433,7 @@ export default function StopOnlineScreen() {
         Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, bounciness: 12 }),
       ]).start();
     }, lastT));
-    refs.push(setTimeout(() => { setTimeLeft(TIMER); setPhase('playing'); }, lastT + 1100));
+    refs.push(setTimeout(() => { setLetter(targetLetter); setTimeLeft(TIMER); setPhase('playing'); }, lastT + 1100));
     setPhase('spinning');
   }, [scaleAnim]);
 
@@ -299,6 +453,8 @@ export default function StopOnlineScreen() {
   // Funciona tanto para 1v1 (needed=2) quanto para N jogadores
   const checkBothSubmitted = useCallback(async (rId: string) => {
     if (phaseRef.current === 'validating' || phaseRef.current === 'result') return;
+    // Não processa resultado se o jogador ainda está no matchmaking (nunca jogou)
+    if (phaseRef.current === 'matchmaking') return;
 
     const needed = activePCountRef.current;
     const { data } = await supabase
@@ -309,6 +465,7 @@ export default function StopOnlineScreen() {
     const opp = data.find(r => r.player_id !== playerIdRef.current);
     if (!me) return;
 
+    if (opp?.player_id) setOppId(opp.player_id);
     const oppPlayerName = roomPlayersRef.current.find(p => p.id !== playerIdRef.current)?.name ?? 'Adversário';
     setOppName(oppPlayerName);
     setAbandoned(null);
@@ -356,6 +513,8 @@ export default function StopOnlineScreen() {
             const players: PlayerInfo[] = Array.isArray(room.players)
               ? (room.players as PlayerInfo[])
               : [];
+            const opp = players.find(p => p.id !== playerIdRef.current);
+            if (opp) { setOppName(opp.name); setOppId(opp.id); }
             startMatchFromRoom(room.letter as string, players);
           }
 
@@ -386,6 +545,10 @@ export default function StopOnlineScreen() {
 
           setP1Rematch(Boolean(room.p1_rematch));
           setP2Rematch(Boolean(room.p2_rematch));
+          // P1 cria sala de revanche quando ambos confirmam (resolve race condition)
+          if (Boolean(room.p1_rematch) && Boolean(room.p2_rematch) && isP1Ref.current && !isMatchedRef.current) {
+            doCreateRematchRef.current();
+          }
           if (room.rematch_room_id && !isP1Ref.current) {
             joinRematchRoomRef.current?.(room.rematch_room_id as string);
           }
@@ -395,14 +558,21 @@ export default function StopOnlineScreen() {
         { event: '*', schema: 'public', table: 'stop_answers', filter: `room_id=eq.${rId}` },
         () => checkBothSubmitted(rId)
       )
-      // Não-P1 recebe as categorias de P1
+      // Não-P1 recebe as categorias de P1 — preserva a ordem exata de P1
       .on('broadcast', { event: 'cats_sync' }, ({ payload }) => {
         const keys = (payload as { cats: string[] }).cats;
-        const cats = ALL_STOP_CATEGORIES.filter(c => keys.includes(c.key));
+        const cats = keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
         if (cats.length > 0) { setGameCategories(cats); gameCatsRef.current = cats; }
       })
       // Qualquer jogador clicou STOP → todos param
       .on('broadcast', { event: 'stop_signal' }, () => { doSubmitRef.current(); })
+      // Validação do adversário chegou — armazena na ref para o run() usar
+      .on('broadcast', { event: 'validation_result' }, ({ payload }) => {
+        const p = payload as { playerId: string; validation: Partial<Record<string, BankResult>> };
+        if (p.playerId !== playerIdRef.current) {
+          oppValidationBroadcastRef.current = p.validation;
+        }
+      })
       // Notificação de abandono em 1v1
       .on('broadcast', { event: 'abandoned' }, () => {
         if (abandonedRef.current || activePCountRef.current > 2) return;
@@ -420,6 +590,8 @@ export default function StopOnlineScreen() {
 
   // ── Rematch ────────────────────────────────────────────────────────────────
   const joinRematchRoom = useCallback(async (newRoomId: string) => {
+    isMatchedRef.current = true;
+    isCountUpRef.current = false; // revanche é sempre realtime
     roomIdRef.current = newRoomId;
     const { data: room } = await supabase
       .from('stop_rooms').select('letter').eq('id', newRoomId).single();
@@ -433,25 +605,35 @@ export default function StopOnlineScreen() {
 
   useEffect(() => { joinRematchRoomRef.current = joinRematchRoom; }, [joinRematchRoom]);
 
-  const requestRematch = useCallback(async () => {
+  // Criação efetiva da sala de revanche — idempotente via rematchCreatingRef
+  const doCreateRematch = useCallback(async () => {
+    if (rematchCreatingRef.current || !isP1Ref.current) return;
+    rematchCreatingRef.current = true;
+    isMatchedRef.current = true;
     const rId = roomIdRef.current;
-    if (!rId) return;
-    const col = isP1Ref.current ? 'p1_rematch' : 'p2_rematch';
-    await supabase.from('stop_rooms').update({ [col]: true }).eq('id', rId);
-    if (isP1Ref.current) setP1Rematch(true); else setP2Rematch(true);
+    if (!rId) { rematchCreatingRef.current = false; return; }
 
     const { data: room } = await supabase
-      .from('stop_rooms').select('p1_rematch,p2_rematch,player1_id,player2_id').eq('id', rId).single();
-    if (!room || !(room.p1_rematch && room.p2_rematch) || !isP1Ref.current) return;
+      .from('stop_rooms').select('player1_id,player2_id').eq('id', rId).single();
+    if (!room) { rematchCreatingRef.current = false; return; }
 
-    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    // Novas categorias e nova letra para a revanche
+    const newSlotKeys = pickSixKeys(allCategoriesRef.current);
+    const newCats = newSlotKeys
+      .map(k => allCategoriesRef.current.find(c => c.key === k))
+      .filter(Boolean) as StopCategory[];
+    setSlots(newSlotKeys);
+    setGameCategories(newCats);
+    gameCatsRef.current = newCats;
+
+    const newLetter = pickOnlineLetter(newCats);
     const { data: newRoom } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, status: 'active', mode: 'realtime',
                 player1_id: room.player1_id, player1_name: playerNameRef.current,
                 player2_id: room.player2_id })
       .select().single();
-    if (!newRoom) return;
+    if (!newRoom) { rematchCreatingRef.current = false; return; }
 
     await supabase.from('stop_rooms').update({ rematch_room_id: newRoom.id }).eq('id', rId);
     roomIdRef.current = newRoom.id;
@@ -459,8 +641,35 @@ export default function StopOnlineScreen() {
     setP1Rematch(false); setP2Rematch(false);
     setAbandoned(null);
     subscribeToRoom(newRoom.id);
+    // Envia novas categorias para P2 (aguarda subscription estar pronta)
+    setTimeout(() => {
+      channelRef.current?.send({
+        type: 'broadcast', event: 'cats_sync',
+        payload: { cats: newCats.map(c => c.key) },
+      });
+    }, 600);
     startSpin(newLetter);
   }, [startSpin, subscribeToRoom]);
+
+  useEffect(() => { doCreateRematchRef.current = doCreateRematch; }, [doCreateRematch]);
+
+  const requestRematch = useCallback(async () => {
+    const rId = roomIdRef.current;
+    if (!rId) return;
+    const col = isP1Ref.current ? 'p1_rematch' : 'p2_rematch';
+    await supabase.from('stop_rooms').update({ [col]: true }).eq('id', rId);
+    if (isP1Ref.current) setP1Rematch(true); else setP2Rematch(true);
+
+    if (!isP1Ref.current) return; // P2 aguarda P1 criar via subscription
+
+    // P1: verifica imediatamente se P2 já marcou (clicou primeiro)
+    const { data: room } = await supabase
+      .from('stop_rooms').select('p1_rematch,p2_rematch').eq('id', rId).single();
+    if (room?.p1_rematch && room?.p2_rematch) {
+      doCreateRematchRef.current();
+    }
+    // Caso contrário, subscription dispara doCreateRematch quando P2 clicar
+  }, []);
 
   // ── Abandon ────────────────────────────────────────────────────────────────
   const handleAbandon = useCallback(async () => {
@@ -523,13 +732,56 @@ export default function StopOnlineScreen() {
 
     if (isAsync) {
       if (isP1Ref.current) {
-        const deadline = new Date(Date.now() + ASYNC_DEADLINE_MS).toISOString();
+        // Salva o tempo que P1 utilizou para que P2 jogue no mesmo ritmo
+        const elapsed = Math.max(1, TIMER - timeLeftRef.current);
         await supabase.from('stop_rooms')
-          .update({ status: 'async_wait_p2', deadline }).eq('id', rId);
-        setPhase('async_submitted');
-      } else {
+          .update({ p1_elapsed_seconds: elapsed })
+          .eq('id', rId);
+
+        // Valida as respostas de P1 em background e salva no DB.
+        // Quando P2 jogar (horas/dias depois), a validação já estará disponível.
+        const bgLtr  = ltr;
+        const bgCats = gameCatsRef.current;
+        const bgAns  = ans;
+        const bgRId  = rId;
+        const bgId   = playerIdRef.current;
+        ;(async () => {
+          try {
+            const bgMap = await validateWithBank(bgLtr, bgAns, bgCats);
+            const finalBgMap = { ...bgMap };
+            const bgUnverified = bgCats.filter(c => bgMap[c.key] === 'unverified');
+            const bgPadreCat   = bgCats.find(c => c.key === 'padre' && finalBgMap['padre'] === 'valid');
+            if (bgUnverified.length > 0 || bgPadreCat) {
+              await Promise.all([
+                ...bgUnverified.map(async (cat) => {
+                  const a = (bgAns[cat.key] ?? '').trim();
+                  if (!a) return;
+                  const result = await validateWithAI(bgLtr, a, cat.key, cat.label);
+                  if (result !== null) finalBgMap[cat.key] = result ? 'ai_valid' : 'ai_invalid';
+                }),
+                ...(bgPadreCat ? [(async () => {
+                  const a = (bgAns['padre'] ?? '').trim();
+                  if (!a) return;
+                  const result = await validateWithAI(bgLtr, a, 'padre', bgPadreCat.label);
+                  if (result === false) finalBgMap['padre'] = 'ai_invalid';
+                })()] : []),
+              ]);
+            }
+            await supabase.from('stop_answers')
+              .update({ validation: finalBgMap })
+              .eq('room_id', bgRId)
+              .eq('player_id', bgId);
+          } catch { /* falha silenciosa — fallback banco-only fica disponível */ }
+        })();
+      }
+      // Verifica se o outro jogador já enviou — quem terminar por último fecha a partida
+      const { data: bothAnswers } = await supabase
+        .from('stop_answers').select('player_id').eq('room_id', rId).eq('submitted', true);
+      if ((bothAnswers?.length ?? 0) >= 2) {
         await supabase.from('stop_rooms').update({ status: 'completed' }).eq('id', rId);
         checkBothSubmitted(rId);
+      } else {
+        setPhase('async_submitted');
       }
     } else {
       checkBothSubmitted(rId);
@@ -542,20 +794,40 @@ export default function StopOnlineScreen() {
   const setAnswer  = useCallback((key: string, value: string) => {
     setAnswers(prev => ({ ...prev, [key]: value }));
   }, []);
-  const toggleCat  = useCallback((key: string) => {
-    setSelectedKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) { if (next.size > MIN_CATS) next.delete(key); }
-      else next.add(key);
-      return next;
-    });
-  }, []);
 
   const handleShuffle = useCallback(async () => {
-    if (!user || !profile || profile.coins < 1) return;
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
-    setSelectedKeys(randomDefaultKeys(6));
+    if (!user || !profile || profile.coins < 5) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 5 🪙 para sortear novas categorias.');
+      return;
+    }
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -5 });
+    setSlots(pickSixKeys(allCategoriesRef.current));
+    setCoinSpend(-5);
     refreshProfile();
+  }, [user, profile, refreshProfile]);
+
+  const cycleCat = useCallback(async (slotIdx: number, dir: 1 | -1) => {
+    if (!user || !profile) return;
+    if (profile.coins < 1) {
+      Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para trocar uma categoria.');
+      return;
+    }
+    const cats         = allCategoriesRef.current;
+    const currentSlots = slotsRef.current;
+    const currentKey   = currentSlots[slotIdx];
+    const usedKeys     = new Set(currentSlots.filter((_, i) => i !== slotIdx));
+    let   nextIdx      = ((cats.findIndex(c => c.key === currentKey) + dir) + cats.length) % cats.length;
+    let   attempts     = 0;
+    while (usedKeys.has(cats[nextIdx].key) && attempts < cats.length) {
+      nextIdx = ((nextIdx + dir) + cats.length) % cats.length;
+      attempts++;
+    }
+    if (cats[nextIdx].key === currentKey) return; // nenhuma categoria disponível
+    const newSlots = [...currentSlots];
+    newSlots[slotIdx] = cats[nextIdx].key;
+    setSlots(newSlots);
+    setCoinSpend(-1);
+    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 }).then(() => refreshProfile());
   }, [user, profile, refreshProfile]);
 
   const handleHint = useCallback(async (cat: StopCategory) => {
@@ -572,6 +844,8 @@ export default function StopOnlineScreen() {
       word = await getAIHint(letterRef.current, cat.key, cat.label);
       if (word) setHints(prev => ({ ...prev, [cat.key]: word! }));
     }
+
+    if (phaseRef.current !== 'playing') { setLoadingHint(null); return; }
 
     if (!word) {
       Alert.alert('Dica indisponível', 'Não encontramos sugestão para essa categoria com essa letra.');
@@ -591,7 +865,7 @@ export default function StopOnlineScreen() {
     if (!silent) setLoadingRooms(true);
     const { data } = await supabase
       .from('stop_rooms')
-      .select('id, letter, player1_name, created_at, max_players, players')
+      .select('id, letter, player1_id, player1_name, created_at, max_players, players')
       .eq('status', 'waiting').eq('mode', 'realtime').eq('visibility', 'public')
       .neq('player1_id', playerIdRef.current)
       .order('created_at', { ascending: true }).limit(10);
@@ -609,22 +883,68 @@ export default function StopOnlineScreen() {
     if (!silent) setLoadingAsync(true);
     const pid = playerIdRef.current;
 
-    // Somente partidas onde eu sou jogador (P1 ou P2 já definido)
     const { data } = await supabase
       .from('stop_rooms')
-      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status')
+      .select('id, letter, player1_id, player2_id, player1_name, player2_name, deadline, status, p1_elapsed_seconds, p1_dismissed_at, p2_dismissed_at, category_keys')
       .eq('mode', 'async')
       .in('status', ['async_wait_p2', 'async_p2', 'completed'])
       .or(`player1_id.eq.${pid},player2_id.eq.${pid}`)
       .order('created_at', { ascending: false })
       .limit(20);
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const filtered = ((data as AsyncGame[]) ?? []).filter(g =>
-      g.status !== 'completed' || !g.deadline || g.deadline > oneDayAgo
-    );
+    const games = (data as AsyncGame[]) ?? [];
+
+    // Auto-dismiss: partidas concluídas com prazo há mais de 7 dias
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const toAutoDismiss = games.filter(g => {
+      if (g.status !== 'completed') return false;
+      if (!g.deadline || g.deadline > sevenDaysAgo) return false;
+      const isP1 = g.player1_id === pid;
+      return isP1 ? !g.p1_dismissed_at : !g.p2_dismissed_at;
+    });
+    for (const g of toAutoDismiss) {
+      const field = g.player1_id === pid ? 'p1_dismissed_at' : 'p2_dismissed_at';
+      supabase.from('stop_rooms').update({ [field]: new Date().toISOString() }).eq('id', g.id).then(() => {});
+    }
+    const autoDismissedIds = new Set(toAutoDismiss.map(g => g.id));
+
+    // Filtra: exclui partidas que o jogador atual já dispensou
+    const filtered = games.filter(g => {
+      if (autoDismissedIds.has(g.id)) return false;
+      const isP1 = g.player1_id === pid;
+      return isP1 ? !g.p1_dismissed_at : !g.p2_dismissed_at;
+    });
     setAsyncGames(filtered);
     if (!silent) setLoadingAsync(false);
+
+    const playerIds = [...new Set(filtered.flatMap(g =>
+      [g.player1_id, g.player2_id].filter(Boolean) as string[]
+    ))];
+    if (playerIds.length > 0) {
+      supabase.from('profiles').select('id, avatar_emoji').in('id', playerIds)
+        .then(({ data: pData }) => {
+          if (pData && pData.length > 0) {
+            const updates: Record<string, string> = {};
+            for (const p of pData) updates[p.id] = p.avatar_emoji ?? '👤';
+            setPlayersAvatarMap(prev => ({ ...prev, ...updates }));
+          }
+        });
+    }
+  }, []);
+
+  const dismissAsyncGame = useCallback(async (game: AsyncGame) => {
+    const pid = playerIdRef.current;
+    if (!pid) return;
+    const field = game.player1_id === pid ? 'p1_dismissed_at' : 'p2_dismissed_at';
+    const now = new Date().toISOString();
+    setDismissedIds(prev => new Set([...prev, game.id]));
+    await supabase.from('stop_rooms').update({ [field]: now }).eq('id', game.id);
+    // Hard delete quando os dois dispensaram
+    const otherField = field === 'p1_dismissed_at' ? 'p2_dismissed_at' : 'p1_dismissed_at';
+    const otherDismissed = field === 'p1_dismissed_at' ? game.p2_dismissed_at : game.p1_dismissed_at;
+    if (otherDismissed) {
+      supabase.from('stop_rooms').delete().eq('id', game.id).then(() => {});
+    }
   }, []);
 
   // Auto-refresh selection screen data
@@ -658,14 +978,27 @@ export default function StopOnlineScreen() {
     const rId  = roomIdRef.current;
     const myId = playerIdRef.current;
 
+    // Limpa broadcast anterior antes de entrar na fase de validação
+    oppValidationBroadcastRef.current = null;
+
     const run = async () => {
+      const validationStartMs = Date.now();
+      const MIN_VALIDATION_MS = 7000;
+      const goToResult = () => {
+        const elapsed   = Date.now() - validationStartMs;
+        const remaining = Math.max(0, MIN_VALIDATION_MS - elapsed);
+        setTimeout(() => setPhase('result'), remaining);
+      };
+
       setAiLoading(false);
       setWaitingOpp(false);
+      setValidatingStep(0);
       console.log('[StopOnline] Iniciando validação. letra:', ltr, 'categorias:', cats.map(c => c.key));
 
       // ── Step 1: Validate MY answers (bank + AI) ──────────────────────────
       const myMap = await validateWithBank(ltr, pending.meAnswers, cats);
       setMyBankMap(myMap);
+      setValidatingStep(1);
       console.log('[StopOnline] Banco (minhas):', myMap);
 
       const finalMyMap = { ...myMap };
@@ -696,7 +1029,7 @@ export default function StopOnlineScreen() {
         setAiLoading(false);
       }
 
-      // ── Step 2: Save MY validation to DB ─────────────────────────────────
+      // ── Step 2: Save MY validation to DB + broadcast para adversário ────────
       // The phaseRef guard in checkBothSubmitted means this UPDATE cannot
       // re-trigger the 'validating' phase, so there is no loop risk here.
       if (rId && myId && !pending.skipCoins) {
@@ -707,35 +1040,48 @@ export default function StopOnlineScreen() {
         if (upErr) console.warn('[StopOnline] Erro ao salvar validation:', upErr.message);
         else console.log('[StopOnline] Minha validation salva no DB:', finalMyMap);
       }
+      // Broadcast para que o adversário (realtime) receba sem precisar ler o DB
+      if (gameModeRef.current === 'realtime' && rId && myId) {
+        channelRef.current?.send({
+          type: 'broadcast', event: 'validation_result',
+          payload: { playerId: myId, validation: finalMyMap },
+        });
+      }
 
-      // ── Step 3: Read opponent's stored validation (max ~6 s wait) ────────
+      // ── Step 3: Aguarda validação do adversário (broadcast ou DB) ───────────
       let finalOppMap: Partial<Record<string, BankResult>> = {};
       const hasOpp = Object.keys(pending.oppAnswers).length > 0;
 
-      if (rId && myId && hasOpp && !pending.skipCoins) {
-        setWaitingOpp(true);
-        for (let i = 0; i < 3; i++) {
-          const { data } = await supabase
-            .from('stop_answers')
-            .select('validation')
-            .eq('room_id', rId)
-            .neq('player_id', myId)
-            .limit(1);
-          const stored = data?.[0]?.validation;
-          console.log(`[StopOnline] Lendo validation do adv (tentativa ${i + 1}):`, stored ?? 'null');
-          if (stored && Object.keys(stored).length > 0) {
-            finalOppMap = stored as Partial<Record<string, BankResult>>;
+      if (hasOpp) {
+        setValidatingStep(2);
+        // Aguarda até 15 s: broadcast chega primeiro (realtime), depois tenta DB
+        const TIMEOUT_MS = 15000;
+        const POLL_MS    = 400;
+        const t0 = Date.now();
+        while (Date.now() - t0 < TIMEOUT_MS) {
+          if (oppValidationBroadcastRef.current) {
+            finalOppMap = oppValidationBroadcastRef.current;
+            oppValidationBroadcastRef.current = null;
+            console.log('[StopOnline] Validation do adv recebida via broadcast');
             break;
           }
-          if (i < 2) await new Promise<void>(r => setTimeout(r, 2000));
+          if (rId && myId) {
+            const { data } = await supabase
+              .from('stop_answers').select('validation')
+              .eq('room_id', rId).neq('player_id', myId).limit(1);
+            const stored = data?.[0]?.validation;
+            if (stored && Object.keys(stored).length > 0) {
+              finalOppMap = stored as Partial<Record<string, BankResult>>;
+              console.log('[StopOnline] Validation do adv lida do DB');
+              break;
+            }
+          }
+          await new Promise<void>(r => setTimeout(r, POLL_MS));
         }
-        setWaitingOpp(false);
-      }
-
-      // Fallback: opponent's validation not in DB yet → bank-only for display
-      if (hasOpp && Object.keys(finalOppMap).length === 0) {
-        finalOppMap = await validateWithBank(ltr, pending.oppAnswers, cats);
-        console.log('[StopOnline] Fallback banco (adv):', finalOppMap);
+        if (Object.keys(finalOppMap).length === 0) {
+          console.warn('[StopOnline] Validation do adv não encontrada após timeout — usando banco apenas');
+          finalOppMap = await validateWithBank(ltr, pending.oppAnswers, cats);
+        }
       }
 
       setOppBankMap(finalOppMap);
@@ -807,12 +1153,12 @@ export default function StopOnlineScreen() {
         }
       }
 
-      setPhase('result');
+      goToResult();
     };
 
     run().catch((err) => {
       console.error('[StopOnline] Erro inesperado na validação:', err);
-      setPhase('result');
+      goToResult();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
@@ -820,17 +1166,19 @@ export default function StopOnlineScreen() {
   // ── Create realtime room ──────────────────────────────────────────────────
   const createRealtimeRoom = useCallback(async (visibility: 'public' | 'private', nPlayers = 2) => {
     if (!playerIdRef.current) return;
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     setPhase('matchmaking');
     setPrivateRoomCode(null);
-    isMatchedRef.current = false;
+    isMatchedRef.current      = false;
+    asyncTimeLimitRef.current = TIMER;
+    isCountUpRef.current      = false;
 
     const mp       = nPlayers;
     const isMulti  = mp > 2 && visibility === 'public';
     const p1Info   = [{ id: playerIdRef.current, name: playerNameRef.current }];
-    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    const newLetter = pickOnlineLetter(cats);
     const roomCode  = visibility === 'private' ? genRoomCode() : null;
 
     setMaxPlayers(mp); maxPlayersRef.current = mp;
@@ -858,7 +1206,7 @@ export default function StopOnlineScreen() {
 
     if (error || !newRoom) { setPhase('error'); setStatusMsg('Erro ao criar sala.'); return; }
 
-    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true);
+    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true); isCountUpRef.current = false;
     setLetter(newLetter); letterRef.current = newLetter;
     if (roomCode) setPrivateRoomCode(roomCode);
     subscribeToRoom(newRoom.id);
@@ -897,7 +1245,7 @@ export default function StopOnlineScreen() {
         }
       }, 5 * 60_000);
     }
-  }, [selectedKeys, subscribeToRoom]);
+  }, [subscribeToRoom]);
 
   const handleCriarSalaPublica  = useCallback(() => createRealtimeRoom('public', maxPlayers),  [createRealtimeRoom, maxPlayers]);
   const handleCriarSalaPrivada  = useCallback(() => createRealtimeRoom('private', 2),           [createRealtimeRoom]);
@@ -905,7 +1253,7 @@ export default function StopOnlineScreen() {
   // ── Join a realtime room from list ─────────────────────────────────────────
   const joinRealtimeRoom = useCallback(async (room: RealtimeRoom) => {
     if (!playerIdRef.current) return;
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('realtime'); gameModeRef.current = 'realtime';
     isMatchedRef.current = false;
@@ -928,21 +1276,27 @@ export default function StopOnlineScreen() {
     setMaxPlayers(room.max_players); maxPlayersRef.current = room.max_players;
     activePCountRef.current = room.max_players;
 
+    setOppName(room.player1_name ?? 'Adversário');
+    if (room.player1_id) setOppId(room.player1_id);
     subscribeToRoom(room.id);
 
     if (joinResult.is_full) {
-      // Sala cheia → subscription vai disparar startMatchFromRoom para todos
-      setStatusMsg('Sala completa! Iniciando... 🎯');
+      // Sala cheia → P2 inicia diretamente (não pode confiar na subscription,
+      // pois o evento 'active' pode ter disparado antes de P2 estar inscrito)
+      startMatchFromRoom(room.letter, [
+        { id: room.player1_id ?? '', name: room.player1_name ?? 'Adversário' },
+        { id: playerIdRef.current, name: playerNameRef.current },
+      ]);
     } else {
       // Ainda há vagas: aguarda mais jogadores ou timeout de P1
       setStatusMsg(`${joinResult.player_count}/${joinResult.max_players} jogadores`);
     }
-  }, [selectedKeys, subscribeToRoom, fetchRealtimeRooms]);
+  }, [subscribeToRoom, fetchRealtimeRooms, startMatchFromRoom]);
 
   // ── Join private room by code ─────────────────────────────────────────────
   const joinByCode = useCallback(async () => {
     const code = joinCodeInput.trim().toUpperCase();
-    if (code.length < 4) {
+    if (code.length !== 6) {
       Alert.alert('Código inválido', 'Digite o código de 6 caracteres da sala.');
       return;
     }
@@ -959,21 +1313,23 @@ export default function StopOnlineScreen() {
   }, [joinCodeInput, joinRealtimeRoom]);
 
   // ── Async flow (VAMOS JOGAR!) ──────────────────────────────────────────────
+  // P2 só entra em partidas que P1 já terminou (p1_elapsed_seconds definido)
   const handleVamosJogar = useCallback(async () => {
     if (!playerIdRef.current) return;
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
+    const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('async'); gameModeRef.current = 'async';
     setPhase('matchmaking'); setStatusMsg('Procurando partida...');
     isMatchedRef.current = false;
 
-    // Find the oldest async game waiting for P2
+    // Busca a partida mais antiga onde P1 já terminou (p1_elapsed_seconds preenchido)
     const { data: available } = await supabase
       .from('stop_rooms').select('*')
       .eq('mode', 'async').eq('status', 'async_wait_p2')
       .is('player2_id', null)
       .neq('player1_id', playerIdRef.current)
       .gt('deadline', new Date().toISOString())
+      .not('p1_elapsed_seconds', 'is', null)
       .order('created_at', { ascending: true }).limit(1);
 
     if (available && available.length > 0) {
@@ -986,29 +1342,41 @@ export default function StopOnlineScreen() {
       if (claimed && claimed.length > 0) {
         isMatchedRef.current = true;
         isP1Ref.current = false; setIsPlayer1(false);
+        isCountUpRef.current = true;
         roomIdRef.current = room.id;
         setLetter(room.letter); letterRef.current = room.letter;
+        setOppName(room.player1_name ?? 'Adversário');
+        setOppId(room.player1_id);
         setStatusMsg('Partida encontrada! 🎯');
+        const p1Keys: string[] = room.category_keys ?? [];
+        if (p1Keys.length > 0) {
+          const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
+          if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
+        }
+        asyncTimeLimitRef.current = (room.p1_elapsed_seconds > 0) ? room.p1_elapsed_seconds : TIMER;
         startSpin(room.letter);
         return;
       }
-      // Another player grabbed it — create our own
+      // Outro jogador pegou antes — cria a própria sala
     }
 
-    // Create a new async room and play as P1
-    const newLetter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    // P1: cria a sala e joga. Fica visível para P2 somente após P1 terminar.
+    const newLetter = pickOnlineLetter(cats);
+    const deadline  = new Date(Date.now() + ASYNC_DEADLINE_MS).toISOString();
     const { data: newRoom, error } = await supabase
       .from('stop_rooms')
       .insert({ letter: newLetter, player1_id: playerIdRef.current,
-                player1_name: playerNameRef.current, mode: 'async', status: 'waiting' })
+                player1_name: playerNameRef.current, mode: 'async',
+                status: 'async_wait_p2', deadline,
+                category_keys: cats.map(c => c.key) })
       .select().single();
 
     if (error || !newRoom) { setPhase('error'); setStatusMsg('Erro ao criar partida.'); return; }
 
-    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true);
+    roomIdRef.current = newRoom.id; isP1Ref.current = true; setIsPlayer1(true); isCountUpRef.current = false;
     setLetter(newLetter); letterRef.current = newLetter;
     startSpin(newLetter);
-  }, [selectedKeys, startSpin]);
+  }, [startSpin]);
 
   // ── Join a specific async game from list (as P2) ───────────────────────────
   const joinAsyncGame = useCallback(async (game: AsyncGame) => {
@@ -1017,8 +1385,6 @@ export default function StopOnlineScreen() {
       Alert.alert('Prazo expirado', 'Esta partida já expirou.');
       fetchAsyncGames(true); return;
     }
-    const cats = ALL_STOP_CATEGORIES.filter(c => selectedKeys.has(c.key));
-    setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('async'); gameModeRef.current = 'async';
     setPhase('matchmaking'); setStatusMsg('Entrando na partida...');
 
@@ -1032,10 +1398,27 @@ export default function StopOnlineScreen() {
     }
 
     isP1Ref.current = false; setIsPlayer1(false);
+    isCountUpRef.current = true;
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
+    setOppName(game.player1_name ?? 'Adversário');
+    setOppId(game.player1_id);
+    // P1 sempre terminou antes de P2 entrar — busca categorias e tempo exato
+    try {
+      const { data: rd } = await supabase
+        .from('stop_rooms').select('category_keys, p1_elapsed_seconds').eq('id', game.id).single();
+      const p1Keys: string[] = (rd as { category_keys?: string[] | null } | null)?.category_keys ?? [];
+      if (p1Keys.length > 0) {
+        const p1Cats = p1Keys.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
+        if (p1Cats.length > 0) { setGameCategories(p1Cats); gameCatsRef.current = p1Cats; }
+      }
+      const p1Elapsed = (rd as { p1_elapsed_seconds?: number | null } | null)?.p1_elapsed_seconds;
+      asyncTimeLimitRef.current = (p1Elapsed != null && p1Elapsed > 0) ? p1Elapsed : TIMER;
+    } catch {
+      asyncTimeLimitRef.current = TIMER;
+    }
     startSpin(game.letter);
-  }, [selectedKeys, startSpin, fetchAsyncGames]);
+  }, [startSpin, fetchAsyncGames]);
 
   // ── View result of a completed async game ─────────────────────────────────
   const viewAsyncResult = useCallback(async (game: AsyncGame) => {
@@ -1050,19 +1433,49 @@ export default function StopOnlineScreen() {
 
     if (!me) { Alert.alert('Aguarde', 'Você ainda não enviou suas respostas.'); return; }
 
-    const answerKeys = Object.keys(me.answers ?? {});
-    const cats = ALL_STOP_CATEGORIES.filter(c => answerKeys.includes(c.key));
+    // Reconstrói categorias na ordem original de P1 (via category_keys) ou fallback por chaves de resposta
+    const catKeyOrder: string[] = game.category_keys && game.category_keys.length > 0
+      ? game.category_keys
+      : Object.keys(me.answers ?? {});
+    const cats = catKeyOrder
+      .map(k => allCategoriesRef.current.find(c => c.key === k))
+      .filter(Boolean) as StopCategory[];
 
     roomIdRef.current = game.id;
     setLetter(game.letter); letterRef.current = game.letter;
     if (cats.length > 0) { setGameCategories(cats); gameCatsRef.current = cats; }
+    setGameMode('async'); gameModeRef.current = 'async';
 
     setP1Rematch(false); setP2Rematch(false);
 
     if (opp) {
-      const pid = playerIdRef.current;
       const opponentName = (game.player1_id === pid ? game.player2_name : game.player1_name) ?? 'Adversário';
+      const opponentId   = game.player1_id === pid ? game.player2_id : game.player1_id;
       setOppName(opponentName);
+      if (opponentId) setOppId(opponentId);
+
+      // Se ambos já têm validação salva no banco, vai direto ao resultado (sem re-validar com IA)
+      const myVal  = me.validation  as Partial<Record<string, BankResult>> | null;
+      const oppVal = opp.validation as Partial<Record<string, BankResult>> | null;
+      if (myVal && Object.keys(myVal).length > 0 && oppVal && Object.keys(oppVal).length > 0) {
+        setMyBankMap(myVal);
+        setOppBankMap(oppVal);
+        setAbandoned(null);
+        const theCats = cats.length > 0 ? cats : gameCatsRef.current;
+        const myVC  = theCats.filter(c => myVal[c.key]  === 'valid' || myVal[c.key]  === 'ai_valid').length;
+        const myS   = myVC  * 10 + (theCats.length > 0 && myVC  === theCats.length ? 20 : 0);
+        const oppVC = theCats.filter(c => oppVal[c.key] === 'valid' || oppVal[c.key] === 'ai_valid').length;
+        const oppS  = oppVC * 10 + (theCats.length > 0 && oppVC === theCats.length ? 20 : 0);
+        setMyResult({ answers: me.answers, score: myS, validCount: myVC });
+        setOppResult({ answers: opp.answers, score: oppS, validCount: oppVC });
+        const delta = myS > oppS ? COINS.WIN_AS : myS === oppS ? COINS.DRAW_AS : COINS.LOSE_AS;
+        awardCoinsRef.current(delta + myVC * 2);
+        if (myS > 0 && pid) recordScoreEvent(pid, myS, 'stop_online').catch(() => {});
+        setPhase('result');
+        return;
+      }
+
+      // Primeira vez visualizando — valida com IA e salva resultado no banco
       setAbandoned(null);
       pendingResultsRef.current = { meAnswers: me.answers, oppAnswers: opp.answers, oppName: opponentName };
       setPhase('validating');
@@ -1078,7 +1491,7 @@ export default function StopOnlineScreen() {
 
   // ─────────────────────────────────── RENDERS ──────────────────────────────
 
-  const timerPct   = (timeLeft / TIMER) * 100;
+  const timerPct   = (timeLeft / TIMER) * 100; // P1/realtime: countdown de TIMER
   const timerColor = timeLeft > 30 ? C.green : timeLeft > 15 ? C.gold : C.red;
 
   // Login gate
@@ -1106,38 +1519,79 @@ export default function StopOnlineScreen() {
 
   // ── Category selection ─────────────────────────────────────────────────────
   if (phase === 'selecting') {
-    const numSelected = selectedKeys.size;
+    const canCycle = !!profile && profile.coins >= 1;
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Stop Online" subtitle="ESCOLHER CATEGORIAS" />
+          <GameHeader
+            title="Stop Online"
+            subtitle="CATEGORIAS"
+            right={
+              <View style={{ alignItems: 'flex-end' }}>
+                <ThemedText style={{ fontSize: 9, fontWeight: '700', letterSpacing: 0.8, color: C.gold }}>MOEDAS</ThemedText>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Image source={require('@/assets/images/moedas.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
+                  <ThemedText style={{ fontSize: 18, fontWeight: '900', color: C.gold, lineHeight: 22 }}>
+                    {profile?.coins ?? 0}
+                  </ThemedText>
+                </View>
+              </View>
+            }
+          />
+          <CoinsAnimation
+            amount={coinSpend ?? -1}
+            visible={coinSpend !== null}
+            onDone={() => setCoinSpend(null)}
+          />
           <ScrollView contentContainerStyle={[s.selectScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             showsVerticalScrollIndicator={false}>
 
-            <ThemedText type="subtitle" style={s.center}>Escolha as categorias</ThemedText>
-            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
-              Mínimo {MIN_CATS} · Selecionadas: {numSelected}
+            {/* Slot header */}
+            <View style={s.selectHeader}>
+              <ThemedText style={[s.selectTitle, { color: theme.text }]}>Categorias</ThemedText>
+              <TouchableOpacity
+                style={[s.shuffleBtn, (!profile || profile.coins < 5) && { opacity: 0.35 }]}
+                onPress={handleShuffle}
+                disabled={!profile || profile.coins < 5}
+                activeOpacity={0.8}>
+                <ThemedText style={s.shuffleBtnText}>🔀 Novas  −5 🪙</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12 }]}>
+              Use ‹ › para trocar cada categoria  (−1 🪙)
             </ThemedText>
 
-            <TouchableOpacity
-              style={[s.shuffleBtn, profile && profile.coins < 1 && { opacity: 0.4 }]}
-              onPress={handleShuffle}
-              disabled={!profile || profile.coins < 1}
-              activeOpacity={0.8}>
-              <ThemedText style={s.shuffleBtnText}>🔀  Novas categorias  −1 🪙</ThemedText>
-            </TouchableOpacity>
-
-            <View style={s.catGrid}>
-              {ALL_STOP_CATEGORIES.map(cat => {
-                const on = selectedKeys.has(cat.key);
+            {/* Slots */}
+            <View style={s.slotsContainer}>
+              {slots.map((key, idx) => {
+                const cat   = allCategories.find(c => c.key === key) ?? ALL_STOP_CATEGORIES.find(c => c.key === key);
+                const color = SLOT_COLORS[idx];
+                if (!cat) return null;
                 return (
-                  <TouchableOpacity key={cat.key} onPress={() => toggleCat(cat.key)} activeOpacity={0.75}
-                    style={[s.catChip, on
-                      ? { backgroundColor: BRAND, borderColor: BRAND }
-                      : { backgroundColor: 'transparent', borderColor: C.border }]}>
-                    <ThemedText style={[s.chipLabel, { color: on ? '#fff' : theme.textSecondary }]}
-                      numberOfLines={2}>{cat.label}</ThemedText>
-                  </TouchableOpacity>
+                  <View key={idx}
+                    style={[s.slotCard, { backgroundColor: theme.backgroundElement, borderColor: color + '44' }]}>
+                    <View style={[s.slotAccent, { backgroundColor: color }]} />
+                    <TouchableOpacity
+                      style={[s.arrowBtn, { backgroundColor: color + '18', borderColor: color + '55' }]}
+                      onPress={() => cycleCat(idx, -1)}
+                      disabled={!canCycle}
+                      activeOpacity={0.7}>
+                      <ThemedText style={[s.arrowText, { color, opacity: canCycle ? 1 : 0.35 }]}>‹</ThemedText>
+                    </TouchableOpacity>
+                    <View style={s.slotCenter}>
+                      <ThemedText style={[s.slotLabel, { color: theme.text }]} numberOfLines={2} adjustsFontSizeToFit>
+                        {cat.label}
+                      </ThemedText>
+                    </View>
+                    <TouchableOpacity
+                      style={[s.arrowBtn, { backgroundColor: color + '18', borderColor: color + '55' }]}
+                      onPress={() => cycleCat(idx, 1)}
+                      disabled={!canCycle}
+                      activeOpacity={0.7}>
+                      <ThemedText style={[s.arrowText, { color, opacity: canCycle ? 1 : 0.35 }]}>›</ThemedText>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>
@@ -1258,7 +1712,7 @@ export default function StopOnlineScreen() {
               const pid    = playerIdRef.current;
               const amP1   = game.player1_id === pid;
               const amP2   = game.player2_id === pid;
-              const isOpen = !amP1 && !amP2 && game.status === 'async_wait_p2';
+              const isOpen = !amP1 && !amP2 && game.status === 'async_wait_p2' && (game.p1_elapsed_seconds ?? 0) > 0;
               const isDone = game.status === 'completed';
               const expired = game.deadline ? new Date(game.deadline) < new Date() : false;
               const opp    = amP1 ? (game.player2_name || '?') : (game.player1_name || '?');
@@ -1266,7 +1720,7 @@ export default function StopOnlineScreen() {
 
               let icon = '⏳', label = '', sub = dl, canAct = false;
               if (isDone) {
-                icon = '🏁'; label = `vs ${opp}`; sub = 'Concluído';
+                icon = '🏁'; label = opp; sub = 'Concluído';
                 canAct = true;
               } else if (isOpen) {
                 icon = expired ? '⛔' : '⏰';
@@ -1278,30 +1732,53 @@ export default function StopOnlineScreen() {
                 label = expired ? 'Adversário não respondeu' : 'Aguardando resposta';
                 canAct = expired;
               } else if (amP2) {
-                icon = '✅'; label = `vs ${opp}`; sub = 'Sua resposta enviada';
+                icon = '✅'; label = opp; sub = 'Sua resposta enviada';
                 canAct = isDone;
               }
 
               return (
-                <ThemedView key={game.id} type="backgroundElement" style={s.asyncCard}>
-                  <View style={s.asyncCardLeft}>
-                    <ThemedText style={{ fontSize: 22 }}>{icon}</ThemedText>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText type="smallBold" numberOfLines={1}>{label}</ThemedText>
-                      <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>{sub}</ThemedText>
+                <Swipeable
+                  key={game.id}
+                  overshootRight={false}
+                  containerStyle={{ alignSelf: 'stretch' }}
+                  renderRightActions={() => (
+                    <TouchableOpacity
+                      style={s.deleteAction}
+                      onPress={() => dismissAsyncGame(game)}
+                      activeOpacity={0.8}
+                    >
+                      <ThemedText style={{ fontSize: 20 }}>🗑️</ThemedText>
+                      <ThemedText style={s.deleteActionTxt}>Excluir</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                >
+                  <ThemedView type="backgroundElement" style={s.asyncCard}>
+                    <View style={s.asyncCardLeft}>
+                      {(() => {
+                        const oppPid = amP1 ? game.player2_id : game.player1_id;
+                        const av = oppPid ? playersAvatarMap[oppPid] : null;
+                        return av
+                          ? <AvatarImage value={av} size={32} />
+                          : <ThemedText style={{ fontSize: 22 }}>{icon}</ThemedText>;
+                      })()}
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold" numberOfLines={1}>{label}</ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>{sub}</ThemedText>
+                      </View>
                     </View>
-                  </View>
-                  {isOpen && !expired ? (
-                    <TouchableOpacity style={s.enterBtn} onPress={() => joinAsyncGame(game)} activeOpacity={0.8}>
-                      <ThemedText style={s.enterBtnTxt}>JOGAR</ThemedText>
-                    </TouchableOpacity>
-                  ) : canAct ? (
-                    <TouchableOpacity style={[s.enterBtn, { backgroundColor: C.purple }]}
-                      onPress={() => viewAsyncResult(game)} activeOpacity={0.8}>
-                      <ThemedText style={s.enterBtnTxt}>RESULTADO</ThemedText>
-                    </TouchableOpacity>
-                  ) : null}
-                </ThemedView>
+                    {isOpen && !expired ? (
+                      <TouchableOpacity style={[s.enterBtn, s.asyncBtn]} onPress={() => joinAsyncGame(game)} activeOpacity={0.8}>
+                        <ThemedText style={s.enterBtnTxt}>JOGAR</ThemedText>
+                      </TouchableOpacity>
+                    ) : canAct ? (
+                      <TouchableOpacity style={[s.enterBtn, s.asyncBtn, { backgroundColor: C.purple }]}
+                        onPress={() => viewAsyncResult(game)} activeOpacity={0.8}>
+                        <ThemedText style={s.enterBtnTxt}>RESULTADO</ThemedText>
+                      </TouchableOpacity>
+                    ) : null}
+                    <View style={s.asyncSwipeHint} pointerEvents="none" />
+                  </ThemedView>
+                </Swipeable>
               );
             })}
 
@@ -1422,20 +1899,50 @@ export default function StopOnlineScreen() {
   );
 
   // ── Validating answers ─────────────────────────────────────────────────────
-  if (phase === 'validating') return (
-    <ThemedView style={s.fill}>
-      <SafeAreaView style={s.fill} edges={['top']}>
-        <GameHeader title="Stop Online" subtitle="VERIFICANDO" />
-        <View style={s.centerFlex}>
-          <ThemedText style={{ fontSize: 48, lineHeight: 56 }}>🔍</ThemedText>
-          <ThemedText type="subtitle" style={s.center}>Verificando respostas...</ThemedText>
-          <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
-            {aiLoading ? 'Consultando IA...' : waitingOpp ? 'Aguardando validação do adversário...' : 'Consultando banco de palavras...'}
-          </ThemedText>
-        </View>
-      </SafeAreaView>
-    </ThemedView>
-  );
+  if (phase === 'validating') {
+    const barWidth = validatingAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+    const stepMsg = validatingStep === 0
+      ? 'Consultando banco de palavras...'
+      : validatingStep === 1
+        ? 'Analisando suas respostas...'
+        : 'Verificando respostas do adversário...';
+    return (
+      <ThemedView style={s.fill}>
+        <SafeAreaView style={s.fill} edges={['top']}>
+          <GameHeader title="Stop Online" subtitle="VERIFICANDO" />
+          <View style={[s.centerFlex, { paddingHorizontal: Spacing.four, gap: Spacing.four }]}>
+
+            <ThemedText style={{ fontSize: 56, lineHeight: 68 }}>🔍</ThemedText>
+
+            <View style={{ alignItems: 'center', gap: Spacing.one }}>
+              <ThemedText type="subtitle" style={s.center}>Verificando respostas</ThemedText>
+              <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
+                {stepMsg}
+              </ThemedText>
+            </View>
+
+            {/* Barra de progresso */}
+            <View style={{ alignSelf: 'stretch' }}>
+              <View style={s.validatingTrack}>
+                <Animated.View style={[s.validatingFill, { width: barWidth }]} />
+              </View>
+            </View>
+
+            {/* Frase de santo / ensinamento */}
+            {validationQuote && (
+              <View style={s.quoteCard}>
+                <ThemedText style={s.quoteText}>"{validationQuote.text}"</ThemedText>
+                {validationQuote.author ? (
+                  <ThemedText style={s.quoteAuthor}>— {validationQuote.author}</ThemedText>
+                ) : null}
+              </View>
+            )}
+
+          </View>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
 
   // ── Waiting for opponent (realtime) ────────────────────────────────────────
   if (phase === 'waiting') return (
@@ -1487,8 +1994,8 @@ export default function StopOnlineScreen() {
     const tied    = (!isMulti && !isAbandon && !oppLeft && myResult.score === (oppResult?.score ?? 0)) || tiedAtFirst;
 
     let resEmoji = isMulti
-      ? (tiedAtFirst ? '🤝' : myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '📿')
-      : (tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '📿');
+      ? (tiedAtFirst ? '🤝' : myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '😔')
+      : (tied ? '🤝' : iWon ? '🏆' : isAbandon ? '🏳️' : '😔');
     let resMsg = isMulti
       ? (tiedAtFirst ? 'Empate!' : myRank === 1 ? 'Você ganhou!' : `${myRank}º lugar`)
       : (tied ? 'Empate!' : iWon ? 'Você ganhou!' : isAbandon ? 'Você abandonou' : 'Adversário ganhou!');
@@ -1507,7 +2014,7 @@ export default function StopOnlineScreen() {
       }
       setPhase('selecting'); setAbandoned(null);
       setMyResult(null); setOppResult(null); setMultiResults([]);
-      setOppName('Adversário');
+      setOppName('Adversário'); setOppId(null);
       setP1Rematch(false); setP2Rematch(false);
       setCoinDelta(null); coinsAwardedRef.current = false;
       pendingResultsRef.current = null;
@@ -1520,14 +2027,6 @@ export default function StopOnlineScreen() {
         <SafeAreaView style={s.fill} edges={['top']}>
           <GameHeader title="Stop Online" subtitle="RESULTADO" />
           <ScrollView contentContainerStyle={[s.resultScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
-
-            {coinDelta !== null && (
-              <View style={[s.coinBadge, { backgroundColor: coinDelta >= 0 ? C.green : C.red }]}>
-                <ThemedText style={s.coinBadgeTxt}>
-                  {coinDelta >= 0 ? '+' : ''}{coinDelta} 🪙
-                </ThemedText>
-              </View>
-            )}
 
             <View style={[s.resBanner, { backgroundColor: resColor + '22', borderColor: resColor }]}>
               <ThemedText style={{ fontSize: 40, lineHeight: 48 }}>{resEmoji}</ThemedText>
@@ -1560,10 +2059,12 @@ export default function StopOnlineScreen() {
                 {multiResults.map(r => {
                   const isMe = r.playerId === (user?.id ?? '');
                   const rankEmoji = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : `${r.rank}º`;
+                  const av = isMe ? (profile?.avatar_emoji ?? '👤') : (playersAvatarMap[r.playerId] ?? '👤');
                   return (
                     <ThemedView key={r.playerId} type="backgroundElement"
                       style={[s.leaderRow, isMe && { borderColor: C.purple, borderWidth: 1.5 }]}>
                       <ThemedText style={{ fontSize: 20, width: 32 }}>{rankEmoji}</ThemedText>
+                      <AvatarImage value={av} size={28} />
                       <View style={{ flex: 1 }}>
                         <ThemedText type="smallBold" numberOfLines={1}>
                           {r.playerName}{isMe ? ' (você)' : ''}
@@ -1668,8 +2169,8 @@ export default function StopOnlineScreen() {
                 {/* Mini ranking 1v1 */}
                 {!oppLeft && (() => {
                   const ranked1v1 = [
-                    { name: profile?.name ?? 'Você', score: myResult.score, validCount: myResult.validCount, isMe: true },
-                    { name: oppName, score: oppResult.score, validCount: oppResult.validCount, isMe: false },
+                    { id: user?.id ?? '', name: profile?.name ?? 'Você', score: myResult.score, validCount: myResult.validCount, isMe: true },
+                    { id: oppId ?? '', name: oppName, score: oppResult.score, validCount: oppResult.validCount, isMe: false },
                   ].sort((a, b) => b.score - a.score);
                   return (
                     <View style={{ gap: Spacing.one }}>
@@ -1677,9 +2178,13 @@ export default function StopOnlineScreen() {
                         CLASSIFICAÇÃO
                       </ThemedText>
                       {ranked1v1.map((r, i) => (
-                        <ThemedView key={r.name} type="backgroundElement"
+                        <ThemedView key={r.id || r.name} type="backgroundElement"
                           style={[s.leaderRow, r.isMe && { borderColor: C.purple, borderWidth: 1.5 }]}>
                           <ThemedText style={{ fontSize: 20, width: 32 }}>{i === 0 ? '🥇' : '🥈'}</ThemedText>
+                          <AvatarImage
+                            value={r.isMe ? (profile?.avatar_emoji ?? '👤') : (r.id ? (playersAvatarMap[r.id] ?? '👤') : '👤')}
+                            size={28}
+                          />
                           <View style={{ flex: 1 }}>
                             <ThemedText type="smallBold" numberOfLines={1}>
                               {r.name}{r.isMe ? ' (você)' : ''}
@@ -1700,12 +2205,14 @@ export default function StopOnlineScreen() {
 
                 <View style={s.scoreRow}>
                   <ThemedView type="backgroundElement" style={[s.scoreCard, { borderColor: C.purple }]}>
+                    <AvatarImage value={profile?.avatar_emoji ?? '👤'} size={32} borderColor={C.purple} />
                     <ThemedText style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: C.purple }}>VOCÊ</ThemedText>
                     <ThemedText style={{ fontSize: 30, fontWeight: '900', color: C.purple, lineHeight: 36 }}>{myResult.score}</ThemedText>
                     <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>{myResult.validCount}/{cats.length} válidas</ThemedText>
                   </ThemedView>
                   <ThemedText style={{ fontSize: 18, fontWeight: '800', color: theme.textSecondary }}>VS</ThemedText>
                   <ThemedView type="backgroundElement" style={[s.scoreCard, { borderColor: BRAND }]}>
+                    <AvatarImage value={oppId ? (playersAvatarMap[oppId] ?? '👤') : '👤'} size={32} borderColor={BRAND} />
                     <ThemedText style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: BRAND }} numberOfLines={1}>{oppName.toUpperCase()}</ThemedText>
                     <ThemedText style={{ fontSize: 30, fontWeight: '900', color: BRAND, lineHeight: 36 }}>
                       {oppLeft ? '—' : oppResult.score}
@@ -1716,9 +2223,14 @@ export default function StopOnlineScreen() {
                   </ThemedView>
                 </View>
 
-                <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
-                  COMPARAÇÃO DE RESPOSTAS
-                </ThemedText>
+                <View style={{ gap: 2 }}>
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
+                    COMPARAÇÃO DE RESPOSTAS
+                  </ThemedText>
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11, fontStyle: 'italic' }}>
+                    Segure uma resposta para contestar
+                  </ThemedText>
+                </View>
                 {cats.map(c => {
                   const mine   = ((myResult.answers[c.key] ?? '') as string).trim();
                   const theirs = ((oppResult.answers[c.key] ?? '') as string).trim();
@@ -1727,14 +2239,16 @@ export default function StopOnlineScreen() {
                   const myRes  = myBankMap[c.key];
                   const oppRes = oppBankMap[c.key];
 
-                  const cellColor = (res: BankResult | undefined) =>
-                    (res === 'valid' || res === 'ai_valid') ? C.green
-                    : res === 'unverified'                  ? C.gold
-                    : res === 'ai_invalid'                  ? C.red
+                  const cellColor = (res: BankResult | undefined, hasAns: boolean) =>
+                    !hasAns                                    ? theme.textSecondary
+                    : (res === 'valid' || res === 'ai_valid') ? C.green
+                    : res === 'unverified'                    ? C.gold
+                    : res === 'ai_invalid'                    ? C.red
                     : theme.textSecondary;
 
-                  const cellBg = (res: BankResult | undefined, startsOk: boolean) =>
-                    !res
+                  const cellBg = (res: BankResult | undefined, startsOk: boolean, hasAns: boolean) =>
+                    !hasAns                                      ? 'transparent'
+                    : !res
                       ? (startsOk ? C.green : C.red) + '18'
                       : (res === 'valid' || res === 'ai_valid') ? C.green + '18'
                       : res === 'unverified'                    ? C.gold  + '22'
@@ -1750,25 +2264,60 @@ export default function StopOnlineScreen() {
                     return null;
                   };
 
+                  const canContest     = isContestable(myRes, mine);
+                  const alreadyContested = contested.has(c.key);
+
                   return (
                     <ThemedView key={c.key} type="backgroundElement" style={s.compCard}>
                       <View style={s.compHeader}>
                         <ThemedText type="smallBold" style={{ flex: 1 }}>{c.label}</ThemedText>
                       </View>
                       <View style={s.compAnswers}>
-                        <View style={[s.compCell, { backgroundColor: cellBg(myRes, myV) }]}>
+                        <TouchableOpacity
+                          style={[s.compCell, { backgroundColor: cellBg(myRes, myV, mine.length > 0) }]}
+                          activeOpacity={canContest && !alreadyContested ? 0.7 : 1}
+                          delayLongPress={500}
+                          onLongPress={canContest && !alreadyContested ? async () => {
+                            if (!user) return;
+                            Alert.alert(
+                              'Contestar resposta',
+                              `Contestar "${mine}" como resposta para "${c.label}"?`,
+                              [
+                                { text: 'Cancelar', style: 'cancel' },
+                                { text: '✋ Contestar', onPress: async () => {
+                                  const { ok, error: err } = await submitContest({
+                                    userId: user.id,
+                                    roomId: roomIdRef.current,
+                                    categoryKey: c.key,
+                                    letter,
+                                    answer: mine,
+                                    originalResult: myRes!,
+                                    gameMode: 'online',
+                                  });
+                                  if (ok) {
+                                    setContested(prev => new Set([...prev, c.key]));
+                                  } else {
+                                    Alert.alert('Erro', err ?? 'Não foi possível enviar a contestação.');
+                                  }
+                                }},
+                              ]
+                            );
+                          } : undefined}>
                           <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: C.purple }}>VOCÊ</ThemedText>
-                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(myRes) }}>
+                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(myRes, mine.length > 0) }}>
                             {mine || '—'}
                           </ThemedText>
-                          <Badge res={myRes} />
-                        </View>
-                        <View style={[s.compCell, { backgroundColor: cellBg(oppRes, theirV) }]}>
+                          {mine.length > 0 && <Badge res={myRes} />}
+                          {alreadyContested && (
+                            <ThemedText style={[s.compBadge, { color: C.green }]}>✓ Contestação enviada</ThemedText>
+                          )}
+                        </TouchableOpacity>
+                        <View style={[s.compCell, { backgroundColor: cellBg(oppRes, theirV, theirs.length > 0) }]}>
                           <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: BRAND }} numberOfLines={1}>{oppName.toUpperCase()}</ThemedText>
-                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(oppRes) }}>
+                          <ThemedText style={{ fontSize: 13, fontWeight: '600', color: cellColor(oppRes, theirs.length > 0) }}>
                             {theirs || (oppLeft ? '(não respondeu)' : '—')}
                           </ThemedText>
-                          {!oppLeft && <Badge res={oppRes} />}
+                          {!oppLeft && theirs.length > 0 && <Badge res={oppRes} />}
                         </View>
                       </View>
                     </ThemedView>
@@ -1816,20 +2365,16 @@ export default function StopOnlineScreen() {
         <GameHeader
           title="Stop Online"
           subtitle={isAsync ? 'ASSÍNCRONO' : 'TEMPO REAL'}
-          right={!isAsync ? (
-            <ThemedText type="smallBold" style={{ color: timerColor, fontSize: 20 }}>{timeLeft}s</ThemedText>
-          ) : undefined}
+          right={<ThemedText type="smallBold" style={{ color: timerColor, fontSize: 20 }}>{timeLeft}s</ThemedText>}
         />
         <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView
             contentContainerStyle={[s.playScroll, { paddingBottom: BottomTabInset + Spacing.five }]}
             keyboardShouldPersistTaps="handled">
 
-            {!isAsync && (
-              <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
-                <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
-              </View>
-            )}
+            <View style={[s.timerBar, { backgroundColor: theme.backgroundElement }]}>
+              <View style={[s.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
+            </View>
 
             <View style={s.letterRow}>
               <View style={[s.letterCard, { backgroundColor: BRAND }]}>
@@ -1837,7 +2382,7 @@ export default function StopOnlineScreen() {
               </View>
               <ThemedText themeColor="textSecondary" style={{ fontSize: 13, lineHeight: 18, flex: 1 }}>
                 {isAsync
-                  ? 'Responda com calma. Clique em Enviar quando terminar.'
+                  ? 'Preencha as categorias e clique em STOP quando terminar!'
                   : 'Preencha as categorias com palavras que comecem com esta letra'}
               </ThemedText>
             </View>
@@ -1875,27 +2420,45 @@ export default function StopOnlineScreen() {
               </ThemedView>
             ))}
 
-            {isAsync ? (
-              <TouchableOpacity style={[s.stopBtn, { backgroundColor: C.purple }]} onPress={callStop} activeOpacity={0.8}>
-                <ThemedText style={s.stopTxt}>✅  ENVIAR RESPOSTAS</ThemedText>
+            <TouchableOpacity style={[s.stopBtn, { backgroundColor: BRAND }]} onPress={callStop} activeOpacity={0.8}>
+              <Image source={require('@/assets/images/stop.png')} style={{ width: 26, height: 26, marginRight: 8 }} resizeMode="contain" />
+              <ThemedText style={s.stopTxt}>STOP!</ThemedText>
+            </TouchableOpacity>
+            {!isAsync && (
+              <TouchableOpacity style={[s.ghostBtn, { marginTop: 4 }]}
+                onPress={() => Alert.alert('Abandonar partida?', 'Você perderá automaticamente.',
+                  [{ text: 'Ficar', style: 'cancel' },
+                   { text: 'Abandonar', style: 'destructive', onPress: handleAbandon }]
+                )} activeOpacity={0.8}>
+                <ThemedText style={[s.btnTxt, { color: theme.textSecondary, fontSize: 13 }]}>ABANDONAR PARTIDA</ThemedText>
               </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity style={[s.stopBtn, { backgroundColor: BRAND }]} onPress={callStop} activeOpacity={0.8}>
-                  <ThemedText style={s.stopTxt}>🛑  STOP!</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.ghostBtn, { marginTop: 4 }]}
-                  onPress={() => Alert.alert('Abandonar partida?', 'Você perderá automaticamente.',
-                    [{ text: 'Ficar', style: 'cancel' },
-                     { text: 'Abandonar', style: 'destructive', onPress: handleAbandon }]
-                  )} activeOpacity={0.8}>
-                  <ThemedText style={[s.btnTxt, { color: theme.textSecondary, fontSize: 13 }]}>ABANDONAR PARTIDA</ThemedText>
-                </TouchableOpacity>
-              </>
             )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Popup: tempo de P1 esgotou na tela de P2 */}
+      {stopPopup && (
+        <Modal transparent animationType="fade" statusBarTranslucent>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
+            <ThemedView type="backgroundElement" style={{ borderRadius: 20, padding: 28, alignItems: 'center', gap: 14, maxWidth: 320, width: '100%' }}>
+              <Image source={require('@/assets/images/stop.png')} style={{ width: 80, height: 80 }} resizeMode="contain" />
+              <ThemedText type="title" style={{ textAlign: 'center', fontSize: 20 }}>
+                {stopPopup.name} clicou em Stop!
+              </ThemedText>
+              <ThemedText style={{ textAlign: 'center', color: BRAND, fontWeight: '800', fontSize: 15 }}>
+                Tempo: {stopPopup.elapsed}s
+              </ThemedText>
+              <TouchableOpacity
+                style={{ backgroundColor: BRAND, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28, marginTop: 6 }}
+                activeOpacity={0.85}
+                onPress={() => { setStopPopup(null); doSubmitRef.current(); }}>
+                <ThemedText style={{ color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 0.5 }}>VER RESULTADO</ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+          </View>
+        </Modal>
+      )}
     </ThemedView>
   );
 }
@@ -1907,14 +2470,38 @@ const s = StyleSheet.create({
   centerFlex: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.three },
 
   // Selection
-  selectScroll: { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three, alignItems: 'center' },
-  catGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, alignSelf: 'stretch' },
-  catChip: {
-    width: '47%', flexDirection: 'row', alignItems: 'center',
-    gap: 8, padding: Spacing.two, borderRadius: C.radius.md, borderWidth: 1.5,
+  selectScroll:   { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, gap: Spacing.three, alignItems: 'center' },
+  selectHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch' },
+  selectTitle:    { fontSize: 22, fontWeight: '900', letterSpacing: 0.2 },
+  slotsContainer: { gap: Spacing.two, alignSelf: 'stretch' },
+  slotCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: C.radius.lg,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    minHeight: 64,
   },
-  chipEmoji: { fontSize: 20, width: 26, textAlign: 'center' },
-  chipLabel: { fontSize: 12, fontWeight: '600', flex: 1, lineHeight: 16 },
+  slotAccent: { width: 4, alignSelf: 'stretch' },
+  arrowBtn: {
+    width: 48,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'transparent',
+  },
+  arrowText: { fontSize: 28, fontWeight: '900', lineHeight: 34 },
+  slotCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+  },
+  slotLabel: { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
 
   // Mode buttons
   modeRow: { flexDirection: 'row', gap: Spacing.two, alignSelf: 'stretch' },
@@ -1954,10 +2541,14 @@ const s = StyleSheet.create({
   roomCard:     { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: C.radius.md, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
   roomCardLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   enterBtn:     { backgroundColor: BRAND, paddingHorizontal: 16, paddingVertical: 8, borderRadius: C.radius.pill },
+  asyncBtn:     { paddingHorizontal: 18, paddingVertical: 10, marginRight: 14 },
   enterBtnTxt:  { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },
 
   // Async game cards
-  asyncCard:     { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: C.radius.md, padding: Spacing.three, borderWidth: 1, borderColor: C.border },
+  asyncCard:     { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: C.radius.md, padding: Spacing.three, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  asyncSwipeHint:{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 7, backgroundColor: C.red },
+  deleteAction:  { backgroundColor: C.red, borderRadius: C.radius.md, marginLeft: 8, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, gap: 4, minWidth: 76 },
+  deleteActionTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
   asyncCardLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flex: 1 },
 
   // Buttons
@@ -1980,6 +2571,19 @@ const s = StyleSheet.create({
   playScroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.two, gap: Spacing.two },
   timerBar:   { height: 8, borderRadius: 4, overflow: 'hidden' },
   timerFill:  { height: 8, borderRadius: 4 },
+  validatingTrack: { height: 14, borderRadius: 7, backgroundColor: '#ffffff18', overflow: 'hidden' },
+  validatingFill:  { height: 14, borderRadius: 7, backgroundColor: BRAND },
+  quoteCard: {
+    alignSelf: 'stretch',
+    borderRadius: C.radius.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: BRAND,
+    backgroundColor: BRAND + '12',
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  quoteText:   { fontSize: 14, fontStyle: 'italic', lineHeight: 21, textAlign: 'center' },
+  quoteAuthor: { fontSize: 12, fontWeight: '700', color: BRAND, textAlign: 'right' },
   letterRow:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.two },
   letterCard: { width: 76, height: 76, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   letterText: { fontSize: 52, fontWeight: '900', color: '#fff', lineHeight: 60 },
@@ -1990,13 +2594,13 @@ const s = StyleSheet.create({
   catEmoji:    { fontSize: 22, width: 32, textAlign: 'center' },
   hintBtn:     { backgroundColor: C.gold + '22', borderRadius: C.radius.pill, paddingVertical: 3, paddingHorizontal: 8 },
   hintBtnText: { fontSize: 11, fontWeight: '800', color: C.gold },
-  shuffleBtn:  { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 10, alignItems: 'center' as const, alignSelf: 'stretch' as const, marginBottom: -4 },
-  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 13, letterSpacing: 0.5 },
+  shuffleBtn:     { borderWidth: 1.5, borderColor: C.purple + '88', borderRadius: C.radius.pill, paddingVertical: 7, paddingHorizontal: 12, alignItems: 'center' as const },
+  shuffleBtnText: { color: C.purple, fontWeight: '800' as const, fontSize: 12, letterSpacing: 0.3 },
   input: {
     borderWidth: 1.5, borderRadius: C.radius.sm, paddingHorizontal: Spacing.two,
     paddingVertical: Platform.OS === 'ios' ? 8 : 6, fontSize: 15, fontWeight: '500',
   },
-  stopBtn: { paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', marginTop: Spacing.one },
+  stopBtn: { paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', marginTop: Spacing.one },
   stopTxt: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1.5 },
 
   // Player picker (selection screen)
@@ -2032,6 +2636,9 @@ const s = StyleSheet.create({
   compAnswers:  { flexDirection: 'row', gap: Spacing.one },
   compCell:     { flex: 1, borderRadius: C.radius.sm, padding: Spacing.one, gap: 2 },
   compBadge:    { fontSize: 8, fontWeight: '800', color: C.green, letterSpacing: 0.3 },
+  contestBtn:    { marginTop: 4, alignSelf: 'flex-start', paddingVertical: 3, paddingHorizontal: 8, borderRadius: C.radius.pill, borderWidth: 1, borderColor: C.gold + '88', backgroundColor: C.gold + '18' },
+  contestedBtn:  { borderColor: C.green + '88', backgroundColor: C.green + '18' },
+  contestBtnTxt: { fontSize: 9, fontWeight: '700', color: C.gold },
 
   // Leaderboard
   leaderRow: {

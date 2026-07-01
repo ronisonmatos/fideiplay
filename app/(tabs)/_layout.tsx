@@ -2,7 +2,9 @@ import { Image, Text, useColorScheme } from 'react-native';
 import { Tabs } from 'expo-router';
 
 import { C, Colors } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/context/notifications-context';
+import { useAdminBadge } from '@/hooks/use-admin-badge';
 
 function TabIcon({ source, focused }: { source: ReturnType<typeof require>; focused: boolean }) {
   return (
@@ -18,6 +20,8 @@ export default function TabsLayout() {
   const scheme = useColorScheme() ?? 'light';
   const colors = Colors[scheme];
   const { chatUnreadCount } = useNotifications();
+  const { profile } = useAuth();
+  const adminBadgeCount = useAdminBadge(profile?.is_admin);
 
   return (
     <Tabs
@@ -63,6 +67,17 @@ export default function TabsLayout() {
           title: 'Conta',
           tabBarIcon: ({ focused }) => (
             <TabIcon source={require('@/assets/images/conta.png')} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: 'Admin',
+          href: profile?.is_admin ? undefined : null,
+          tabBarBadge: adminBadgeCount > 0 ? (adminBadgeCount > 9 ? '9+' : adminBadgeCount) : undefined,
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.38 }}>✋</Text>
           ),
         }}
       />

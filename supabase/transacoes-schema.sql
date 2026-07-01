@@ -1,4 +1,4 @@
--- FideiPlay — Tabela de transações de moedas
+-- SantosPlay — Tabela de transações de moedas
 -- Execute no SQL Editor do Supabase APÓS profiles-schema.sql
 
 CREATE TABLE IF NOT EXISTS transacoes_moedas (

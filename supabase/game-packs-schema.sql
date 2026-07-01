@@ -1,4 +1,4 @@
--- FideiPlay — Sistema de packs de conteúdo para jogos
+-- SantosPlay — Sistema de packs de conteúdo para jogos
 -- Execute no SQL Editor do Supabase
 
 -- 1. Tabela principal de packs

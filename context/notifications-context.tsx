@@ -2,8 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { playSystemSound } from '@/lib/chat-sound';
 
-const STORAGE_KEY    = '@fideiplay:notifications';
-const MUTE_KEY       = '@fideiplay:mutechat';
+const STORAGE_KEY    = '@santosplay:notifications';
+const MUTE_KEY       = '@santosplay:mutechat';
 const READ_EXPIRE_MS = 24 * 60 * 60 * 1000;
 const CHAT_NOTIF_ID  = 'community_chat';
 

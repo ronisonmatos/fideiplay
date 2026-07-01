@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-const GAME_KEY   = '@fideiplay:game_store';
+const GAME_KEY   = '@santosplay:game_store';
 const TRILHA_KEY = '@santosplay:trilhas_progresso';
 
 export interface ProgressSnapshot {

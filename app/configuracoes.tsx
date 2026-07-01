@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   Appearance,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,29 +17,52 @@ import { useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { AvatarImage } from '@/components/avatar-image';
 import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/context/notifications-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
 
 const APP_VERSION = '1.0.0';
 
 export default function ConfiguracoesScreen() {
   const theme       = useTheme();
   const colorScheme = useColorScheme();
-  const { user }    = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const isDark      = colorScheme === 'dark';
 
   const { muteChat, setMuteChat } = useNotifications();
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
+  const [message,       setMessage]       = useState('');
+  const [sending,       setSending]       = useState(false);
+  const [avatarModal,   setAvatarModal]   = useState(false);
+  const [savingAvatar,  setSavingAvatar]  = useState(false);
+  const [pickedAvatar,  setPickedAvatar]  = useState<string | null>(null);
+
+  async function handleSaveAvatar() {
+    const chosen = pickedAvatar ?? profile?.avatar_emoji;
+    if (!chosen || !user) return;
+    setSavingAvatar(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ avatar_emoji: chosen })
+      .eq('id', user.id);
+    setSavingAvatar(false);
+    if (error) {
+      Alert.alert('Erro', 'Não foi possível salvar. Tente novamente.');
+    } else {
+      await refreshProfile();
+      setAvatarModal(false);
+      setPickedAvatar(null);
+    }
+  }
 
   const toggleTheme = () => {
     const next = isDark ? 'light' : 'dark';
     Appearance.setColorScheme(next);
-    AsyncStorage.setItem('@fideiplay:theme', next).catch(() => {});
+    AsyncStorage.setItem('@santosplay:theme', next).catch(() => {});
   };
 
   async function handleSendSupport() {
@@ -59,8 +83,69 @@ export default function ConfiguracoesScreen() {
     }
   }
 
+  const currentAvatar = pickedAvatar ?? profile?.avatar_emoji ?? '';
+
   return (
     <ThemedView style={s.fill}>
+
+      {/* Modal de troca de avatar */}
+      <Modal
+        visible={avatarModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAvatarModal(false)}>
+        <View style={s.modalOverlay}>
+          <ThemedView style={s.modalSheet}>
+            {/* Handle */}
+            <View style={s.modalHandle} />
+
+            <ThemedText style={[s.modalTitle, { color: theme.text }]}>Escolha seu Santo Patrono</ThemedText>
+
+            {/* Preview do selecionado */}
+            <View style={s.modalPreview}>
+              <AvatarImage value={currentAvatar} size={72} borderColor={C.purple} />
+              <ThemedText style={[s.modalSelectedName, { color: C.purple }]}>
+                {getAvatarNome(currentAvatar) || currentAvatar}
+              </ThemedText>
+            </View>
+
+            {/* Grade de avatares */}
+            <ScrollView contentContainerStyle={s.avatarGrid} showsVerticalScrollIndicator={false}>
+              {AVATARES_SANTOS.map(a => {
+                const selected = currentAvatar === a.filename;
+                return (
+                  <TouchableOpacity
+                    key={a.filename}
+                    onPress={() => setPickedAvatar(a.filename)}
+                    style={[s.avatarBtn, { borderColor: selected ? C.purple : 'transparent' }]}
+                    activeOpacity={0.75}>
+                    <AvatarImage value={a.filename} size={56} />
+                    <ThemedText style={[s.avatarBtnLabel, { color: selected ? C.purple : theme.textSecondary }]} numberOfLines={2}>
+                      {a.nome}
+                    </ThemedText>
+                    {selected && <View style={s.avatarDot} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Ações */}
+            <View style={s.modalActions}>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => { setAvatarModal(false); setPickedAvatar(null); }} activeOpacity={0.7}>
+                <ThemedText style={{ color: theme.textSecondary, fontWeight: '700' }}>Cancelar</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.saveBtn, { opacity: savingAvatar ? 0.6 : 1 }]}
+                onPress={handleSaveAvatar}
+                disabled={savingAvatar}
+                activeOpacity={0.8}>
+                <ThemedText style={s.saveBtnText}>{savingAvatar ? 'SALVANDO...' : 'SALVAR'}</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </ThemedView>
+        </View>
+      </Modal>
+
       <SafeAreaView style={s.fill} edges={['top']}>
         {/* Header */}
         <View style={[s.header, { borderBottomColor: C.border }]}>
@@ -74,6 +159,27 @@ export default function ConfiguracoesScreen() {
         <ScrollView
           contentContainerStyle={[s.scroll, { paddingBottom: 40 }]}
           showsVerticalScrollIndicator={false}>
+
+          {/* Meu Perfil */}
+          {user && profile && (
+            <>
+              <ThemedText style={s.sectionLabel}>MEU PERFIL</ThemedText>
+              <ThemedView type="backgroundElement" style={s.card}>
+                <TouchableOpacity style={s.row} onPress={() => { setPickedAvatar(null); setAvatarModal(true); }} activeOpacity={0.75}>
+                  <View style={s.rowLeft}>
+                    <AvatarImage value={profile.avatar_emoji} size={44} borderColor={C.purple} />
+                    <View>
+                      <ThemedText type="smallBold">Meu Santo Patrono</ThemedText>
+                      <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
+                        {getAvatarNome(profile.avatar_emoji) || profile.avatar_emoji}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <ThemedText style={{ color: C.purple, fontWeight: '700' }}>Trocar</ThemedText>
+                </TouchableOpacity>
+              </ThemedView>
+            </>
+          )}
 
           {/* Aparência */}
           <ThemedText style={s.sectionLabel}>APARÊNCIA</ThemedText>
@@ -119,22 +225,6 @@ export default function ConfiguracoesScreen() {
             </View>
           </ThemedView>
 
-          {/* Versão */}
-          <ThemedText style={s.sectionLabel}>SOBRE O APP</ThemedText>
-          <ThemedView type="backgroundElement" style={s.card}>
-            <View style={s.row}>
-              <View style={s.rowLeft}>
-                <ThemedText style={{ fontSize: 22 }}>📱</ThemedText>
-                <View>
-                  <ThemedText type="smallBold">Versão do app</ThemedText>
-                  <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                    FideiPlay v{APP_VERSION}
-                  </ThemedText>
-                </View>
-              </View>
-            </View>
-          </ThemedView>
-
           {/* Suporte */}
           <ThemedText style={s.sectionLabel}>SUPORTE</ThemedText>
           <ThemedView type="backgroundElement" style={s.card}>
@@ -177,6 +267,8 @@ export default function ConfiguracoesScreen() {
               </TouchableOpacity>
             </View>
           </ThemedView>
+
+          <ThemedText style={s.versionTxt}>SantosPlay v{APP_VERSION}</ThemedText>
 
         </ScrollView>
       </SafeAreaView>
@@ -230,4 +322,70 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   sendBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+  versionTxt:  { fontSize: 11, color: '#9B97D4', textAlign: 'center', marginTop: Spacing.two, opacity: 0.55 },
+
+  // Modal de avatar
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.four,
+    paddingBottom: 32,
+    paddingTop: Spacing.two,
+    maxHeight: '80%',
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.35)',
+    alignSelf: 'center',
+    marginBottom: Spacing.two,
+  },
+  modalTitle: {
+    fontSize: 17, fontWeight: '800', textAlign: 'center',
+    marginBottom: Spacing.three,
+  },
+  modalPreview: {
+    alignItems: 'center', gap: Spacing.one,
+    marginBottom: Spacing.three,
+  },
+  modalSelectedName: {
+    fontSize: 15, fontWeight: '800', textAlign: 'center',
+  },
+  avatarGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    gap: Spacing.two, paddingBottom: Spacing.three,
+  },
+  avatarBtn: {
+    width: '28%',
+    alignItems: 'center', gap: 4,
+    borderWidth: 2.5, borderRadius: C.radius.md,
+    padding: Spacing.one,
+    position: 'relative',
+  },
+  avatarBtnLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center', lineHeight: 14 },
+  avatarDot: {
+    position: 'absolute', top: 4, right: 4,
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: C.purple,
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+  modalActions: {
+    flexDirection: 'row', gap: Spacing.two,
+    marginTop: Spacing.two,
+  },
+  cancelBtn: {
+    flex: 1, paddingVertical: 13,
+    borderRadius: C.radius.pill, alignItems: 'center',
+    borderWidth: 1.5, borderColor: C.border,
+  },
+  saveBtn: {
+    flex: 2, backgroundColor: C.purple,
+    paddingVertical: 13,
+    borderRadius: C.radius.pill, alignItems: 'center',
+  },
+  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1 },
 });
