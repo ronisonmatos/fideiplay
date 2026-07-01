@@ -3,7 +3,9 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { supabase } from '@/lib/supabase';
+import { getAvatarUrl, isSaintAvatar } from '@/constants/avatares';
 
 export interface Profile {
   id:                string;
@@ -53,6 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .single();
     setProfile(data ?? null);
+    if (data && isSaintAvatar(data.avatar_emoji)) {
+      ExpoImage.prefetch(getAvatarUrl(data.avatar_emoji));
+    }
   }, []);
 
   const loadTrilhas = useCallback(async (userId: string) => {
@@ -89,7 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setTrilhasDesbloqueadas([]);
-        setLoading(false);
+        // Não chama setLoading(false) aqui: o getSession() abaixo é quem controla
+        // o estado de carregamento inicial. Se chamar aqui, pode disparar antes do
+        // getSession() resolver e mostrar a tela de login mesmo com sessão válida.
       }
     });
 
@@ -139,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([
-      '@fideiplay:game_store',
+      '@santosplay:game_store',
       '@santosplay:trilhas_progresso',
     ]).catch(() => {});
   }, []);

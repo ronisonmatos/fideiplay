@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- FideiPlay — Ranking semanal, bônus de entrada e pontuação
+-- SantosPlay — Ranking semanal, bônus de entrada e pontuação
 -- Execute no SQL Editor do Supabase
 -- ─────────────────────────────────────────────────────────────────────────────
 

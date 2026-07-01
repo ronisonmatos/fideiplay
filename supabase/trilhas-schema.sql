@@ -1,4 +1,4 @@
--- FideiPlay — Trilhas desbloqueadas por usuário
+-- SantosPlay — Trilhas desbloqueadas por usuário
 -- Execute no SQL Editor do Supabase
 
 CREATE TABLE IF NOT EXISTS user_trilhas (

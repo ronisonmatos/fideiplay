@@ -186,14 +186,16 @@ export function mergeLiturgQuestions(
 }
 
 export interface StopCategoryDB {
-  key: string;
-  label: string;
-  emoji: string;
+  key:          string;
+  label:        string;
+  emoji:        string;
+  validLetters?: string[];
 }
 
 export function mergeStopCategories(
   hardcoded: StopCategoryDB[],
   packs: GamePack[],
+  allLetters: string[],
 ): StopCategoryDB[] {
   const existingKeys = new Set(hardcoded.map((c) => c.key));
   const extra: StopCategoryDB[] = [];
@@ -204,7 +206,7 @@ export function mergeStopCategories(
       for (const c of cats) {
         if (!existingKeys.has(c.key)) {
           existingKeys.add(c.key);
-          extra.push(c);
+          extra.push({ ...c, validLetters: c.validLetters ?? allLetters });
         }
       }
     }

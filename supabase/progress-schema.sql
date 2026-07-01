@@ -1,4 +1,4 @@
--- FideiPlay — Progresso do usuário (offline-first sync)
+-- SantosPlay — Progresso do usuário (offline-first sync)
 -- Execute no SQL Editor do Supabase
 
 -- 1. Tabela de progresso

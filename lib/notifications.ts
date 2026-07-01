@@ -1,23 +1,29 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
-export const NOTIF_CHANNEL      = 'fideiplay';
-export const NOTIF_CHANNEL_CHAT = 'fideiplay_chat';
+export const NOTIF_CHANNEL      = 'santosplay';
+export const NOTIF_CHANNEL_CHAT = 'santosplay_chat';
+
+// Push notifications remotas foram removidas do Expo Go no Android (SDK 53+)
+const isExpoGoAndroid = Platform.OS === 'android' && Constants.appOwnership === 'expo';
 
 // Como as notificações aparecem quando o app está aberto
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+if (!isExpoGoAndroid) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
+  if (Platform.OS === 'web' || isExpoGoAndroid) return false;
   const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === 'granted') return true;
   const { status } = await Notifications.requestPermissionsAsync();
@@ -26,16 +32,16 @@ export async function requestNotificationPermission(): Promise<boolean> {
 
 // Cria canais Android com sons customizados — chamar uma vez no startup
 export async function setupNotificationChannel(): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== 'android' || isExpoGoAndroid) return;
   await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL, {
-    name: 'FideiPlay',
+    name: 'SantosPlay',
     importance: Notifications.AndroidImportance.HIGH,
     sound: 'church_bell.wav',
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#7C3AED',
   });
   await Notifications.setNotificationChannelAsync(NOTIF_CHANNEL_CHAT, {
-    name: 'FideiPlay — Chat',
+    name: 'SantosPlay — Chat',
     importance: Notifications.AndroidImportance.DEFAULT,
     sound: 'chat_beep.wav',
   });
@@ -69,6 +75,7 @@ export async function sendChatOSNotification(title: string, body: string): Promi
         title,
         body,
         sound: 'chat_beep.wav',
+        data: { type: 'chat' },
       },
       trigger: Platform.OS === 'android'
         ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: NOTIF_CHANNEL_CHAT, repeats: false }
@@ -126,7 +133,7 @@ export async function scheduleCoinBonusReminder() {
     identifier: COIN_BONUS_ID,
     content: {
       title: '🪙 Seu bônus está disponível!',
-      body: 'Já faz 2 horas — volte ao FideiPlay para resgatar suas moedas.',
+      body: 'Já faz 2 horas — volte ao SantosPlay para resgatar suas moedas.',
       sound: 'church_bell.wav',
       android: { largeIcon: require('../assets/images/logo_SantosPlay.png'), channelId: NOTIF_CHANNEL },
     },
@@ -136,6 +143,24 @@ export async function scheduleCoinBonusReminder() {
       channelId: NOTIF_CHANNEL,
     },
   });
+}
+
+// ── Registro e salvamento do Expo Push Token ─────────────────────────────────
+
+export async function registerAndSavePushToken(userId: string): Promise<void> {
+  if (Platform.OS === 'web' || isExpoGoAndroid) return;
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+  try {
+    const { data: token } = await Notifications.getExpoPushTokenAsync({
+      projectId: 'a7cd055d-5cfe-4f9f-a8af-37bb94f0dc51',
+    });
+    if (token) {
+      await supabase.from('profiles').update({ push_token: token }).eq('id', userId);
+    }
+  } catch (err) {
+    console.warn('[push] falha ao registrar token:', err);
+  }
 }
 
 // ── Notificações agendadas pelo servidor (tabela `notifications`) ─────────────

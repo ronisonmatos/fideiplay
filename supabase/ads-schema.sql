@@ -1,4 +1,4 @@
--- FideiPlay — Sistema de anúncios próprio
+-- SantosPlay — Sistema de anúncios próprio
 -- Execute no SQL Editor do Supabase
 
 -- 1. Tabela de anúncios (conteúdo vem do Storage)
@@ -13,7 +13,7 @@ create table if not exists ads (
   cta_url     text,
   duration    int     not null default 15,
   skip_after  int     not null default 5,
-  coins       int     not null default 50,
+  coins       int     not null default 15,
   weight      int     not null default 1,
   active      boolean not null default true,
   created_at  timestamptz default now()

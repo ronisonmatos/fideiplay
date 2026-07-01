@@ -57,7 +57,7 @@ export default function AdRewardScreen() {
         );
         setPhase('error');
       } else {
-        setCoinsEarned(result.coins_earned ?? adRef.current?.coins ?? 50);
+        setCoinsEarned(result.coins_earned ?? adRef.current?.coins ?? 15);
         await refreshProfile();
         setPhase('success');
       }

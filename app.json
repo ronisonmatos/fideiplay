@@ -5,19 +5,21 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "fideiplay",
+    "scheme": "santosplay",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.ronison.santosplay",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#208AEF"
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#26215C",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "notification": {
         "icon": "./assets/images/notification-icon.png",
-        "color": "#208AEF"
+        "color": "#26215C"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "enableProguardInReleaseBuilds": true
     },
     "web": {
       "bundler": "metro",
@@ -38,7 +40,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#26215C",
           "android": {
             "image": "./assets/images/logo_SantosPlay.png",
             "imageWidth": 200

@@ -1,11 +1,12 @@
 // Deploy:  supabase functions deploy validate-stop-answer
-// Secret:  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-import Anthropic from 'npm:@anthropic-ai/sdk';
+// Secrets: supabase secrets set MAGISTERIUM_API_KEY=sk_ronima_...
+//          supabase secrets set AI_DISABLED=true   (para desativar temporariamente)
 
 const VALID_CATEGORIES = new Set([
   'fundador','igrejafe','missa','objetolit','partesigrj','titulo_maria',
   'simbolo','oracao','virtude','pecado','livro_biblia','lugar_sagrado',
   'santo','papa','personagem_biblico','padre',
+  'atributo_deus','animal_biblico','dogma','festa_liturgica','mulher_biblia',
 ]);
 
 const cors = {
@@ -18,6 +19,32 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { ...cors, 'Content-Type': 'application/json' },
   });
+
+async function askMagisterium(prompt: string): Promise<string> {
+  const res = await fetch('https://www.magisterium.com/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('MAGISTERIUM_API_KEY')}`,
+    },
+    body: JSON.stringify({
+      model: 'magisterium-1',
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Magisterium ${res.status}: ${await res.text()}`);
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices[0].message.content.trim().toLowerCase();
+}
+
+// Detecta resposta positiva em português ou inglês
+function isPositive(text: string): boolean {
+  return text.startsWith('sim') || text.startsWith('yes') || text.startsWith('true');
+}
+
+function isNegative(text: string): boolean {
+  return text.startsWith('não') || text.startsWith('nao') || text.startsWith('no') || text.startsWith('false');
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -37,44 +64,27 @@ Deno.serve(async (req: Request) => {
     }
     if (trimmed.length > 100) return json({ valid: false });
 
-    const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
-
-    // Categoria 'padre': apenas verifica se é palavrão/ofensivo
-    if (categoryKey === 'padre') {
-      const msg = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 5,
-        messages: [{
-          role: 'user',
-          content:
-            `A palavra ou expressão "${trimmed}" é um palavrão, xingamento ou conteúdo ofensivo em português brasileiro?\n` +
-            'Responda SOMENTE: true   ou   false\n' +
-            '(true = é ofensivo/palavrão; false = não é ofensivo)',
-        }],
-      });
-      const text = (msg.content[0] as { type: string; text: string }).text.trim().toLowerCase();
-      const isOffensive = text === 'true' || text.startsWith('true');
-      return json({ valid: !isOffensive });
+    // Modo desativado: aceita qualquer resposta não vazia
+    if (Deno.env.get('AI_DISABLED') === 'true') {
+      return json({ valid: true });
     }
 
-    const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 5,
-      messages: [{
-        role: 'user',
-        content:
-          'Você valida respostas do jogo "Stop Católico" (vocabulário do catolicismo brasileiro).\n\n' +
-          `CATEGORIA: ${categoryLabel}\n` +
-          `RESPOSTA DO JOGADOR: "${trimmed}"\n\n` +
-          `Esta resposta pertence genuinamente à categoria "${categoryLabel}" no catolicismo?\n` +
-          'Seja generoso: aceite variações, abreviações e nomes reconhecíveis.\n\n' +
-          'Responda SOMENTE: true   ou   false',
-      }],
-    });
+    // Categoria 'padre': apenas verifica se é ofensivo
+    if (categoryKey === 'padre') {
+      const text = await askMagisterium(
+        `A palavra ou expressão "${trimmed}" é um palavrão, xingamento ou conteúdo ofensivo em português brasileiro? ` +
+        'Responda apenas Sim ou Não.',
+      );
+      return json({ valid: !isPositive(text) });
+    }
 
-    const text = (msg.content[0] as { type: string; text: string }).text.trim().toLowerCase();
-    const valid = text === 'true' || text.startsWith('true');
+    const text = await askMagisterium(
+      `No jogo "Stop Católico", a categoria é "${categoryLabel}". ` +
+      `A resposta "${trimmed}" (começando com a letra "${letter.toUpperCase()}") pertence a essa categoria no catolicismo? ` +
+      'Seja generoso com variações e abreviações. Responda apenas Sim ou Não.',
+    );
 
+    const valid = isPositive(text);
     return json({ valid });
   } catch (err) {
     console.error('validate-stop-answer:', err);

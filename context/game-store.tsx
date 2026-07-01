@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { useAuth } from '@/context/auth-context';
 import { pushGameProgress } from '@/lib/progress-sync';
 
-const STORE_KEY = '@fideiplay:game_store';
+const STORE_KEY = '@santosplay:game_store';
 
 export interface GameResult {
   gameId?: string;

@@ -1,4 +1,4 @@
--- FideiPlay — Compra de trilhas com moedas do jogo
+-- SantosPlay — Compra de trilhas com moedas do jogo
 -- Execute no SQL Editor do Supabase
 
 -- Configuração por trilha: admin define quais trilhas aceitam moedas e o preço

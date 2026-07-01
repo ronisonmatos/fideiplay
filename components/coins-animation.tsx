@@ -13,6 +13,7 @@ export function CoinsAnimation({ amount, visible, onDone }: Props) {
   const opacity    = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const scale      = useRef(new Animated.Value(0.5)).current;
+  const isSpend    = amount < 0;
 
   useEffect(() => {
     if (!visible) return;
@@ -33,11 +34,15 @@ export function CoinsAnimation({ amount, visible, onDone }: Props) {
 
   if (!visible) return null;
 
+  const color       = isSpend ? C.red  : C.gold;
+  const borderColor = isSpend ? C.red + '88' : C.gold + '88';
+  const label       = isSpend ? `${amount} 🪙` : `+${amount}`;
+
   return (
     <Animated.View style={[s.wrap, { opacity, transform: [{ translateY }, { scale }] }]} pointerEvents="none">
-      <View style={s.inner}>
-        <Image source={require('@/assets/images/moedas.png')} style={s.icon} resizeMode="contain" />
-        <ThemedText style={s.text}>+{amount}</ThemedText>
+      <View style={[s.inner, { borderColor }]}>
+        {!isSpend && <Image source={require('@/assets/images/moedas.png')} style={s.icon} resizeMode="contain" />}
+        <ThemedText style={[s.text, { color }]}>{label}</ThemedText>
       </View>
     </Animated.View>
   );
