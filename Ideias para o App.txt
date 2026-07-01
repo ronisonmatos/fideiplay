@@ -139,3 +139,27 @@ Algumas categorias dariam até para colocar pontuação diferente no jogo, por e
 "Santo" = 1 ponto
 "Doutor da Igreja" = 3 pontos
 "Encíclica" = 5 pontos
+
+=================================================================================
+Pronto. O fluxo completo para lançar uma versão agora é:
+
+# 1. merge develop → master (seu fluxo normal)
+git checkout master
+git merge develop
+git push origin master
+
+# 2. criar e subir a tag
+git tag v1.1.0
+git push origin v1.1.0
+
+Isso dispara o build automaticamente. O artefato gerado vai se chamar santosplay-1.1.0.
+
+Resumo do que cada coisa controla:
+
+┌─────────────────────────┬────────────────┬──────────────────────┐
+│                         │ Quem atualiza  │         Como         │
+├─────────────────────────┼────────────────┼──────────────────────┤
+│ versionName (ex: 1.1.0) │ Você           │ Criando a tag v1.1.0 │
+├─────────────────────────┼────────────────┼──────────────────────┤
+│ versionCode (ex: 48)    │ EAS automático │ A cada build         │
+└─────────────────────────┴────────────────┴──────────────────────┘
