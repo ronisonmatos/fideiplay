@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "396189314811",
+    "project_id": "santosplay-b438e",
+    "storage_bucket": "santosplay-b438e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:396189314811:android:b52ca9b752154e4d850a5e",
+        "android_client_info": {
+          "package_name": "com.ronison.santosplay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5ZBHg8NLe4859BFYVTKqUWZGY-n20_OU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

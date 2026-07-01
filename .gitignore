@@ -35,8 +35,6 @@ yarn-error.*
 .env
 .env*.local
 
-# Firebase — não commitar, gerenciado pelo EAS credentials
-google-services.json
 
 # typescript
 *.tsbuildinfo
