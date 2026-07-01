@@ -158,8 +158,8 @@ export async function registerAndSavePushToken(userId: string): Promise<void> {
     if (token) {
       await supabase.from('profiles').update({ push_token: token }).eq('id', userId);
     }
-  } catch {
-    // Silencioso — não bloqueia nada se falhar
+  } catch (err) {
+    console.warn('[push] falha ao registrar token:', err);
   }
 }
 

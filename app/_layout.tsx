@@ -106,16 +106,14 @@ function NotificationBridge() {
     addRef.current({ type: 'server', title, body, createdAt: new Date().toISOString() }, true);
   }, []);
 
-  // Registra o push token remoto ao fazer login (uma vez por sessão)
+  // Sync do banco + push token ao fazer login e ao retornar ao foreground
   useEffect(() => {
     if (!user?.id) return;
-    registerAndSavePushToken(user.id).catch(() => {});
-  }, [user?.id]);
-
-  // Sync do banco ao abrir/focar o app
-  useEffect(() => {
-    if (!user?.id) return;
-    const sync = () => syncServerNotifications(user.id, onServerNotif);
+    const userId = user.id;
+    const sync = () => {
+      syncServerNotifications(userId, onServerNotif);
+      registerAndSavePushToken(userId).catch(() => {});
+    };
     sync();
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') sync();
