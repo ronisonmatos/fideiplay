@@ -4,6 +4,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { AdImageCarousel } from '@/components/ad-image-carousel';
 import { ThemedText } from '@/components/themed-text';
 import { C } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
@@ -208,6 +209,8 @@ export default function AdRewardScreen() {
           isLooping
           useNativeControls={false}
         />
+      ) : ad.media_urls && ad.media_urls.length > 1 ? (
+        <AdImageCarousel images={ad.media_urls.slice(0, 6)} />
       ) : (
         <Image
           source={{ uri: ad.media_url }}
