@@ -5,6 +5,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   TouchableOpacity,
   View,
@@ -19,10 +20,20 @@ import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+import { TRILHAS } from '@/data/trilhas';
+import {
+  type AdminUserResult,
+  listUserTrilhas,
+  revokeTrilha,
+  searchUsers,
+  unlockTrilha,
+} from '@/lib/admin-trilhas';
+
+const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support';
+type AdminSection   = 'contests' | 'support' | 'trilhas';
 type FilterStatus   = 'pending' | 'approved' | 'rejected';
 type SupportFilter  = 'unread' | 'all';
 
@@ -97,6 +108,16 @@ export default function AdminTab() {
   const [expanded,   setExpanded]   = useState<string | null>(null);
   const [replyText,  setReplyText]  = useState('');
   const [sending,    setSending]    = useState<string | null>(null);
+
+  // ── Estado: Trilhas (busca de usuário + liberação manual) ────────────────
+  const [uQuery,       setUQuery]       = useState('');
+  const [uResults,     setUResults]     = useState<AdminUserResult[]>([]);
+  const [uLoading,     setULoading]     = useState(false);
+  const [uError,       setUError]       = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUserResult | null>(null);
+  const [userTrilhas,  setUserTrilhas]  = useState<Set<number>>(new Set());
+  const [tLoading,     setTLoading]     = useState(false);
+  const [toggling,     setToggling]     = useState<number | null>(null);
 
   // ── Fetch: Contestações ───────────────────────────────────────────────────
   const fetchContests = useCallback(async (silent = false) => {
@@ -267,6 +288,51 @@ export default function AdminTab() {
     );
   }, []);
 
+  // ── Ações: Trilhas ────────────────────────────────────────────────────────
+  const handleSearchUsers = useCallback(async () => {
+    const q = uQuery.trim();
+    if (!q) return;
+    setULoading(true);
+    setUError(null);
+    const { data, error } = await searchUsers(q);
+    if (error) setUError(error);
+    setUResults(data);
+    setULoading(false);
+  }, [uQuery]);
+
+  const handleSelectUser = useCallback(async (u: AdminUserResult) => {
+    setSelectedUser(u);
+    setUserTrilhas(new Set());
+    setTLoading(true);
+    const { trilhaIds, error } = await listUserTrilhas(u.id);
+    if (error) Alert.alert('Erro', error);
+    setUserTrilhas(trilhaIds);
+    setTLoading(false);
+  }, []);
+
+  const handleBackToSearch = useCallback(() => {
+    setSelectedUser(null);
+    setUserTrilhas(new Set());
+  }, []);
+
+  const handleToggleTrilha = useCallback(async (trilhaId: number, currentlyUnlocked: boolean) => {
+    if (!selectedUser) return;
+    setToggling(trilhaId);
+    const { ok, error } = currentlyUnlocked
+      ? await revokeTrilha(selectedUser.id, trilhaId)
+      : await unlockTrilha(selectedUser.id, trilhaId);
+    if (ok) {
+      setUserTrilhas(prev => {
+        const next = new Set(prev);
+        if (currentlyUnlocked) next.delete(trilhaId); else next.add(trilhaId);
+        return next;
+      });
+    } else {
+      Alert.alert('Erro', error ?? 'Não foi possível atualizar.');
+    }
+    setToggling(null);
+  }, [selectedUser]);
+
   // ── Gate ──────────────────────────────────────────────────────────────────
   if (!profile?.is_admin) {
     return (
@@ -296,6 +362,7 @@ export default function AdminTab() {
           {([
             { key: 'contests', label: 'Contestações', icon: '✋' },
             { key: 'support',  label: 'Suporte',       icon: '💬' },
+            { key: 'trilhas',  label: 'Trilhas',       icon: '🔓' },
           ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
             const active = section === key;
             return (
@@ -576,6 +643,108 @@ export default function AdminTab() {
           </>
         )}
 
+        {/* ══ SEÇÃO: TRILHAS ══ */}
+        {section === 'trilhas' && (
+          <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+            {!selectedUser && (
+              <>
+                <ThemedView type="backgroundElement" style={s.card}>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TextInput
+                      style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={uQuery}
+                      onChangeText={setUQuery}
+                      placeholder="Nome ou e-mail do usuário"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                      returnKeyType="search"
+                      onSubmitEditing={handleSearchUsers}
+                    />
+                    <TouchableOpacity
+                      style={[s.searchBtn, uLoading && { opacity: 0.6 }]}
+                      onPress={handleSearchUsers}
+                      disabled={uLoading}
+                      activeOpacity={0.8}>
+                      {uLoading
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Buscar</ThemedText>}
+                    </TouchableOpacity>
+                  </View>
+                </ThemedView>
+
+                {uError ? (
+                  <ErrorState message={uError} onRetry={handleSearchUsers} />
+                ) : uResults.length === 0 ? (
+                  <EmptyState icon="🔍" color={C.purple}
+                    title="Buscar usuário"
+                    subtitle="Digite o nome ou e-mail e toque em Buscar para liberar trilhas premium." />
+                ) : uResults.map(u => (
+                  <TouchableOpacity key={u.id} onPress={() => handleSelectUser(u)} activeOpacity={0.75}>
+                    <ThemedView type="backgroundElement" style={[s.card, s.playerRow]}>
+                      <AvatarImage value={u.avatar_emoji} size={40} />
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold" numberOfLines={1}>
+                          {u.name}{u.is_admin ? '  👑' : ''}
+                        </ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>
+                          {u.email}
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={{ color: C.purple, fontWeight: '700' }}>Ver →</ThemedText>
+                    </ThemedView>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {selectedUser && (
+              <>
+                <TouchableOpacity onPress={handleBackToSearch} activeOpacity={0.7} style={s.backToSearch}>
+                  <ThemedText style={{ color: C.purple, fontWeight: '700' }}>← Voltar para busca</ThemedText>
+                </TouchableOpacity>
+
+                <ThemedView type="backgroundElement" style={[s.card, s.playerRow]}>
+                  <AvatarImage value={selectedUser.avatar_emoji} size={44} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText type="smallBold">{selectedUser.name}</ThemedText>
+                    <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>{selectedUser.email}</ThemedText>
+                  </View>
+                </ThemedView>
+
+                <ThemedText style={s.sectionLabel}>TRILHAS PREMIUM</ThemedText>
+
+                {tLoading ? (
+                  <View style={s.centerFlex}><ActivityIndicator color={C.purple} /></View>
+                ) : TRILHAS_PREMIUM.map(trilha => {
+                  const unlocked   = userTrilhas.has(trilha.id);
+                  const isToggling = toggling === trilha.id;
+                  return (
+                    <ThemedView key={trilha.id} type="backgroundElement" style={[s.card, s.playerRow]}>
+                      <ThemedText style={{ fontSize: 22 }}>{trilha.icone}</ThemedText>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold">{trilha.titulo}</ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                          {unlocked ? 'Liberada' : 'Bloqueada'}
+                        </ThemedText>
+                      </View>
+                      {isToggling ? (
+                        <ActivityIndicator size="small" color={C.purple} />
+                      ) : (
+                        <Switch
+                          value={unlocked}
+                          onValueChange={() => handleToggleTrilha(trilha.id, unlocked)}
+                          trackColor={{ false: '#3a3a5c', true: C.purple }}
+                          thumbColor="#ffffff"
+                        />
+                      )}
+                    </ThemedView>
+                  );
+                })}
+              </>
+            )}
+          </ScrollView>
+        )}
+
       </SafeAreaView>
     </ThemedView>
   );
@@ -667,4 +836,10 @@ const s = StyleSheet.create({
   sendReplyBtn:  { paddingVertical: 8, paddingHorizontal: 20, borderRadius: C.radius.pill, backgroundColor: C.purple },
   respondBtn:    { alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 16, borderRadius: C.radius.pill, borderWidth: 1.5, borderColor: C.purple + '88' },
   msgFooter:     { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+
+  // Trilhas
+  sectionLabel:  { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: '#9B97D4', textTransform: 'uppercase', marginTop: Spacing.one },
+  searchInput:   { flex: 1, borderWidth: 1.5, borderRadius: C.radius.pill, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14 },
+  searchBtn:     { paddingHorizontal: 20, borderRadius: C.radius.pill, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center' },
+  backToSearch:  { alignSelf: 'flex-start', marginBottom: Spacing.one },
 });
