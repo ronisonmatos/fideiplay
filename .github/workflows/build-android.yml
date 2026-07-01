@@ -59,7 +59,9 @@ jobs:
         run: npm install -g eas-cli@latest
 
       - name: Restore google-services.json
-        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > google-services.json
+          git add -f google-services.json
 
       - name: Build AAB
         run: eas build --platform android --profile production --local --non-interactive --output ./build/app-release.aab
