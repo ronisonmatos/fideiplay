@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   FlatList,
@@ -14,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -23,6 +24,7 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/context/notifications-context';
 import { useTheme } from '@/hooks/use-theme';
+import { askChatAI } from '@/lib/chat-ai';
 import { playChatSound } from '@/lib/chat-sound';
 import { sendChatOSNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
@@ -31,6 +33,9 @@ const EXPIRE_MS    = 60 * 60 * 1000;  // 1 hora
 const FADE_MS      = 30 * 1000;
 const MAX_LEN      = 200;
 const HISTORY_24H  = 24 * 60 * 60 * 1000;
+
+const AI_COMMAND = '/ia ';
+const AI_COST    = 20;
 
 const USER_COLORS = [C.purple, C.green, C.gold, '#E24B4A', '#3B82F6', '#EC4899', '#0891B2'];
 
@@ -73,6 +78,19 @@ interface HistoryMessage {
   content:   string | null;
   sent_at:   string;
 }
+
+// Troca com a IA católica (/ia) — só local, nunca gravada no banco/chat público.
+interface AiItem {
+  id:        string;
+  question:  string;
+  answer:    string | null;
+  error:     string | null;
+  createdAt: string;
+}
+
+type FeedItem =
+  | { kind: 'chat'; key: string; createdAt: string; msg: ChatMessage }
+  | { kind: 'ai';   key: string; createdAt: string; item: AiItem };
 
 // ── Bolha com animação de expiração ──────────────────────────────────────────
 function MessageBubble({
@@ -181,6 +199,35 @@ function MessageBubble({
   );
 }
 
+// ── Troca com a IA católica (/ia) — visível só para quem perguntou ──────────
+function AiBubble({ item }: { item: AiItem }) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={[s.bubbleWrap, s.bubbleRight]}>
+        <View style={[s.bubble, { backgroundColor: C.purple }]}>
+          <ThemedText style={[s.bubbleText, { color: '#fff' }]}>{item.question}</ThemedText>
+        </View>
+      </View>
+      <View style={[s.bubbleWrap, s.bubbleLeft]}>
+        <View style={[s.bubble, s.bubbleBorderLeft, { backgroundColor: C.gold + '22', borderLeftColor: C.gold }]}>
+          <ThemedText style={[s.bubbleName, { color: C.gold }]}>🤖 IA Católica</ThemedText>
+          {item.error ? (
+            <ThemedText style={[s.bubbleText, { color: C.red }]}>{item.error}</ThemedText>
+          ) : item.answer ? (
+            <ThemedText style={[s.bubbleText, { color: theme.text }]}>{item.answer}</ThemedText>
+          ) : (
+            <ActivityIndicator size="small" color={C.gold} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+          )}
+          <ThemedText themeColor="textSecondary" style={{ fontSize: 9, marginTop: 4 }}>
+            Visível só para você · pode conter imprecisões
+          </ThemedText>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ── Tela principal ────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const theme   = useTheme();
@@ -193,6 +240,7 @@ export default function ChatScreen() {
   const [historyVisible,  setHistoryVisible]  = useState(false);
   const [historyMessages, setHistoryMessages] = useState<HistoryMessage[]>([]);
   const [historyLoading,  setHistoryLoading]  = useState(false);
+  const [aiItems,         setAiItems]         = useState<AiItem[]>([]);
 
   const listRef      = useRef<FlatList>(null);
   const channelRef   = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -317,6 +365,41 @@ export default function ChatScreen() {
       return;
     }
 
+    // Comando de IA católica — resposta privada (não entra no chat público)
+    if (text.toLowerCase().startsWith(AI_COMMAND)) {
+      const question = text.slice(AI_COMMAND.length).trim();
+      setInputText('');
+      if (!question) {
+        Alert.alert('Pergunte algo', 'Use assim: /ia Quem foi Santo Agostinho?');
+        return;
+      }
+      if ((profile.coins ?? 0) < AI_COST) {
+        Alert.alert('Moedas insuficientes', `Você precisa de ${AI_COST} 🪙 para perguntar à IA.\n\nGanhe moedas jogando!`);
+        return;
+      }
+
+      const id = `ai-${Date.now()}`;
+      setAiItems(prev => [...prev, { id, question, answer: null, error: null, createdAt: new Date().toISOString() }]);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+      await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -AI_COST });
+      refreshProfile();
+
+      const { answer, error } = await askChatAI(question);
+
+      if (error || !answer) {
+        await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: AI_COST });
+        refreshProfile();
+        setAiItems(prev => prev.map(it => it.id === id
+          ? { ...it, error: 'Não foi possível responder agora. Tente de novo em instantes.' }
+          : it));
+      } else {
+        setAiItems(prev => prev.map(it => it.id === id ? { ...it, answer } : it));
+      }
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+      return;
+    }
+
     if ((profile.coins ?? 0) < 1) {
       Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para enviar uma mensagem.\n\nGanhe moedas jogando!');
       return;
@@ -352,6 +435,13 @@ export default function ChatScreen() {
 
     setSending(false);
   }, [inputText, user, profile, sending, animateCoin, refreshProfile, fetchHistory]);
+
+  // Mescla chat público + trocas com a IA (local, só para quem perguntou)
+  const feed: FeedItem[] = useMemo(() => {
+    const chatItems: FeedItem[] = messages.map(m => ({ kind: 'chat', key: `c-${m.id}`, createdAt: m.created_at, msg: m }));
+    const aiFeedItems: FeedItem[] = aiItems.map(a => ({ kind: 'ai', key: `a-${a.id}`, createdAt: a.createdAt, item: a }));
+    return [...chatItems, ...aiFeedItems].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [messages, aiItems]);
 
   // ── Login gate ────────────────────────────────────────────────────────────
   if (!user) {
@@ -482,21 +572,23 @@ export default function ChatScreen() {
           {/* Banner efêmero */}
           <View style={[s.ephemeralBanner, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText themeColor="textSecondary" style={s.ephemeralText}>
-              ⏳ Mensagens somem em 1h
+              ⏳ Mensagens somem em 1h · 🤖 /ia sua pergunta ({AI_COST}🪙)
             </ThemedText>
           </View>
 
           {/* Lista */}
           <FlatList
             ref={listRef}
-            data={messages}
-            keyExtractor={m => m.id}
-            renderItem={({ item }) => (
+            data={feed}
+            keyExtractor={f => f.key}
+            renderItem={({ item }) => item.kind === 'chat' ? (
               <MessageBubble
-                msg={item}
-                isOwn={item.user_id === user.id}
+                msg={item.msg}
+                isOwn={item.msg.user_id === user.id}
                 onExpired={handleExpired}
               />
+            ) : (
+              <AiBubble item={item.item} />
             )}
             contentContainerStyle={[s.listContent, { paddingBottom: BottomTabInset + 8 }]}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
@@ -523,9 +615,6 @@ export default function ChatScreen() {
               placeholderTextColor={theme.textSecondary}
               multiline
               maxLength={MAX_LEN}
-              returnKeyType="send"
-              blurOnSubmit={false}
-              onSubmitEditing={canSend ? handleSend : undefined}
             />
 
             <View style={s.inputRight}>
