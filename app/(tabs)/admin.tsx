@@ -28,12 +28,15 @@ import {
   searchUsers,
   unlockTrilha,
 } from '@/lib/admin-trilhas';
+import { broadcastNotification, sendNotificationToUser, triggerDispatchNow } from '@/lib/admin-notifications';
 
 const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support' | 'trilhas';
+type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications';
+type NotifMode       = 'geral' | 'direto';
+type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type FilterStatus   = 'pending' | 'approved' | 'rejected';
 type SupportFilter  = 'unread' | 'all';
 
@@ -118,6 +121,19 @@ export default function AdminTab() {
   const [userTrilhas,  setUserTrilhas]  = useState<Set<number>>(new Set());
   const [tLoading,     setTLoading]     = useState(false);
   const [toggling,     setToggling]     = useState<number | null>(null);
+
+  // ── Estado: Notificações (geral/direta, imediata/agendada) ───────────────
+  const [nMode,        setNMode]        = useState<NotifMode>('geral');
+  const [nTitle,       setNTitle]       = useState('');
+  const [nBody,        setNBody]        = useState('');
+  const [nSchedule,    setNSchedule]    = useState<NotifSchedule>('now');
+  const [nCustomDate,  setNCustomDate]  = useState('');
+  const [nCustomTime,  setNCustomTime]  = useState('');
+  const [nSending,     setNSending]     = useState(false);
+  const [nQuery,       setNQuery]       = useState('');
+  const [nResults,     setNResults]     = useState<AdminUserResult[]>([]);
+  const [nSearching,   setNSearching]   = useState(false);
+  const [nSelectedUser, setNSelectedUser] = useState<AdminUserResult | null>(null);
 
   // ── Fetch: Contestações ───────────────────────────────────────────────────
   const fetchContests = useCallback(async (silent = false) => {
@@ -333,6 +349,92 @@ export default function AdminTab() {
     setToggling(null);
   }, [selectedUser]);
 
+  // ── Ações: Notificações ───────────────────────────────────────────────────
+  const handleSearchNUsers = useCallback(async () => {
+    const q = nQuery.trim();
+    if (!q) return;
+    setNSearching(true);
+    const { data, error } = await searchUsers(q);
+    if (error) Alert.alert('Erro', error);
+    setNResults(data);
+    setNSearching(false);
+  }, [nQuery]);
+
+  function computeScheduledAt(): Date | null {
+    const now = new Date();
+    if (nSchedule === 'now') return now;
+    if (nSchedule === '1h') return new Date(now.getTime() + 60 * 60 * 1000);
+    if (nSchedule === 'tomorrow9') {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    }
+    const [dd, mm, yyyy] = nCustomDate.split('/').map(Number);
+    const [hh, min] = nCustomTime.split(':').map(Number);
+    if (!dd || !mm || !yyyy || Number.isNaN(hh) || Number.isNaN(min)) return null;
+    const d = new Date(yyyy, mm - 1, dd, hh, min, 0, 0);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const handleSendNotification = useCallback(async () => {
+    const title = nTitle.trim();
+    const body  = nBody.trim();
+    if (!title || !body) {
+      Alert.alert('Preencha tudo', 'Título e mensagem são obrigatórios.');
+      return;
+    }
+    if (nMode === 'direto' && !nSelectedUser) {
+      Alert.alert('Selecione um usuário', 'Busque e selecione o destinatário.');
+      return;
+    }
+    const scheduledAt = computeScheduledAt();
+    if (!scheduledAt) {
+      Alert.alert('Data inválida', 'Confira o formato: DD/MM/AAAA e HH:MM.');
+      return;
+    }
+
+    const destino = nMode === 'geral' ? 'TODOS os usuários' : nSelectedUser!.name;
+    const quando  = nSchedule === 'now' ? 'Envio imediato' : `Agendado para ${scheduledAt.toLocaleString('pt-BR')}`;
+
+    Alert.alert(
+      nSchedule === 'now' ? 'Enviar agora?' : 'Agendar notificação?',
+      `Para: ${destino}\n"${title}"\n${quando}`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: nSchedule === 'now' ? 'Enviar' : 'Agendar',
+          onPress: async () => {
+            setNSending(true);
+            const result = nMode === 'geral'
+              ? await broadcastNotification(title, body, scheduledAt)
+              : await sendNotificationToUser(nSelectedUser!.id, title, body, scheduledAt);
+
+            if (result.ok) {
+              if (nSchedule === 'now') triggerDispatchNow();
+              Alert.alert(
+                'Pronto!',
+                nMode === 'geral'
+                  ? `Notificação registrada para ${result.count ?? 0} usuários.`
+                  : 'Notificação registrada com sucesso.',
+              );
+              setNTitle('');
+              setNBody('');
+              setNSelectedUser(null);
+              setNQuery('');
+              setNResults([]);
+              setNCustomDate('');
+              setNCustomTime('');
+            } else {
+              Alert.alert('Erro', result.error ?? 'Não foi possível processar.');
+            }
+            setNSending(false);
+          },
+        },
+      ],
+    );
+  }, [nMode, nTitle, nBody, nSchedule, nCustomDate, nCustomTime, nSelectedUser]);
+
   // ── Gate ──────────────────────────────────────────────────────────────────
   if (!profile?.is_admin) {
     return (
@@ -360,9 +462,10 @@ export default function AdminTab() {
         {/* Seletor de seção */}
         <View style={[s.sectionRow, { borderBottomColor: C.border, backgroundColor: theme.backgroundElement }]}>
           {([
-            { key: 'contests', label: 'Contestações', icon: '✋' },
-            { key: 'support',  label: 'Suporte',       icon: '💬' },
-            { key: 'trilhas',  label: 'Trilhas',       icon: '🔓' },
+            { key: 'contests',      label: 'Contestações', icon: '✋' },
+            { key: 'support',       label: 'Suporte',       icon: '💬' },
+            { key: 'trilhas',       label: 'Trilhas',       icon: '🔓' },
+            { key: 'notifications', label: 'Notificar',     icon: '🔔' },
           ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
             const active = section === key;
             return (
@@ -745,6 +848,156 @@ export default function AdminTab() {
           </ScrollView>
         )}
 
+        {/* ══ SEÇÃO: NOTIFICAÇÕES ══ */}
+        {section === 'notifications' && (
+          <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+            {/* Modo: geral ou direto */}
+            <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+              <TouchableOpacity
+                style={[s.modeBtn, nMode === 'geral' && s.modeBtnActive]}
+                onPress={() => setNMode('geral')}
+                activeOpacity={0.8}>
+                <ThemedText style={[s.modeBtnText, nMode === 'geral' && s.modeBtnTextActive]}>📢 Geral</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modeBtn, nMode === 'direto' && s.modeBtnActive]}
+                onPress={() => setNMode('direto')}
+                activeOpacity={0.8}>
+                <ThemedText style={[s.modeBtnText, nMode === 'direto' && s.modeBtnTextActive]}>👤 Direto</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {nMode === 'direto' && (
+              <ThemedView type="backgroundElement" style={s.card}>
+                {!nSelectedUser ? (
+                  <>
+                    <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                      <TextInput
+                        style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                        value={nQuery}
+                        onChangeText={setNQuery}
+                        placeholder="Nome ou e-mail do usuário"
+                        placeholderTextColor={theme.textSecondary}
+                        autoCapitalize="none"
+                        returnKeyType="search"
+                        onSubmitEditing={handleSearchNUsers}
+                      />
+                      <TouchableOpacity
+                        style={[s.searchBtn, nSearching && { opacity: 0.6 }]}
+                        onPress={handleSearchNUsers}
+                        disabled={nSearching}
+                        activeOpacity={0.8}>
+                        {nSearching
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Buscar</ThemedText>}
+                      </TouchableOpacity>
+                    </View>
+                    {nResults.map(u => (
+                      <TouchableOpacity
+                        key={u.id}
+                        onPress={() => { setNSelectedUser(u); setNResults([]); }}
+                        activeOpacity={0.75}
+                        style={[s.playerRow, { marginTop: Spacing.two }]}>
+                        <AvatarImage value={u.avatar_emoji} size={36} />
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="smallBold" numberOfLines={1}>{u.name}</ThemedText>
+                          <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>{u.email}</ThemedText>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                ) : (
+                  <View style={s.playerRow}>
+                    <AvatarImage value={nSelectedUser.avatar_emoji} size={36} />
+                    <View style={{ flex: 1 }}>
+                      <ThemedText type="smallBold" numberOfLines={1}>{nSelectedUser.name}</ThemedText>
+                      <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>{nSelectedUser.email}</ThemedText>
+                    </View>
+                    <TouchableOpacity onPress={() => setNSelectedUser(null)} activeOpacity={0.7}>
+                      <ThemedText style={{ color: C.red, fontWeight: '700', fontSize: 12 }}>Trocar</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ThemedView>
+            )}
+
+            <ThemedView type="backgroundElement" style={s.card}>
+              <TextInput
+                style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                value={nTitle}
+                onChangeText={setNTitle}
+                placeholder="Título (ex: 🎉 Nova trilha disponível!)"
+                placeholderTextColor={theme.textSecondary}
+                maxLength={80}
+              />
+              <TextInput
+                style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border, marginTop: Spacing.two }]}
+                value={nBody}
+                onChangeText={setNBody}
+                placeholder="Mensagem..."
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                maxLength={200}
+              />
+            </ThemedView>
+
+            <ThemedText style={s.sectionLabel}>QUANDO ENVIAR</ThemedText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
+              {([
+                { key: 'now',        label: 'Agora' },
+                { key: '1h',         label: '+1 hora' },
+                { key: 'tomorrow9',  label: 'Amanhã 9h' },
+                { key: 'custom',     label: 'Escolher data' },
+              ] as { key: NotifSchedule; label: string }[]).map(({ key, label }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[s.scheduleBtn, nSchedule === key && s.scheduleBtnActive]}
+                  onPress={() => setNSchedule(key)}
+                  activeOpacity={0.8}>
+                  <ThemedText style={[s.scheduleBtnText, nSchedule === key && s.scheduleBtnTextActive]}>{label}</ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {nSchedule === 'custom' && (
+              <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                <TextInput
+                  style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={nCustomDate}
+                  onChangeText={setNCustomDate}
+                  placeholder="DD/MM/AAAA"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="number-pad"
+                />
+                <TextInput
+                  style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={nCustomTime}
+                  onChangeText={setNCustomTime}
+                  placeholder="HH:MM"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="number-pad"
+                />
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[s.sendNotifBtn, nSending && { opacity: 0.6 }]}
+              onPress={handleSendNotification}
+              disabled={nSending}
+              activeOpacity={0.85}>
+              {nSending
+                ? <ActivityIndicator size="small" color="#fff" />
+                : (
+                  <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+                    {nSchedule === 'now' ? '📤 Enviar agora' : '🕒 Agendar'}
+                  </ThemedText>
+                )}
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+
       </SafeAreaView>
     </ThemedView>
   );
@@ -842,4 +1095,15 @@ const s = StyleSheet.create({
   searchInput:   { flex: 1, borderWidth: 1.5, borderRadius: C.radius.pill, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14 },
   searchBtn:     { paddingHorizontal: 20, borderRadius: C.radius.pill, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center' },
   backToSearch:  { alignSelf: 'flex-start', marginBottom: Spacing.one },
+
+  // Notificações
+  modeBtn:            { flex: 1, paddingVertical: 10, borderRadius: C.radius.pill, alignItems: 'center', borderWidth: 1.5, borderColor: C.border },
+  modeBtnActive:       { backgroundColor: C.purple, borderColor: C.purple },
+  modeBtnText:         { fontSize: 13, fontWeight: '700' },
+  modeBtnTextActive:   { color: '#fff' },
+  scheduleBtn:         { paddingHorizontal: 14, paddingVertical: 8, borderRadius: C.radius.pill, borderWidth: 1.5, borderColor: C.border },
+  scheduleBtnActive:   { backgroundColor: C.purple, borderColor: C.purple },
+  scheduleBtnText:     { fontSize: 12, fontWeight: '700' },
+  scheduleBtnTextActive: { color: '#fff' },
+  sendNotifBtn:        { marginTop: Spacing.two, paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', backgroundColor: C.purple },
 });

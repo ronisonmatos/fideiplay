@@ -39,6 +39,8 @@ const HISTORY_24H  = 24 * 60 * 60 * 1000;
 const AI_COMMAND = '/ia ';
 const AI_COST    = 20;
 
+const EMAIL_LIKE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const USER_COLORS = [C.purple, C.green, C.gold, '#E24B4A', '#3B82F6', '#EC4899', '#0891B2'];
 
 function userColor(uid: string): string {
@@ -386,6 +388,41 @@ export default function ChatScreen() {
   }, []);
 
   // ── Envio ─────────────────────────────────────────────────────────────────
+  // Envia de fato a mensagem no chat público (separado do handleSend pra
+  // poder pedir confirmação antes, sem duplicar a lógica de envio).
+  const sendPlainMessage = useCallback(async (text: string) => {
+    if (!user || !profile) return;
+    setSending(true);
+    setInputText('');
+    animateCoin();
+
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
+    refreshProfile();
+
+    const { error } = await supabase.from('community_messages').insert({
+      user_id:    user.id,
+      user_name:  profile.name ?? 'Jogador',
+      content:    text,
+      expires_at: new Date(Date.now() + EXPIRE_MS).toISOString(),
+    });
+
+    if (error) {
+      await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: 1 });
+      refreshProfile();
+      Alert.alert('Erro', 'Não foi possível enviar a mensagem. Tente novamente.');
+      setInputText(text);
+    } else {
+      supabase.from('community_message_log').insert({
+        user_id:   user.id,
+        user_name: profile.name ?? 'Jogador',
+        content:   text,
+      }).then(() => {});
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+    }
+
+    setSending(false);
+  }, [user, profile, animateCoin, refreshProfile]);
+
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || !user || !profile || sending) return;
@@ -441,36 +478,22 @@ export default function ChatScreen() {
       return;
     }
 
-    setSending(true);
-    setInputText('');
-    animateCoin();
-
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
-    refreshProfile();
-
-    const { error } = await supabase.from('community_messages').insert({
-      user_id:    user.id,
-      user_name:  profile.name ?? 'Jogador',
-      content:    text,
-      expires_at: new Date(Date.now() + EXPIRE_MS).toISOString(),
-    });
-
-    if (error) {
-      await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: 1 });
-      refreshProfile();
-      Alert.alert('Erro', 'Não foi possível enviar a mensagem. Tente novamente.');
-      setInputText(text);
-    } else {
-      supabase.from('community_message_log').insert({
-        user_id:   user.id,
-        user_name: profile.name ?? 'Jogador',
-        content:   text,
-      }).then(() => {});
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+    // Mensagem igual a um e-mail é quase sempre engano (autofill do teclado
+    // preenchendo o campo sem querer) — confirma antes de expor no chat público.
+    if (EMAIL_LIKE.test(text)) {
+      Alert.alert(
+        'Enviar seu e-mail no chat?',
+        'Essa mensagem parece ser um endereço de e-mail. Tem certeza que quer enviar isso pra todo mundo ver?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Enviar mesmo assim', style: 'destructive', onPress: () => sendPlainMessage(text) },
+        ],
+      );
+      return;
     }
 
-    setSending(false);
-  }, [inputText, user, profile, sending, animateCoin, refreshProfile, fetchHistory]);
+    await sendPlainMessage(text);
+  }, [inputText, user, profile, sending, fetchHistory, sendPlainMessage]);
 
   // Mescla chat público + trocas com a IA (local, só para quem perguntou)
   const feed: FeedItem[] = useMemo(() => {
