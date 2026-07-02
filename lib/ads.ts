@@ -5,6 +5,7 @@ export interface Ad {
   title: string;
   description: string | null;
   media_url: string;
+  media_urls: string[] | null;
   media_type: 'video' | 'image';
   thumb_url: string | null;
   cta_text: string;
@@ -18,7 +19,7 @@ export interface Ad {
 export async function fetchRandomAd(): Promise<Ad | null> {
   const { data, error } = await supabase
     .from('ads')
-    .select('id,title,description,media_url,media_type,thumb_url,cta_text,cta_url,duration,skip_after,coins,weight')
+    .select('id,title,description,media_url,media_urls,media_type,thumb_url,cta_text,cta_url,duration,skip_after,coins,weight')
     .eq('active', true)
     .limit(50);
 

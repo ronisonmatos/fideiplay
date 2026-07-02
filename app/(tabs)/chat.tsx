@@ -8,7 +8,9 @@ import {
   Modal,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
   View,
@@ -199,9 +201,36 @@ function MessageBubble({
   );
 }
 
+// Markdown inline simples (**negrito**, *itálico*/_itálico_) — a resposta da
+// IA vem com essa formatação em texto puro e precisa virar Text estilizado.
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const regex = /\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let i = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    if (match[1] !== undefined) {
+      parts.push(<Text key={i++} style={{ fontWeight: '800' }}>{match[1]}</Text>);
+    } else {
+      parts.push(<Text key={i++} style={{ fontStyle: 'italic' }}>{match[2] ?? match[3]}</Text>);
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
 // ── Troca com a IA católica (/ia) — visível só para quem perguntou ──────────
 function AiBubble({ item }: { item: AiItem }) {
   const theme = useTheme();
+
+  function handleShare() {
+    if (!item.answer) return;
+    Share.share({ message: `${item.question}\n\n${item.answer}` }).catch(() => {});
+  }
+
   return (
     <View style={{ gap: 6 }}>
       <View style={[s.bubbleWrap, s.bubbleRight]}>
@@ -211,11 +240,18 @@ function AiBubble({ item }: { item: AiItem }) {
       </View>
       <View style={[s.bubbleWrap, s.bubbleLeft]}>
         <View style={[s.bubble, s.bubbleBorderLeft, { backgroundColor: C.gold + '22', borderLeftColor: C.gold }]}>
-          <ThemedText style={[s.bubbleName, { color: C.gold }]}>🤖 IA Católica</ThemedText>
+          <View style={s.aiHeaderRow}>
+            <ThemedText style={[s.bubbleName, { color: C.gold }]}>🤖 IA Católica</ThemedText>
+            {item.answer && (
+              <TouchableOpacity onPress={handleShare} hitSlop={8} activeOpacity={0.7}>
+                <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>↗ Compartilhar</ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
           {item.error ? (
             <ThemedText style={[s.bubbleText, { color: C.red }]}>{item.error}</ThemedText>
           ) : item.answer ? (
-            <ThemedText style={[s.bubbleText, { color: theme.text }]}>{item.answer}</ThemedText>
+            <ThemedText style={[s.bubbleText, { color: theme.text }]}>{renderInlineMarkdown(item.answer)}</ThemedText>
           ) : (
             <ActivityIndicator size="small" color={C.gold} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
           )}
@@ -722,6 +758,7 @@ const s = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   bubbleName:   { fontSize: 11, fontWeight: '700', marginBottom: 2 },
+  aiHeaderRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   bubbleText:   { fontSize: 15, lineHeight: 21 },
   bubbleFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
   bubbleTime:   { fontSize: 10, fontWeight: '500', flexShrink: 0 },
