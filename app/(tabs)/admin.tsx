@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -31,6 +33,20 @@ import {
 import { broadcastNotification, sendNotificationToUser, triggerDispatchNow } from '@/lib/admin-notifications';
 
 const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
+
+// Máscara automática enquanto digita — só números, barras/dois-pontos entram sozinhos
+function formatDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function formatTimeInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -453,6 +469,10 @@ export default function AdminTab() {
   return (
     <ThemedView style={s.fill}>
       <SafeAreaView style={s.fill} edges={['top']}>
+        <KeyboardAvoidingView
+          style={s.fill}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
 
         {/* Header */}
         <View style={[s.header, { borderBottomColor: C.border }]}>
@@ -966,18 +986,20 @@ export default function AdminTab() {
                 <TextInput
                   style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
                   value={nCustomDate}
-                  onChangeText={setNCustomDate}
+                  onChangeText={t => setNCustomDate(formatDateInput(t))}
                   placeholder="DD/MM/AAAA"
                   placeholderTextColor={theme.textSecondary}
                   keyboardType="number-pad"
+                  maxLength={10}
                 />
                 <TextInput
                   style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
                   value={nCustomTime}
-                  onChangeText={setNCustomTime}
+                  onChangeText={t => setNCustomTime(formatTimeInput(t))}
                   placeholder="HH:MM"
                   placeholderTextColor={theme.textSecondary}
                   keyboardType="number-pad"
+                  maxLength={5}
                 />
               </View>
             )}
@@ -998,6 +1020,7 @@ export default function AdminTab() {
           </ScrollView>
         )}
 
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
