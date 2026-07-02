@@ -141,6 +141,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [loadProfile, loadTrilhas]);
 
+  // Watchdog: se a sessão existe mas o profile não carregou (as 3 tentativas
+  // iniciais falharam), continua tentando periodicamente em segundo plano até
+  // conseguir. Cobre o caso em que o app fica muito tempo ativo sem nunca ir
+  // pro background — o listener de AppState acima não dispara de novo nesse
+  // cenário, e sem isso o usuário fica "logado sem dados" até fechar o app.
+  useEffect(() => {
+    if (!session?.user.id || profile) return;
+    const userId = session.user.id;
+    const timer = setInterval(() => {
+      loadProfile(userId);
+      loadTrilhas(userId);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [session, profile, loadProfile, loadTrilhas]);
+
   const signUp = useCallback(async (
     email: string,
     password: string,

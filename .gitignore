@@ -19,6 +19,10 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Chaves de conta de serviço do Firebase/Google Cloud — NUNCA versionar
+*firebase-adminsdk*.json
+*-service-account*.json
+
 # Metro
 .metro-health-check*
 
