@@ -54,13 +54,15 @@ BEGIN
     player2_id   = CASE WHEN v_count = 1 THEN p_player_id   ELSE player2_id   END,
     player2_name = CASE WHEN v_count = 1 THEN p_player_name ELSE player2_name END,
     status       = CASE WHEN v_is_full   THEN 'active'      ELSE status       END
-  WHERE id = p_room_id;
+  WHERE id = p_room_id
+  RETURNING players INTO v_room.players;
 
   RETURN jsonb_build_object(
     'ok',           true,
     'player_count', v_new_count,
     'max_players',  v_room.max_players,
-    'is_full',      v_is_full
+    'is_full',      v_is_full,
+    'players',      v_room.players
   );
 END;
 $$;
