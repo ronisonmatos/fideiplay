@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 
 import { AvatarImage } from '@/components/avatar-image';
 import { ThemedText } from '@/components/themed-text';
@@ -69,6 +71,40 @@ function isoToDatePart(iso: string): string {
 function isoToTimePart(iso: string): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// Abre a galeria, sobe a(s) imagem(ns) escolhida(s) no bucket "ads" e devolve as URLs públicas
+// na ordem selecionada. Array vazio = usuário cancelou (erros de permissão/upload lançam).
+async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number }): Promise<string[]> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) {
+    Alert.alert('Permissão negada', 'Autorize o acesso às fotos para escolher uma imagem.');
+    return [];
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    quality: 0.85,
+    allowsMultipleSelection: !!opts?.multiple,
+    selectionLimit: opts?.limit ?? 1,
+  });
+  if (result.canceled || !result.assets?.length) return [];
+
+  const urls: string[] = [];
+  for (const asset of result.assets) {
+    const ext  = (asset.fileName?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const bytes = await new File(asset.uri).bytes();
+    const { error } = await supabase.storage
+      .from('ads')
+      .upload(path, bytes, { contentType: asset.mimeType || 'image/jpeg', upsert: true });
+    if (error) throw error;
+
+    const { data } = supabase.storage.from('ads').getPublicUrl(path);
+    urls.push(data.publicUrl);
+  }
+  return urls;
 }
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -205,6 +241,9 @@ export default function AdminTab() {
   const [adModalVisible, setAdModalVisible] = useState(false);
   const [adEditingId,    setAdEditingId]    = useState<string | null>(null);
   const [adSaving,       setAdSaving]       = useState(false);
+  const [aUploadingMedia,    setAUploadingMedia]    = useState(false);
+  const [aUploadingThumb,    setAUploadingThumb]    = useState(false);
+  const [aUploadingCarousel, setAUploadingCarousel] = useState(false);
 
   const [aTitle,       setATitle]       = useState('');
   const [aDescription, setADescription] = useState('');
@@ -573,6 +612,51 @@ export default function AdminTab() {
     setAdModalVisible(true);
   }, []);
 
+  const handlePickMediaImage = useCallback(async () => {
+    setAUploadingMedia(true);
+    try {
+      const urls = await pickAndUploadAdImages({ multiple: false });
+      if (urls[0]) setAMediaUrl(urls[0]);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível enviar a imagem. Tente novamente.');
+    } finally {
+      setAUploadingMedia(false);
+    }
+  }, []);
+
+  const handlePickThumbImage = useCallback(async () => {
+    setAUploadingThumb(true);
+    try {
+      const urls = await pickAndUploadAdImages({ multiple: false });
+      if (urls[0]) setAThumbUrl(urls[0]);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível enviar a imagem. Tente novamente.');
+    } finally {
+      setAUploadingThumb(false);
+    }
+  }, []);
+
+  const handlePickCarouselImages = useCallback(async () => {
+    const already   = aMediaUrls.split('\n').map(u => u.trim()).filter(Boolean).length;
+    const remaining = Math.max(0, 6 - already);
+    if (remaining === 0) {
+      Alert.alert('Limite atingido', 'O carrossel aceita no máximo 6 imagens.');
+      return;
+    }
+    setAUploadingCarousel(true);
+    try {
+      const urls = await pickAndUploadAdImages({ multiple: true, limit: remaining });
+      if (urls.length) {
+        const existing = aMediaUrls.split('\n').map(u => u.trim()).filter(Boolean);
+        setAMediaUrls([...existing, ...urls].slice(0, 6).join('\n'));
+      }
+    } catch {
+      Alert.alert('Erro', 'Não foi possível enviar as imagens. Tente novamente.');
+    } finally {
+      setAUploadingCarousel(false);
+    }
+  }, [aMediaUrls]);
+
   const handleSaveAd = useCallback(async () => {
     const title    = aTitle.trim();
     const mediaUrl = aMediaUrl.trim();
@@ -714,173 +798,237 @@ export default function AdminTab() {
 
               <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
                 <ThemedText style={s.sectionLabel}>CONTEÚDO</ThemedText>
-                <TextInput
-                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aTitle}
-                  onChangeText={setATitle}
-                  placeholder="Título"
-                  placeholderTextColor={theme.textSecondary}
-                  maxLength={80}
-                />
-                <TextInput
-                  style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aDescription}
-                  onChangeText={setADescription}
-                  placeholder="Descrição (opcional)"
-                  placeholderTextColor={theme.textSecondary}
-                  multiline
-                  numberOfLines={2}
-                  textAlignVertical="top"
-                />
+                <ThemedView type="backgroundElement" style={s.card}>
+                  <TextInput
+                    style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aTitle}
+                    onChangeText={setATitle}
+                    placeholder="Título"
+                    placeholderTextColor={theme.textSecondary}
+                    maxLength={80}
+                  />
+                  <TextInput
+                    style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aDescription}
+                    onChangeText={setADescription}
+                    placeholder="Descrição (opcional)"
+                    placeholderTextColor={theme.textSecondary}
+                    multiline
+                    numberOfLines={2}
+                    textAlignVertical="top"
+                  />
 
-                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
-                  <TouchableOpacity
-                    style={[s.modeBtn, aMediaType === 'image' && s.modeBtnActive]}
-                    onPress={() => setAMediaType('image')}
-                    activeOpacity={0.8}>
-                    <ThemedText style={[s.modeBtnText, aMediaType === 'image' && s.modeBtnTextActive]}>🖼️ Imagem</ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[s.modeBtn, aMediaType === 'video' && s.modeBtnActive]}
-                    onPress={() => setAMediaType('video')}
-                    activeOpacity={0.8}>
-                    <ThemedText style={[s.modeBtnText, aMediaType === 'video' && s.modeBtnTextActive]}>🎬 Vídeo</ThemedText>
-                  </TouchableOpacity>
-                </View>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TouchableOpacity
+                      style={[s.modeBtn, aMediaType === 'image' && s.modeBtnActive]}
+                      onPress={() => setAMediaType('image')}
+                      activeOpacity={0.8}>
+                      <ThemedText style={[s.modeBtnText, aMediaType === 'image' && s.modeBtnTextActive]}>🖼️ Imagem</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[s.modeBtn, aMediaType === 'video' && s.modeBtnActive]}
+                      onPress={() => setAMediaType('video')}
+                      activeOpacity={0.8}>
+                      <ThemedText style={[s.modeBtnText, aMediaType === 'video' && s.modeBtnTextActive]}>🎬 Vídeo</ThemedText>
+                    </TouchableOpacity>
+                  </View>
 
-                <TextInput
-                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aMediaUrl}
-                  onChangeText={setAMediaUrl}
-                  placeholder="URL da mídia principal (obrigatório)"
-                  placeholderTextColor={theme.textSecondary}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
-                <TextInput
-                  style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aMediaUrls}
-                  onChangeText={setAMediaUrls}
-                  placeholder={'URLs adicionais do carrossel — uma por linha, até 6 (opcional)'}
-                  placeholderTextColor={theme.textSecondary}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                  autoCapitalize="none"
-                />
-                <TextInput
-                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aThumbUrl}
-                  onChangeText={setAThumbUrl}
-                  placeholder="URL da miniatura (opcional, recomendado p/ vídeo)"
-                  placeholderTextColor={theme.textSecondary}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
+                  <View style={{ flexDirection: 'row', gap: Spacing.two, alignItems: 'center' }}>
+                    {aMediaUrl ? <Image source={{ uri: aMediaUrl }} style={s.adThumb} /> : null}
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aMediaUrl}
+                      onChangeText={setAMediaUrl}
+                      placeholder="URL da mídia principal (obrigatório)"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
+                  {aMediaType === 'image' ? (
+                    <TouchableOpacity
+                      style={s.galleryBtn}
+                      onPress={handlePickMediaImage}
+                      disabled={aUploadingMedia}
+                      activeOpacity={0.8}>
+                      {aUploadingMedia
+                        ? <ActivityIndicator size="small" color={C.purple} />
+                        : <ThemedText style={s.galleryBtnText}>📁 Escolher 1 foto da galeria</ThemedText>}
+                    </TouchableOpacity>
+                  ) : (
+                    <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                      Vídeo: cole o link do arquivo já hospedado (upload de vídeo não é feito por aqui).
+                    </ThemedText>
+                  )}
+
+                  <ThemedText themeColor="textSecondary" style={[s.fieldHint, { marginTop: Spacing.one }]}>
+                    Carrossel (opcional): se tiver mais de 1 foto, o anúncio vira uma galeria deslizável — até 6 imagens.
+                  </ThemedText>
+                  <TextInput
+                    style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aMediaUrls}
+                    onChangeText={setAMediaUrls}
+                    placeholder={'URLs do carrossel — uma por linha, até 6 (opcional)'}
+                    placeholderTextColor={theme.textSecondary}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={s.galleryBtn}
+                    onPress={handlePickCarouselImages}
+                    disabled={aUploadingCarousel}
+                    activeOpacity={0.8}>
+                    {aUploadingCarousel
+                      ? <ActivityIndicator size="small" color={C.purple} />
+                      : <ThemedText style={s.galleryBtnText}>📁 Escolher várias fotos da galeria</ThemedText>}
+                  </TouchableOpacity>
+
+                  <ThemedText themeColor="textSecondary" style={[s.fieldHint, { marginTop: Spacing.one }]}>
+                    Miniatura (opcional): capa mostrada enquanto a mídia principal carrega — mais usada em vídeo.
+                  </ThemedText>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two, alignItems: 'center' }}>
+                    {aThumbUrl ? <Image source={{ uri: aThumbUrl }} style={s.adThumb} /> : null}
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aThumbUrl}
+                      onChangeText={setAThumbUrl}
+                      placeholder="URL da miniatura (opcional)"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={s.galleryBtn}
+                    onPress={handlePickThumbImage}
+                    disabled={aUploadingThumb}
+                    activeOpacity={0.8}>
+                    {aUploadingThumb
+                      ? <ActivityIndicator size="small" color={C.purple} />
+                      : <ThemedText style={s.galleryBtnText}>📁 Escolher 1 foto da galeria</ThemedText>}
+                  </TouchableOpacity>
+                </ThemedView>
 
                 <ThemedText style={s.sectionLabel}>BOTÃO DE AÇÃO</ThemedText>
-                <TextInput
-                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aCtaText}
-                  onChangeText={setACtaText}
-                  placeholder="Texto do botão"
-                  placeholderTextColor={theme.textSecondary}
-                  maxLength={30}
-                />
-                <TextInput
-                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                  value={aCtaUrl}
-                  onChangeText={setACtaUrl}
-                  placeholder="Link do botão (opcional)"
-                  placeholderTextColor={theme.textSecondary}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
+                <ThemedView type="backgroundElement" style={s.card}>
+                  <TextInput
+                    style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aCtaText}
+                    onChangeText={setACtaText}
+                    placeholder="Texto do botão"
+                    placeholderTextColor={theme.textSecondary}
+                    maxLength={30}
+                  />
+                  <TextInput
+                    style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aCtaUrl}
+                    onChangeText={setACtaUrl}
+                    placeholder="Link do botão (opcional)"
+                    placeholderTextColor={theme.textSecondary}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                  />
+                </ThemedView>
 
                 <ThemedText style={s.sectionLabel}>COMPORTAMENTO</ThemedText>
-                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aDuration}
-                    onChangeText={t => setADuration(t.replace(/\D/g, ''))}
-                    placeholder="Duração (s)"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                  />
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aSkipAfter}
-                    onChangeText={t => setASkipAfter(t.replace(/\D/g, ''))}
-                    placeholder="Pular após (s)"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                  />
-                </View>
-                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aCoins}
-                    onChangeText={t => setACoins(t.replace(/\D/g, ''))}
-                    placeholder="Moedas de recompensa"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                  />
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aWeight}
-                    onChangeText={t => setAWeight(t.replace(/\D/g, ''))}
-                    placeholder="Peso (frequência)"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                  />
-                </View>
+                <ThemedView type="backgroundElement" style={s.card}>
+                  <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                    Duração: quanto tempo o anúncio fica na tela. Pular após: a partir de quantos
+                    segundos o botão de pular aparece (tem que ser menor que a duração).
+                  </ThemedText>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aDuration}
+                      onChangeText={t => setADuration(t.replace(/\D/g, ''))}
+                      placeholder="Duração (s)"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                    />
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aSkipAfter}
+                      onChangeText={t => setASkipAfter(t.replace(/\D/g, ''))}
+                      placeholder="Pular após (s)"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+
+                  <ThemedText themeColor="textSecondary" style={[s.fieldHint, { marginTop: Spacing.one }]}>
+                    Moedas: quanto o usuário ganha ao assistir até o fim. Peso: prioridade do
+                    anúncio no sorteio — peso 2 aparece o dobro de um anúncio com peso 1.
+                  </ThemedText>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aCoins}
+                      onChangeText={t => setACoins(t.replace(/\D/g, ''))}
+                      placeholder="Moedas de recompensa"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                    />
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aWeight}
+                      onChangeText={t => setAWeight(t.replace(/\D/g, ''))}
+                      placeholder="Peso (frequência)"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </ThemedView>
 
                 <ThemedText style={s.sectionLabel}>PERÍODO DE EXIBIÇÃO (OPCIONAL)</ThemedText>
-                <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
-                  Deixe em branco para exibir sem data de início/fim definida.
-                </ThemedText>
-                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aStartDate}
-                    onChangeText={t => setAStartDate(formatDateInput(t))}
-                    placeholder="Início: DD/MM/AAAA"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={10}
-                  />
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aStartTime}
-                    onChangeText={t => setAStartTime(formatTimeInput(t))}
-                    placeholder="HH:MM"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={5}
-                  />
-                </View>
-                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aEndDate}
-                    onChangeText={t => setAEndDate(formatDateInput(t))}
-                    placeholder="Fim: DD/MM/AAAA"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={10}
-                  />
-                  <TextInput
-                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                    value={aEndTime}
-                    onChangeText={t => setAEndTime(formatTimeInput(t))}
-                    placeholder="HH:MM"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={5}
-                  />
-                </View>
+                <ThemedView type="backgroundElement" style={s.card}>
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                    Deixe em branco para exibir sem data de início/fim definida.
+                  </ThemedText>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aStartDate}
+                      onChangeText={t => setAStartDate(formatDateInput(t))}
+                      placeholder="Início: DD/MM/AAAA"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                      maxLength={10}
+                    />
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aStartTime}
+                      onChangeText={t => setAStartTime(formatTimeInput(t))}
+                      placeholder="HH:MM"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                      maxLength={5}
+                    />
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aEndDate}
+                      onChangeText={t => setAEndDate(formatDateInput(t))}
+                      placeholder="Fim: DD/MM/AAAA"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                      maxLength={10}
+                    />
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={aEndTime}
+                      onChangeText={t => setAEndTime(formatTimeInput(t))}
+                      placeholder="HH:MM"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="number-pad"
+                      maxLength={5}
+                    />
+                  </View>
+                </ThemedView>
 
-                <View style={[s.playerRow, { justifyContent: 'space-between', marginTop: Spacing.one }]}>
+                <ThemedView type="backgroundElement" style={[s.card, s.playerRow, { justifyContent: 'space-between' }]}>
                   <ThemedText type="smallBold">Ativo</ThemedText>
                   <Switch
                     value={aActive}
@@ -888,7 +1036,7 @@ export default function AdminTab() {
                     trackColor={{ false: '#3a3a5c', true: C.purple }}
                     thumbColor="#ffffff"
                   />
-                </View>
+                </ThemedView>
 
                 <TouchableOpacity
                   style={[s.sendNotifBtn, adSaving && { opacity: 0.6 }]}
@@ -1668,4 +1816,7 @@ const s = StyleSheet.create({
   newAdBtn:          { paddingVertical: 12, borderRadius: C.radius.pill, alignItems: 'center', backgroundColor: C.purple },
   adThumb:           { width: 44, height: 44, borderRadius: C.radius.md },
   adThumbPlaceholder:{ alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(128,128,128,0.15)' },
+  galleryBtn:        { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: C.radius.pill, borderWidth: 1.5, borderColor: C.purple + '88' },
+  galleryBtnText:    { fontSize: 12, fontWeight: '700', color: C.purple },
+  fieldHint:         { fontSize: 11, lineHeight: 15 },
 });

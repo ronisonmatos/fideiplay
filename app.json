@@ -47,6 +47,12 @@
             "imageWidth": 200
           }
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O app acessa suas fotos para você escolher a imagem/vídeo do anúncio."
+        }
       ]
     ],
     "experiments": {
