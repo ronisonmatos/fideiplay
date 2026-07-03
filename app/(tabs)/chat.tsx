@@ -19,7 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { AvatarImage } from '@/components/avatar-image';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
@@ -40,6 +42,8 @@ const AI_COMMAND = '/ia ';
 const AI_COST    = 20;
 
 const EMAIL_LIKE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const aiHistoryKey = (userId: string) => `chat_ai_history_${userId}`;
 
 const USER_COLORS = [C.purple, C.green, C.gold, '#E24B4A', '#3B82F6', '#EC4899', '#0891B2'];
 
@@ -70,9 +74,11 @@ interface ChatMessage {
   id: string;
   user_id: string;
   user_name: string;
+  avatar_emoji: string | null;
   content: string;
   created_at: string;
   expires_at: string;
+  deleted_at?: string | null;
 }
 
 interface HistoryMessage {
@@ -83,7 +89,8 @@ interface HistoryMessage {
   sent_at:   string;
 }
 
-// Troca com a IA católica (/ia) — só local, nunca gravada no banco/chat público.
+// Troca com a IA católica (/ia) — nunca gravada no banco/chat público, mas
+// persistida no aparelho (AsyncStorage) até o usuário excluir manualmente.
 interface AiItem {
   id:        string;
   question:  string;
@@ -101,10 +108,12 @@ function MessageBubble({
   msg,
   isOwn,
   onExpired,
+  onDelete,
 }: {
   msg: ChatMessage;
   isOwn: boolean;
   onExpired: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const theme      = useTheme();
   const opacity    = useRef(new Animated.Value(1)).current;
@@ -163,18 +172,36 @@ function MessageBubble({
   const textColor = isOwn ? '#fff' : theme.text;
   const timeColor = isOwn ? 'rgba(255,255,255,0.55)' : theme.textSecondary;
 
+  function confirmDelete() {
+    Alert.alert(
+      'Excluir mensagem?',
+      'Ela some do chat para todo mundo agora.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Excluir', style: 'destructive', onPress: () => onDelete(msg.id) },
+      ],
+    );
+  }
+
   return (
     <Animated.View
       style={[
         s.bubbleWrap,
         isOwn ? s.bubbleRight : s.bubbleLeft,
+        s.bubbleRow,
         { opacity, transform: [{ scale }, { translateY }] },
       ]}>
-      <View style={[
-        s.bubble,
-        { backgroundColor: bubbleBg, borderLeftColor: borderCol },
-        !isOwn && s.bubbleBorderLeft,
-      ]}>
+      {!isOwn && (
+        <AvatarImage value={msg.avatar_emoji || '🙏'} size={28} borderColor={uColor} />
+      )}
+      <TouchableOpacity
+        activeOpacity={isOwn ? 0.85 : 1}
+        onLongPress={isOwn ? confirmDelete : undefined}
+        style={[
+          s.bubble,
+          { backgroundColor: bubbleBg, borderLeftColor: borderCol },
+          !isOwn && s.bubbleBorderLeft,
+        ]}>
         {!isOwn && (
           <ThemedText style={[s.bubbleName, { color: uColor }]} numberOfLines={1}>
             {msg.user_name}
@@ -198,7 +225,7 @@ function MessageBubble({
             }]} />
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -225,7 +252,7 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
 }
 
 // ── Troca com a IA católica (/ia) — visível só para quem perguntou ──────────
-function AiBubble({ item }: { item: AiItem }) {
+function AiBubble({ item, onDelete }: { item: AiItem; onDelete: (id: string) => void }) {
   const theme = useTheme();
 
   function handleShare() {
@@ -233,13 +260,27 @@ function AiBubble({ item }: { item: AiItem }) {
     Share.share({ message: `${item.question}\n\n${item.answer}` }).catch(() => {});
   }
 
+  function confirmDelete() {
+    Alert.alert(
+      'Excluir esta conversa com a IA?',
+      'Ela some do seu histórico neste aparelho.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Excluir', style: 'destructive', onPress: () => onDelete(item.id) },
+      ],
+    );
+  }
+
   return (
     <View style={{ gap: 6 }}>
-      <View style={[s.bubbleWrap, s.bubbleRight]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onLongPress={confirmDelete}
+        style={[s.bubbleWrap, s.bubbleRight]}>
         <View style={[s.bubble, { backgroundColor: C.purple }]}>
           <ThemedText style={[s.bubbleText, { color: '#fff' }]}>{item.question}</ThemedText>
         </View>
-      </View>
+      </TouchableOpacity>
       <View style={[s.bubbleWrap, s.bubbleLeft]}>
         <View style={[s.bubble, s.bubbleBorderLeft, { backgroundColor: C.gold + '22', borderLeftColor: C.gold }]}>
           <View style={s.aiHeaderRow}>
@@ -283,6 +324,26 @@ export default function ChatScreen() {
   const listRef      = useRef<FlatList>(null);
   const channelRef   = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const isFocused    = useRef(false);
+  const aiLoadedRef  = useRef(false);
+
+  // Histórico da IA: persistido no aparelho, permanece até o usuário excluir.
+  useEffect(() => {
+    aiLoadedRef.current = false;
+    if (!user) { setAiItems([]); return; }
+    AsyncStorage.getItem(aiHistoryKey(user.id)).then(raw => {
+      setAiItems(raw ? JSON.parse(raw) : []);
+      aiLoadedRef.current = true;
+    }).catch(() => { aiLoadedRef.current = true; });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !aiLoadedRef.current) return;
+    AsyncStorage.setItem(aiHistoryKey(user.id), JSON.stringify(aiItems)).catch(() => {});
+  }, [user, aiItems]);
+
+  const handleDeleteAiItem = useCallback((id: string) => {
+    setAiItems(prev => prev.filter(it => it.id !== id));
+  }, []);
 
   // Animação de moeda ao enviar
   const coinY       = useRef(new Animated.Value(0)).current;
@@ -312,8 +373,9 @@ export default function ChatScreen() {
   const loadMessages = useCallback(async () => {
     const { data } = await supabase
       .from('community_messages')
-      .select('id, user_id, user_name, content, created_at, expires_at')
+      .select('id, user_id, user_name, avatar_emoji, content, created_at, expires_at')
       .gt('expires_at', new Date().toISOString())
+      .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .limit(80);
     if (data) setMessages(data as ChatMessage[]);
@@ -353,6 +415,13 @@ export default function ChatScreen() {
           setMessages(prev => prev.filter(m => m.id !== id));
         },
       )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'community_messages' },
+        (payload) => {
+          const updated = payload.new as ChatMessage;
+          if (updated.deleted_at) setMessages(prev => prev.filter(m => m.id !== updated.id));
+        },
+      )
       .subscribe();
 
     return () => { channelRef.current?.unsubscribe(); };
@@ -370,6 +439,16 @@ export default function ChatScreen() {
   const handleExpired = useCallback((id: string) => {
     setMessages(prev => prev.filter(m => m.id !== id));
     supabase.from('community_messages').delete().eq('id', id).then(() => {});
+  }, []);
+
+  // Exclusão pelo autor: some da tela (própria + de todo mundo via realtime),
+  // mas o registro continua no banco (deleted_at), preservado para auditoria.
+  const handleDeleteMessage = useCallback((id: string) => {
+    setMessages(prev => prev.filter(m => m.id !== id));
+    supabase.from('community_messages')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .then(() => {});
   }, []);
 
   // ── Histórico admin ───────────────────────────────────────────────────────
@@ -400,10 +479,11 @@ export default function ChatScreen() {
     refreshProfile();
 
     const { error } = await supabase.from('community_messages').insert({
-      user_id:    user.id,
-      user_name:  profile.name ?? 'Jogador',
-      content:    text,
-      expires_at: new Date(Date.now() + EXPIRE_MS).toISOString(),
+      user_id:      user.id,
+      user_name:    profile.name ?? 'Jogador',
+      avatar_emoji: profile.avatar_emoji ?? null,
+      content:      text,
+      expires_at:   new Date(Date.now() + EXPIRE_MS).toISOString(),
     });
 
     if (error) {
@@ -631,7 +711,7 @@ export default function ChatScreen() {
           {/* Banner efêmero */}
           <View style={[s.ephemeralBanner, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText themeColor="textSecondary" style={s.ephemeralText}>
-              ⏳ Mensagens somem em 1h · 🤖 /ia sua pergunta ({AI_COST}🪙)
+              ⏳ Mensagens somem em 1h · segure a sua pra excluir · 🤖 /ia sua pergunta ({AI_COST}🪙)
             </ThemedText>
           </View>
 
@@ -645,9 +725,10 @@ export default function ChatScreen() {
                 msg={item.msg}
                 isOwn={item.msg.user_id === user.id}
                 onExpired={handleExpired}
+                onDelete={handleDeleteMessage}
               />
             ) : (
-              <AiBubble item={item.item} />
+              <AiBubble item={item.item} onDelete={handleDeleteAiItem} />
             )}
             contentContainerStyle={[s.listContent, { paddingBottom: BottomTabInset + 8 }]}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
@@ -764,10 +845,12 @@ const s = StyleSheet.create({
   },
 
   bubbleWrap:  { maxWidth: '80%' },
+  bubbleRow:   { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   bubbleLeft:  { alignSelf: 'flex-start' },
   bubbleRight: { alignSelf: 'flex-end' },
 
   bubble: {
+    flexShrink: 1,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingTop: 8,
