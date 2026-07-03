@@ -2,7 +2,9 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -48,9 +50,30 @@ function formatTimeInput(raw: string): string {
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 }
 
+// Converte DD/MM/AAAA + HH:MM (ambos opcionais) em ISO; null = sem data definida
+function parseOptionalDateTime(dateStr: string, timeStr: string): { ok: boolean; value: string | null } {
+  if (!dateStr.trim() && !timeStr.trim()) return { ok: true, value: null };
+  const [dd, mm, yyyy] = dateStr.split('/').map(Number);
+  const [hh, min] = (timeStr.trim() || '00:00').split(':').map(Number);
+  if (!dd || !mm || !yyyy || Number.isNaN(hh) || Number.isNaN(min)) return { ok: false, value: null };
+  const d = new Date(yyyy, mm - 1, dd, hh, min, 0, 0);
+  if (Number.isNaN(d.getTime())) return { ok: false, value: null };
+  return { ok: true, value: d.toISOString() };
+}
+
+function isoToDatePart(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+function isoToTimePart(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications';
+type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications' | 'ads';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type FilterStatus   = 'pending' | 'approved' | 'rejected';
@@ -80,6 +103,26 @@ interface SupportMsg {
   read: boolean;
   reply: string | null;
   replied_at: string | null;
+}
+
+interface AdRow {
+  id: string;
+  title: string;
+  description: string | null;
+  media_url: string;
+  media_urls: string[] | null;
+  media_type: 'video' | 'image';
+  thumb_url: string | null;
+  cta_text: string;
+  cta_url: string | null;
+  duration: number;
+  skip_after: number;
+  coins: number;
+  weight: number;
+  active: boolean;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
 }
 
 // ─── Labels / ícones ──────────────────────────────────────────────────────────
@@ -151,6 +194,36 @@ export default function AdminTab() {
   const [nSearching,   setNSearching]   = useState(false);
   const [nSelectedUser, setNSelectedUser] = useState<AdminUserResult | null>(null);
 
+  // ── Estado: Anúncios (lista + formulário de criar/editar) ────────────────
+  const [ads,         setAds]         = useState<AdRow[]>([]);
+  const [adsLoading,  setAdsLoading]  = useState(false);
+  const [adsRefresh,  setAdsRefresh]  = useState(false);
+  const [adsError,    setAdsError]    = useState<string | null>(null);
+  const [adToggling,  setAdToggling]  = useState<string | null>(null);
+  const [adDeleting,  setAdDeleting]  = useState<string | null>(null);
+
+  const [adModalVisible, setAdModalVisible] = useState(false);
+  const [adEditingId,    setAdEditingId]    = useState<string | null>(null);
+  const [adSaving,       setAdSaving]       = useState(false);
+
+  const [aTitle,       setATitle]       = useState('');
+  const [aDescription, setADescription] = useState('');
+  const [aMediaType,   setAMediaType]   = useState<'image' | 'video'>('image');
+  const [aMediaUrl,    setAMediaUrl]    = useState('');
+  const [aMediaUrls,   setAMediaUrls]   = useState('');
+  const [aThumbUrl,    setAThumbUrl]    = useState('');
+  const [aCtaText,     setACtaText]     = useState('Saiba Mais');
+  const [aCtaUrl,      setACtaUrl]      = useState('');
+  const [aDuration,    setADuration]    = useState('15');
+  const [aSkipAfter,   setASkipAfter]   = useState('5');
+  const [aCoins,       setACoins]       = useState('15');
+  const [aWeight,      setAWeight]      = useState('1');
+  const [aActive,      setAActive]      = useState(true);
+  const [aStartDate,   setAStartDate]   = useState('');
+  const [aStartTime,   setAStartTime]   = useState('');
+  const [aEndDate,     setAEndDate]     = useState('');
+  const [aEndTime,     setAEndTime]     = useState('');
+
   // ── Fetch: Contestações ───────────────────────────────────────────────────
   const fetchContests = useCallback(async (silent = false) => {
     if (!profile?.is_admin) return;
@@ -186,11 +259,28 @@ export default function AdminTab() {
     setSRefresh(false);
   }, [sfilt, profile?.is_admin]);
 
+  // ── Fetch: Anúncios ───────────────────────────────────────────────────────
+  const fetchAds = useCallback(async (silent = false) => {
+    if (!profile?.is_admin) return;
+    if (!silent) setAdsLoading(true);
+    setAdsError(null);
+    const { data, error } = await supabase
+      .from('ads')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) setAdsError(error.message);
+    else setAds((data ?? []) as AdRow[]);
+    setAdsLoading(false);
+    setAdsRefresh(false);
+  }, [profile?.is_admin]);
+
   // Recarrega ao focar a aba
   useFocusEffect(useCallback(() => {
     if (section === 'contests') fetchContests();
-    else fetchSupport();
-  }, [section, fetchContests, fetchSupport]));
+    else if (section === 'support') fetchSupport();
+    else if (section === 'ads') fetchAds();
+  }, [section, fetchContests, fetchSupport, fetchAds]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {
@@ -451,6 +541,145 @@ export default function AdminTab() {
     );
   }, [nMode, nTitle, nBody, nSchedule, nCustomDate, nCustomTime, nSelectedUser]);
 
+  // ── Ações: Anúncios ───────────────────────────────────────────────────────
+  const handleOpenCreateAd = useCallback(() => {
+    setAdEditingId(null);
+    setATitle(''); setADescription(''); setAMediaType('image'); setAMediaUrl('');
+    setAMediaUrls(''); setAThumbUrl(''); setACtaText('Saiba Mais'); setACtaUrl('');
+    setADuration('15'); setASkipAfter('5'); setACoins('15'); setAWeight('1');
+    setAActive(true); setAStartDate(''); setAStartTime(''); setAEndDate(''); setAEndTime('');
+    setAdModalVisible(true);
+  }, []);
+
+  const handleOpenEditAd = useCallback((ad: AdRow) => {
+    setAdEditingId(ad.id);
+    setATitle(ad.title);
+    setADescription(ad.description ?? '');
+    setAMediaType(ad.media_type);
+    setAMediaUrl(ad.media_url);
+    setAMediaUrls((ad.media_urls ?? []).join('\n'));
+    setAThumbUrl(ad.thumb_url ?? '');
+    setACtaText(ad.cta_text);
+    setACtaUrl(ad.cta_url ?? '');
+    setADuration(String(ad.duration));
+    setASkipAfter(String(ad.skip_after));
+    setACoins(String(ad.coins));
+    setAWeight(String(ad.weight));
+    setAActive(ad.active);
+    setAStartDate(ad.start_date ? isoToDatePart(ad.start_date) : '');
+    setAStartTime(ad.start_date ? isoToTimePart(ad.start_date) : '');
+    setAEndDate(ad.end_date ? isoToDatePart(ad.end_date) : '');
+    setAEndTime(ad.end_date ? isoToTimePart(ad.end_date) : '');
+    setAdModalVisible(true);
+  }, []);
+
+  const handleSaveAd = useCallback(async () => {
+    const title    = aTitle.trim();
+    const mediaUrl = aMediaUrl.trim();
+    if (!title || !mediaUrl) {
+      Alert.alert('Preencha tudo', 'Título e URL da mídia principal são obrigatórios.');
+      return;
+    }
+
+    const duration  = parseInt(aDuration, 10);
+    const skipAfter = parseInt(aSkipAfter, 10);
+    const coins     = parseInt(aCoins, 10);
+    const weight    = parseInt(aWeight, 10);
+    if (!duration || Number.isNaN(skipAfter) || !coins || !weight) {
+      Alert.alert('Valores inválidos', 'Confira duração, pular após, moedas e peso — todos numéricos.');
+      return;
+    }
+
+    const start = parseOptionalDateTime(aStartDate, aStartTime);
+    const end   = parseOptionalDateTime(aEndDate, aEndTime);
+    if (!start.ok || !end.ok) {
+      Alert.alert('Data inválida', 'Confira o formato do período: DD/MM/AAAA e HH:MM.');
+      return;
+    }
+    if (start.value && end.value && new Date(start.value) >= new Date(end.value)) {
+      Alert.alert('Período inválido', 'A data/hora de término deve ser depois da de início.');
+      return;
+    }
+
+    const mediaUrls = aMediaUrls.split('\n').map(u => u.trim()).filter(Boolean).slice(0, 6);
+
+    const payload = {
+      title,
+      description:  aDescription.trim() || null,
+      media_type:   aMediaType,
+      media_url:    mediaUrl,
+      media_urls:   mediaUrls.length ? mediaUrls : null,
+      thumb_url:    aThumbUrl.trim() || null,
+      cta_text:     aCtaText.trim() || 'Saiba Mais',
+      cta_url:      aCtaUrl.trim() || null,
+      duration,
+      skip_after:   skipAfter,
+      coins,
+      weight,
+      active:       aActive,
+      start_date:   start.value,
+      end_date:     end.value,
+    };
+
+    setAdSaving(true);
+    const { error } = adEditingId
+      ? await supabase.from('ads').update(payload).eq('id', adEditingId)
+      : await supabase.from('ads').insert(payload);
+    setAdSaving(false);
+
+    if (error) {
+      Alert.alert('Erro', 'Não foi possível salvar o anúncio.');
+      return;
+    }
+    setAdModalVisible(false);
+    fetchAds(true);
+  }, [aTitle, aDescription, aMediaType, aMediaUrl, aMediaUrls, aThumbUrl, aCtaText, aCtaUrl,
+      aDuration, aSkipAfter, aCoins, aWeight, aActive, aStartDate, aStartTime, aEndDate, aEndTime,
+      adEditingId, fetchAds]);
+
+  const handleToggleAdActive = useCallback(async (ad: AdRow) => {
+    setAdToggling(ad.id);
+    const { error } = await supabase.from('ads').update({ active: !ad.active }).eq('id', ad.id);
+    if (error) {
+      Alert.alert('Erro', 'Não foi possível atualizar.');
+    } else {
+      setAds(prev => prev.map(a => a.id === ad.id ? { ...a, active: !a.active } : a));
+    }
+    setAdToggling(null);
+  }, []);
+
+  const handleDeleteAd = useCallback((ad: AdRow) => {
+    Alert.alert(
+      'Excluir anúncio?',
+      `"${ad.title}" será removido permanentemente do banco de dados.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir', style: 'destructive',
+          onPress: async () => {
+            setAdDeleting(ad.id);
+            const { error } = await supabase.from('ads').delete().eq('id', ad.id);
+            setAdDeleting(null);
+            if (error) Alert.alert('Erro', 'Não foi possível excluir o anúncio.');
+            else setAds(prev => prev.filter(a => a.id !== ad.id));
+          },
+        },
+      ],
+    );
+  }, []);
+
+  function getAdStatus(ad: AdRow): { label: string; color: string } {
+    if (!ad.active) return { label: 'Desativado', color: theme.textSecondary };
+    const now = Date.now();
+    if (ad.start_date && new Date(ad.start_date).getTime() > now) {
+      return { label: `Agendado p/ ${new Date(ad.start_date).toLocaleDateString('pt-BR')}`, color: C.gold };
+    }
+    if (ad.end_date && new Date(ad.end_date).getTime() < now) {
+      return { label: 'Expirado', color: C.red };
+    }
+    return { label: 'No ar', color: C.green };
+  }
+
   // ── Gate ──────────────────────────────────────────────────────────────────
   if (!profile?.is_admin) {
     return (
@@ -468,6 +697,218 @@ export default function AdminTab() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <ThemedView style={s.fill}>
+      <Modal
+        visible={adModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAdModalVisible(false)}>
+        <ThemedView style={s.fill}>
+          <SafeAreaView style={s.fill} edges={['top']}>
+            <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              <View style={[s.header, { borderBottomColor: C.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                <ThemedText style={s.headerTitle}>{adEditingId ? 'Editar anúncio' : 'Novo anúncio'}</ThemedText>
+                <TouchableOpacity onPress={() => setAdModalVisible(false)} hitSlop={8} activeOpacity={0.7}>
+                  <ThemedText style={{ fontSize: 18, fontWeight: '700', color: theme.textSecondary }}>✕</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+                <ThemedText style={s.sectionLabel}>CONTEÚDO</ThemedText>
+                <TextInput
+                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aTitle}
+                  onChangeText={setATitle}
+                  placeholder="Título"
+                  placeholderTextColor={theme.textSecondary}
+                  maxLength={80}
+                />
+                <TextInput
+                  style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aDescription}
+                  onChangeText={setADescription}
+                  placeholder="Descrição (opcional)"
+                  placeholderTextColor={theme.textSecondary}
+                  multiline
+                  numberOfLines={2}
+                  textAlignVertical="top"
+                />
+
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <TouchableOpacity
+                    style={[s.modeBtn, aMediaType === 'image' && s.modeBtnActive]}
+                    onPress={() => setAMediaType('image')}
+                    activeOpacity={0.8}>
+                    <ThemedText style={[s.modeBtnText, aMediaType === 'image' && s.modeBtnTextActive]}>🖼️ Imagem</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.modeBtn, aMediaType === 'video' && s.modeBtnActive]}
+                    onPress={() => setAMediaType('video')}
+                    activeOpacity={0.8}>
+                    <ThemedText style={[s.modeBtnText, aMediaType === 'video' && s.modeBtnTextActive]}>🎬 Vídeo</ThemedText>
+                  </TouchableOpacity>
+                </View>
+
+                <TextInput
+                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aMediaUrl}
+                  onChangeText={setAMediaUrl}
+                  placeholder="URL da mídia principal (obrigatório)"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                />
+                <TextInput
+                  style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aMediaUrls}
+                  onChangeText={setAMediaUrls}
+                  placeholder={'URLs adicionais do carrossel — uma por linha, até 6 (opcional)'}
+                  placeholderTextColor={theme.textSecondary}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aThumbUrl}
+                  onChangeText={setAThumbUrl}
+                  placeholder="URL da miniatura (opcional, recomendado p/ vídeo)"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                />
+
+                <ThemedText style={s.sectionLabel}>BOTÃO DE AÇÃO</ThemedText>
+                <TextInput
+                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aCtaText}
+                  onChangeText={setACtaText}
+                  placeholder="Texto do botão"
+                  placeholderTextColor={theme.textSecondary}
+                  maxLength={30}
+                />
+                <TextInput
+                  style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                  value={aCtaUrl}
+                  onChangeText={setACtaUrl}
+                  placeholder="Link do botão (opcional)"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                />
+
+                <ThemedText style={s.sectionLabel}>COMPORTAMENTO</ThemedText>
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aDuration}
+                    onChangeText={t => setADuration(t.replace(/\D/g, ''))}
+                    placeholder="Duração (s)"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                  />
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aSkipAfter}
+                    onChangeText={t => setASkipAfter(t.replace(/\D/g, ''))}
+                    placeholder="Pular após (s)"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aCoins}
+                    onChangeText={t => setACoins(t.replace(/\D/g, ''))}
+                    placeholder="Moedas de recompensa"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                  />
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aWeight}
+                    onChangeText={t => setAWeight(t.replace(/\D/g, ''))}
+                    placeholder="Peso (frequência)"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                  />
+                </View>
+
+                <ThemedText style={s.sectionLabel}>PERÍODO DE EXIBIÇÃO (OPCIONAL)</ThemedText>
+                <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                  Deixe em branco para exibir sem data de início/fim definida.
+                </ThemedText>
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aStartDate}
+                    onChangeText={t => setAStartDate(formatDateInput(t))}
+                    placeholder="Início: DD/MM/AAAA"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                  />
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aStartTime}
+                    onChangeText={t => setAStartTime(formatTimeInput(t))}
+                    placeholder="HH:MM"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={5}
+                  />
+                </View>
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aEndDate}
+                    onChangeText={t => setAEndDate(formatDateInput(t))}
+                    placeholder="Fim: DD/MM/AAAA"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                  />
+                  <TextInput
+                    style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={aEndTime}
+                    onChangeText={t => setAEndTime(formatTimeInput(t))}
+                    placeholder="HH:MM"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={5}
+                  />
+                </View>
+
+                <View style={[s.playerRow, { justifyContent: 'space-between', marginTop: Spacing.one }]}>
+                  <ThemedText type="smallBold">Ativo</ThemedText>
+                  <Switch
+                    value={aActive}
+                    onValueChange={setAActive}
+                    trackColor={{ false: '#3a3a5c', true: C.purple }}
+                    thumbColor="#ffffff"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[s.sendNotifBtn, adSaving && { opacity: 0.6 }]}
+                  onPress={handleSaveAd}
+                  disabled={adSaving}
+                  activeOpacity={0.85}>
+                  {adSaving
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : (
+                      <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+                        {adEditingId ? 'Salvar alterações' : 'Cadastrar anúncio'}
+                      </ThemedText>
+                    )}
+                </TouchableOpacity>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </ThemedView>
+      </Modal>
+
       <SafeAreaView style={s.fill} edges={['top']}>
         <KeyboardAvoidingView
           style={s.fill}
@@ -486,6 +927,7 @@ export default function AdminTab() {
             { key: 'support',       label: 'Suporte',       icon: '💬' },
             { key: 'trilhas',       label: 'Trilhas',       icon: '🔓' },
             { key: 'notifications', label: 'Notificar',     icon: '🔔' },
+            { key: 'ads',           label: 'Anúncios',      icon: '📢' },
           ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
             const active = section === key;
             return (
@@ -1020,6 +1462,97 @@ export default function AdminTab() {
           </ScrollView>
         )}
 
+        {/* ══ SEÇÃO: ANÚNCIOS ══ */}
+        {section === 'ads' && (
+          <>
+            <View style={s.newAdBtnWrap}>
+              <TouchableOpacity style={s.newAdBtn} onPress={handleOpenCreateAd} activeOpacity={0.85}>
+                <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>+ Novo anúncio</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {adsLoading ? (
+              <View style={s.centerFlex}><ActivityIndicator color={C.purple} /></View>
+            ) : adsError ? (
+              <ErrorState message={adsError} onRetry={() => fetchAds()} />
+            ) : (
+              <ScrollView
+                contentContainerStyle={s.scroll}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={adsRefresh}
+                    onRefresh={() => { setAdsRefresh(true); fetchAds(true); }}
+                    tintColor={C.purple}
+                  />
+                }>
+                {ads.length === 0 ? (
+                  <EmptyState icon="📢" color={C.purple}
+                    title="Nenhum anúncio"
+                    subtitle="Toque em “+ Novo anúncio” para cadastrar o primeiro." />
+                ) : ads.map(ad => {
+                  const status      = getAdStatus(ad);
+                  const isToggling  = adToggling === ad.id;
+                  const isDeleting  = adDeleting === ad.id;
+                  return (
+                    <ThemedView key={ad.id} type="backgroundElement" style={s.card}>
+                      <View style={s.playerRow}>
+                        {ad.thumb_url || ad.media_url ? (
+                          <Image source={{ uri: ad.thumb_url || ad.media_url }} style={s.adThumb} />
+                        ) : (
+                          <View style={[s.adThumb, s.adThumbPlaceholder]}>
+                            <ThemedText style={{ fontSize: 20 }}>{ad.media_type === 'video' ? '🎬' : '🖼️'}</ThemedText>
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="smallBold" numberOfLines={1}>{ad.title}</ThemedText>
+                          <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>
+                            {ad.coins}🪙 · peso {ad.weight}
+                          </ThemedText>
+                        </View>
+                        {isToggling ? (
+                          <ActivityIndicator size="small" color={C.purple} />
+                        ) : (
+                          <Switch
+                            value={ad.active}
+                            onValueChange={() => handleToggleAdActive(ad)}
+                            trackColor={{ false: '#3a3a5c', true: C.purple }}
+                            thumbColor="#ffffff"
+                          />
+                        )}
+                      </View>
+
+                      <View style={[s.statusBadge, { alignSelf: 'flex-start', backgroundColor: status.color + '22' }]}>
+                        <ThemedText style={[s.statusTxt, { color: status.color }]}>{status.label.toUpperCase()}</ThemedText>
+                      </View>
+
+                      {(ad.start_date || ad.end_date) && (
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                          {ad.start_date ? `De ${new Date(ad.start_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} ` : ''}
+                          {ad.end_date ? `até ${new Date(ad.end_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                        </ThemedText>
+                      )}
+
+                      <View style={s.msgFooter}>
+                        <TouchableOpacity onPress={() => handleOpenEditAd(ad)} activeOpacity={0.7}>
+                          <ThemedText style={{ fontSize: 12, color: C.purple, fontWeight: '700' }}>✏️ Editar</ThemedText>
+                        </TouchableOpacity>
+                        <View style={{ flex: 1 }} />
+                        {isDeleting ? (
+                          <ActivityIndicator size="small" color={C.red} />
+                        ) : (
+                          <TouchableOpacity onPress={() => handleDeleteAd(ad)} activeOpacity={0.7} hitSlop={8}>
+                            <ThemedText style={{ fontSize: 11, color: C.red, fontWeight: '600' }}>🗑 Excluir</ThemedText>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </ThemedView>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </>
+        )}
+
         </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
@@ -1129,4 +1662,10 @@ const s = StyleSheet.create({
   scheduleBtnText:     { fontSize: 12, fontWeight: '700' },
   scheduleBtnTextActive: { color: '#fff' },
   sendNotifBtn:        { marginTop: Spacing.two, paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', backgroundColor: C.purple },
+
+  // Anúncios
+  newAdBtnWrap:      { paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
+  newAdBtn:          { paddingVertical: 12, borderRadius: C.radius.pill, alignItems: 'center', backgroundColor: C.purple },
+  adThumb:           { width: 44, height: 44, borderRadius: C.radius.md },
+  adThumbPlaceholder:{ alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(128,128,128,0.15)' },
 });
