@@ -1281,12 +1281,17 @@ export default function StopOnlineScreen() {
     subscribeToRoom(room.id);
 
     if (joinResult.is_full) {
-      // Sala cheia → P2 inicia diretamente (não pode confiar na subscription,
-      // pois o evento 'active' pode ter disparado antes de P2 estar inscrito)
-      startMatchFromRoom(room.letter, [
-        { id: room.player1_id ?? '', name: room.player1_name ?? 'Adversário' },
-        { id: playerIdRef.current, name: playerNameRef.current },
-      ]);
+      // Sala cheia → este jogador inicia diretamente (não pode confiar na subscription,
+      // pois o evento 'active' pode ter disparado antes dele estar inscrito).
+      // Usa a lista real de jogadores retornada pelo RPC (não hard-coda 1v1),
+      // pois em salas de 3+ jogadores este pode ser o 3º/4º/5º a entrar.
+      const fullPlayers: { id: string; name: string }[] = Array.isArray(joinResult.players)
+        ? joinResult.players.map((p: any) => ({ id: p.id, name: p.name }))
+        : [
+            { id: room.player1_id ?? '', name: room.player1_name ?? 'Adversário' },
+            { id: playerIdRef.current, name: playerNameRef.current },
+          ];
+      startMatchFromRoom(room.letter, fullPlayers);
     } else {
       // Ainda há vagas: aguarda mais jogadores ou timeout de P1
       setStatusMsg(`${joinResult.player_count}/${joinResult.max_players} jogadores`);
