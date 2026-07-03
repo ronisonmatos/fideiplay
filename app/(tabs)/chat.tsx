@@ -284,12 +284,17 @@ function AiBubble({ item, onDelete }: { item: AiItem; onDelete: (id: string) => 
       <View style={[s.bubbleWrap, s.bubbleLeft]}>
         <View style={[s.bubble, s.bubbleBorderLeft, { backgroundColor: C.gold + '22', borderLeftColor: C.gold }]}>
           <View style={s.aiHeaderRow}>
-            <ThemedText style={[s.bubbleName, { color: C.gold }]}>🤖 IA Católica</ThemedText>
-            {item.answer && (
-              <TouchableOpacity onPress={handleShare} hitSlop={8} activeOpacity={0.7}>
-                <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>↗ Compartilhar</ThemedText>
+            <ThemedText style={[s.bubbleName, { color: C.gold }]}>🤖 Catequista</ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {item.answer && (
+                <TouchableOpacity onPress={handleShare} hitSlop={8} activeOpacity={0.7}>
+                  <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>↗ Compartilhar</ThemedText>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={confirmDelete} hitSlop={8} activeOpacity={0.7}>
+                <ThemedText style={{ fontSize: 13, color: C.red }}>🗑 Excluir</ThemedText>
               </TouchableOpacity>
-            )}
+            </View>
           </View>
           {item.error ? (
             <ThemedText style={[s.bubbleText, { color: C.red }]}>{item.error}</ThemedText>
@@ -711,7 +716,7 @@ export default function ChatScreen() {
           {/* Banner efêmero */}
           <View style={[s.ephemeralBanner, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText themeColor="textSecondary" style={s.ephemeralText}>
-              ⏳ Mensagens somem em 1h · segure a sua pra excluir · 🤖 /ia sua pergunta ({AI_COST}🪙)
+              ⏳ Mensagens somem em 1h · 🤖 /ia sua pergunta ({AI_COST}🪙)
             </ThemedText>
           </View>
 
