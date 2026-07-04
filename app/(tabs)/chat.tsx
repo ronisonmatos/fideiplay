@@ -330,6 +330,11 @@ export default function ChatScreen() {
   const channelRef   = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const isFocused    = useRef(false);
   const aiLoadedRef  = useRef(false);
+  const muteChatRef           = useRef(muteChat);
+  const addChatNotificationRef = useRef(addChatNotification);
+
+  useEffect(() => { muteChatRef.current = muteChat; }, [muteChat]);
+  useEffect(() => { addChatNotificationRef.current = addChatNotification; }, [addChatNotification]);
 
   // Histórico da IA: persistido no aparelho, permanece até o usuário excluir.
   useEffect(() => {
@@ -391,7 +396,7 @@ export default function ChatScreen() {
     if (!user) return;
     loadMessages();
 
-    channelRef.current = supabase
+    const channel = supabase
       .channel('community_chat')
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'community_messages' },
@@ -401,12 +406,12 @@ export default function ChatScreen() {
           setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
           setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
           if (msg.user_id !== user?.id) {
-            if (!muteChat) {
+            if (!muteChatRef.current) {
               playChatSound().catch(() => {});
             }
             if (!isFocused.current) {
-              addChatNotification(msg.user_name, msg.content);
-              if (!muteChat) {
+              addChatNotificationRef.current(msg.user_name, msg.content);
+              if (!muteChatRef.current) {
                 sendChatOSNotification(msg.user_name, msg.content).catch(() => {});
               }
             }
@@ -429,8 +434,10 @@ export default function ChatScreen() {
       )
       .subscribe();
 
-    return () => { channelRef.current?.unsubscribe(); };
-  }, [user, loadMessages, addChatNotification, muteChat]);
+    channelRef.current = channel;
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user, loadMessages]);
 
   // Ao focar: limpa expiradas e marca notificações como lidas
   useFocusEffect(useCallback(() => {
