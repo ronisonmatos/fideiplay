@@ -409,11 +409,9 @@ export default function ChatScreen() {
             if (!muteChatRef.current) {
               playChatSound().catch(() => {});
             }
-            if (!isFocused.current) {
-              addChatNotificationRef.current(msg.user_name, msg.content);
-              if (!muteChatRef.current) {
-                sendChatOSNotification(msg.user_name, msg.content).catch(() => {});
-              }
+            addChatNotificationRef.current(msg.user_name, msg.content);
+            if (!isFocused.current && !muteChatRef.current) {
+              sendChatOSNotification(msg.user_name, msg.content).catch(() => {});
             }
           }
         },
@@ -425,11 +423,10 @@ export default function ChatScreen() {
           setMessages(prev => prev.filter(m => m.id !== id));
         },
       )
-      .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'community_messages' },
-        (payload) => {
-          const updated = payload.new as ChatMessage;
-          if (updated.deleted_at) setMessages(prev => prev.filter(m => m.id !== updated.id));
+      .on('broadcast',
+        { event: 'message_deleted' },
+        ({ payload }) => {
+          setMessages(prev => prev.filter(m => m.id !== payload.id));
         },
       )
       .subscribe();
@@ -457,6 +454,7 @@ export default function ChatScreen() {
   // mas o registro continua no banco (deleted_at), preservado para auditoria.
   const handleDeleteMessage = useCallback((id: string) => {
     setMessages(prev => prev.filter(m => m.id !== id));
+    channelRef.current?.send({ type: 'broadcast', event: 'message_deleted', payload: { id } });
     supabase.from('community_messages')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', id)
