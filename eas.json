@@ -31,6 +31,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascApiKeyPath": "../apple_store_key/AuthKey_AG3K9V4NP5.p8",
+        "ascApiKeyId": "AG3K9V4NP5",
+        "ascApiKeyIssuerId": "69a6de8a-637b-47e3-e053-5b8c7c11a4d1"
+      }
+    }
   }
 }
