@@ -450,15 +450,10 @@ export default function ChatScreen() {
     supabase.from('community_messages').delete().eq('id', id).then(() => {});
   }, []);
 
-  // Exclusão pelo autor: some da tela (própria + de todo mundo via realtime),
-  // mas o registro continua no banco (deleted_at), preservado para auditoria.
   const handleDeleteMessage = useCallback((id: string) => {
     setMessages(prev => prev.filter(m => m.id !== id));
     channelRef.current?.send({ type: 'broadcast', event: 'message_deleted', payload: { id } });
-    supabase.from('community_messages')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id)
-      .then(() => {});
+    supabase.from('community_messages').delete().eq('id', id).then(() => {});
   }, []);
 
   // ── Histórico admin ───────────────────────────────────────────────────────
