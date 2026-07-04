@@ -24,11 +24,11 @@
     },
     "ios": {
       "bundleIdentifier": "com.ronison.santosplay",
-      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "O app usa o microfone para gravar áudio.",
-        "NSPhotoLibraryUsageDescription": "O app acessa suas fotos para você escolher a imagem/vídeo do anúncio."
+        "NSPhotoLibraryUsageDescription": "O app acessa suas fotos para você escolher a imagem/vídeo do anúncio.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "web": {
