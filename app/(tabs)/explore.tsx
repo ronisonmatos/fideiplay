@@ -395,6 +395,15 @@ export default function ContaScreen() {
               })}
             </View>
 
+            {profile.is_admin && (
+              <TouchableOpacity
+                style={styles.adminBtn}
+                onPress={() => router.push('/(tabs)/admin')}
+                activeOpacity={0.75}>
+                <ThemedText themeColor="textSecondary" style={styles.adminBtnText}>🛠️ Painel admin</ThemedText>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={styles.logoutBtn} onPress={signOut} activeOpacity={0.75}>
               <ThemedText style={styles.logoutText}>Sair da conta</ThemedText>
             </TouchableOpacity>
@@ -488,6 +497,10 @@ const styles = StyleSheet.create({
   achievementDesc:  { fontSize: 11, lineHeight: 15 },
   lockIcon:         { fontSize: 14, position: 'absolute', top: 8, right: 8 },
   locked:           { opacity: 0.35 },
+
+  // Admin
+  adminBtn: { alignItems: 'center', paddingVertical: 6 },
+  adminBtnText: { fontSize: 12, fontWeight: '600' },
 
   // Logout
   logoutBtn: {

@@ -4,7 +4,7 @@
 -- 1. Tabela principal de packs
 create table if not exists game_packs (
   id          uuid    primary key default gen_random_uuid(),
-  game_type   text    not null, -- 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop'
+  game_type   text    not null, -- 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop' | 'latim'
   titulo      text    not null,
   descricao   text,
   categoria   text,             -- ex: 'santos', 'biblia', 'liturgia', 'maria'
@@ -36,6 +36,11 @@ create table if not exists game_packs (
 --
 -- stop:
 --   { "categorias": [{ "key": "chave_unica", "label": "Nome da Categoria", "icon": "✝️", "description": "..." }] }
+--
+-- latim:
+--   { "niveis": [{ "id": "chave_unica", "title": "...", "difficulty": "facil|medio|dificil", "gridSize": 6, "words": [{ "word": "PAX", "meaning": "Paz", "emoji": "🕊️" }] }] }
+--   A grade é gerada automaticamente a partir de "words" + "gridSize" — não precisa
+--   (nem deve) enviar uma grade pronta.
 
 alter table game_packs enable row level security;
 
@@ -355,6 +360,56 @@ VALUES (
         "words": ["ROMANOS", "CORINTIOS", "GALATAS", "EFESIOS", "FILIPENSES", "COLOSSENSES", "TIMOTEO"],
         "difficulty": "dificil",
         "gridSize": 10
+      }
+    ]
+  }$json$::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 4b. BOGGLE LATIM (arrastar letras)
+-- ───────────────────────────────────────────────────────────────────────────────
+-- conteudo.niveis[]:
+--   id         → identificador único (ex: "pack1_l1") — não repita um "id" já
+--                usado por outro nível, senão o progresso salvo no celular do
+--                jogador (por nível) fica ambíguo entre os dois
+--   title      → nome exibido no topo da tela durante o nível
+--   difficulty → facil | medio | dificil — aparece na tela de seleção de nível,
+--                dentro da MESMA dificuldade que já existe no app
+--   gridSize   → NÃO deixe igual ao tamanho da maior palavra — use
+--                (letras da maior palavra) + 1. Se a palavra preenche a grade
+--                inteira, sobra só 1 posição diagonal possível (contra várias
+--                retas), e o nível sai só com palavras na horizontal/vertical.
+--                Ex: palavras de até 6 letras → gridSize 7 (não 6).
+--   words[]    → cada palavra: { word, meaning, emoji opcional }
+--                word EM MAIÚSCULAS, sem acento; nenhuma palavra pode ter mais
+--                letras que gridSize
+--
+-- A grade (posição das letras) é sempre gerada automaticamente pelo app a
+-- partir de "words" + "gridSize" — não inclua uma grade pronta.
+-- Novos níveis aparecem AO FINAL da lista de níveis daquela dificuldade.
+-- ───────────────────────────────────────────────────────────────────────────────
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'latim',
+  'Latim: Virtudes',
+  'latim',
+  true,
+  10,
+  $json${
+    "niveis": [
+      {
+        "id": "virtudes_l1",
+        "title": "Nível 8 · Virtudes",
+        "difficulty": "facil",
+        "gridSize": 8,
+        "words": [
+          { "word": "SPES", "meaning": "Esperança", "emoji": "⭐" },
+          { "word": "FIDES", "meaning": "Fé", "emoji": "❤️" },
+          { "word": "CARITAS", "meaning": "Caridade", "emoji": "🤲" }
+        ]
       }
     ]
   }$json$::jsonb

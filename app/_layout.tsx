@@ -10,6 +10,7 @@ const isExpoGoAndroid = Platform.OS === 'android' && Constants.appOwnership === 
 
 import { AnimatedSplashOverlay } from '@/components/animated-splash';
 import { GameStoreProvider, useGameStore } from '@/context/game-store';
+import { GameLevelsProvider } from '@/context/game-levels-context';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { NotificationsProvider, useNotifications } from '@/context/notifications-context';
 import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications, registerAndSavePushToken } from '@/lib/notifications';
@@ -154,6 +155,8 @@ function AuthGate() {
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === '(auth)';
+    const inResetPassword = segments[0] === 'reset-password';
+    if (inResetPassword) return;
     if (!user && !inAuth && !isGuest) {
       router.replace('/(auth)/register');
     } else if (user && inAuth) {
@@ -175,13 +178,15 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <GameStoreProvider>
-          <NotificationsProvider>
-            <ProgressSyncBridge />
-            <NotificationBridge />
-            <AnimatedSplashOverlay />
-            <AuthGate />
-            <Stack screenOptions={{ headerShown: false }} />
-          </NotificationsProvider>
+          <GameLevelsProvider>
+            <NotificationsProvider>
+              <ProgressSyncBridge />
+              <NotificationBridge />
+              <AnimatedSplashOverlay />
+              <AuthGate />
+              <Stack screenOptions={{ headerShown: false }} />
+            </NotificationsProvider>
+          </GameLevelsProvider>
         </GameStoreProvider>
       </AuthProvider>
     </GestureHandlerRootView>

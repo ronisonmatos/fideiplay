@@ -653,6 +653,7 @@ export default function StopCatolicoScreen() {
       <SafeAreaView style={s.fill} edges={['top']}>
         <GameHeader
           title="Stop Católico"
+          onBack={() => setPhase('selecting')}
           right={
             <ThemedText type="smallBold" style={{ color: timerColor, fontSize: 20 }}>
               {timeLeft}s

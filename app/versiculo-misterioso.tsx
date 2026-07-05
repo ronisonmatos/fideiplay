@@ -7,12 +7,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
+import { ALL_FRASES } from '@/constants/versiculo-frases';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
+import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeVersiculo } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
 import { GameRewardBanner } from '@/components/game-reward-banner';
+
+const GAME_ID = 'versiculo';
 
 type EntryType = 'versículo' | 'santo' | 'papa' | 'documento';
 type Difficulty = 'facil' | 'medio' | 'dificil';
@@ -53,326 +57,6 @@ const TYPE_LABEL: Record<EntryType, string> = {
   'documento':  'Documento da Igreja',
 };
 
-const ALL_FRASES: FraseSagrada[] = [
-  // ── FÁCIL ───────────────────────────────────────────────────────────────────
-  {
-    words: ['Porque', 'Deus', 'amou', 'o', 'mundo', 'de', 'tal', 'maneira', 'que', 'deu', 'o', 'seu', 'Filho', 'unigênito.'],
-    reference: 'João 3:16',
-    options: ['João 3:16', 'Mateus 5:3', 'Salmos 23:1', 'Romanos 8:28'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['O', 'Senhor', 'é', 'o', 'meu', 'pastor;', 'nada', 'me', 'faltará.'],
-    reference: 'Salmos 23:1',
-    options: ['Salmos 23:1', 'João 10:11', 'Isaías 40:31', 'Hebreus 13:6'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Eu', 'sou', 'o', 'caminho,', 'a', 'verdade', 'e', 'a', 'vida.'],
-    reference: 'João 14:6',
-    options: ['João 14:6', 'João 11:25', 'Mateus 7:14', 'Lucas 4:18'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Tudo', 'posso', 'naquele', 'que', 'me', 'fortalece.'],
-    reference: 'Filipenses 4:13',
-    options: ['Filipenses 4:13', 'Romanos 8:37', '2 Coríntios 12:9', 'Isaías 41:10'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Amai-vos', 'uns', 'aos', 'outros,', 'como', 'eu', 'vos', 'amei.'],
-    reference: 'João 15:12',
-    options: ['João 15:12', '1 Coríntios 13:4', 'Mateus 22:39', 'Romanos 13:9'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Bem-aventurados', 'os', 'pobres', 'em', 'espírito,', 'porque', 'deles', 'é', 'o', 'reino', 'dos', 'céus.'],
-    reference: 'Mateus 5:3',
-    options: ['Mateus 5:3', 'Lucas 6:20', 'Salmos 37:11', 'Isaías 61:1'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Procurai', 'primeiro', 'o', 'Reino', 'de', 'Deus', 'e', 'a', 'sua', 'justiça.'],
-    reference: 'Mateus 6:33',
-    options: ['Mateus 6:33', 'Mateus 7:7', 'Lucas 12:31', 'João 6:27'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['No', 'princípio', 'era', 'o', 'Verbo,', 'e', 'o', 'Verbo', 'estava', 'com', 'Deus.'],
-    reference: 'João 1:1',
-    options: ['João 1:1', 'Gênesis 1:1', 'Hebreus 1:1', 'Colossenses 1:15'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Alegrai-vos', 'sempre', 'no', 'Senhor;', 'outra', 'vez', 'digo,', 'alegrai-vos.'],
-    reference: 'Filipenses 4:4',
-    options: ['Filipenses 4:4', '1 Tessalonicenses 5:16', 'Salmos 118:24', 'Romanos 5:11'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Eu', 'sou', 'a', 'ressurreição', 'e', 'a', 'vida;', 'quem', 'crê', 'em', 'mim,', 'ainda', 'que', 'esteja', 'morto,', 'viverá.'],
-    reference: 'João 11:25',
-    options: ['João 11:25', 'João 6:35', 'João 14:6', 'João 10:28'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['O', 'amor', 'é', 'paciente,', 'o', 'amor', 'é', 'bondoso,', 'não', 'é', 'invejoso.'],
-    reference: '1 Coríntios 13:4',
-    options: ['1 Coríntios 13:4', 'Romanos 12:9', 'Efésios 4:2', 'Colossenses 3:14'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Vós', 'sois', 'o', 'sal', 'da', 'terra.'],
-    reference: 'Mateus 5:13',
-    options: ['Mateus 5:13', 'Mateus 5:14', 'João 8:12', 'Lucas 14:34'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Fazei', 'isto', 'em', 'memória', 'de', 'mim.'],
-    reference: 'Lucas 22:19',
-    options: ['Lucas 22:19', '1 Coríntios 11:24', 'Mateus 26:26', 'Marcos 14:22'],
-    type: 'versículo', difficulty: 'facil',
-  },
-  {
-    words: ['Nosso', 'coração', 'está', 'inquieto', 'até', 'que', 'repose', 'em', 'Vós.'],
-    reference: 'Santo Agostinho',
-    options: ['Santo Agostinho', 'São Francisco de Assis', 'São Tomás de Aquino', 'São Jerônimo'],
-    type: 'santo', difficulty: 'facil',
-  },
-  {
-    words: ['Senhor,', 'fazei-me', 'instrumento', 'de', 'vossa', 'paz.'],
-    reference: 'São Francisco de Assis',
-    options: ['São Francisco de Assis', 'São Domingos', 'São Bento', 'Santo Antônio'],
-    type: 'santo', difficulty: 'facil',
-  },
-  {
-    words: ['Pequenas', 'coisas', 'feitas', 'com', 'grande', 'amor.'],
-    reference: 'Santa Teresa de Calcutá',
-    options: ['Santa Teresa de Calcutá', 'Santa Teresa de Ávila', 'São João Bosco', 'São Padre Pio'],
-    type: 'santo', difficulty: 'facil',
-  },
-  {
-    words: ['A', 'oração', 'é', 'a', 'respiração', 'da', 'alma.'],
-    reference: 'São João Maria Vianney',
-    options: ['São João Maria Vianney', 'Santo Agostinho', 'São Francisco de Sales', 'São João Bosco'],
-    type: 'santo', difficulty: 'facil',
-  },
-  {
-    words: ['Dai-me', 'almas,', 'e', 'ficai', 'com', 'o', 'resto.'],
-    reference: 'São João Bosco',
-    options: ['São João Bosco', 'São Francisco de Assis', 'São Padre Pio', 'Santo Antônio'],
-    type: 'santo', difficulty: 'facil',
-  },
-  {
-    words: ['A', 'maior', 'das', 'sabedorias', 'é', 'conhecer', 'Jesus', 'Cristo.'],
-    reference: 'São Tomás de Kempis',
-    options: ['São Tomás de Kempis', 'Santo Agostinho', 'São Bernardo de Claraval', 'São Boaventura'],
-    type: 'santo', difficulty: 'facil',
-  },
-  {
-    words: ['Deus', 'não', 'nos', 'chama', 'para', 'ser', 'bem-sucedidos,', 'mas', 'para', 'ser', 'fiéis.'],
-    reference: 'Santa Teresa de Calcutá',
-    options: ['Santa Teresa de Calcutá', 'Santa Teresa de Ávila', 'São João Paulo II', 'São Padre Pio'],
-    type: 'santo', difficulty: 'facil',
-  },
-
-  // ── MÉDIO ───────────────────────────────────────────────────────────────────
-  {
-    words: ['Não', 'vos', 'conformeis', 'com', 'este', 'século,', 'mas', 'transformai-vos', 'pela', 'renovação', 'da', 'vossa', 'mente.'],
-    reference: 'Romanos 12:2',
-    options: ['Romanos 12:2', 'Efésios 4:23', 'Colossenses 3:10', '1 Pedro 1:14'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Sede', 'fortes', 'e', 'corajosos.', 'Não', 'temais', 'nem', 'vos', 'turbeis', 'diante', 'deles.'],
-    reference: 'Josué 1:9',
-    options: ['Josué 1:9', 'Deuteronômio 31:6', 'Salmos 27:14', 'Isaías 35:4'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Confiai', 'no', 'Senhor', 'de', 'todo', 'o', 'coração', 'e', 'não', 'vos', 'apoieis', 'na', 'vossa', 'própria', 'prudência.'],
-    reference: 'Provérbios 3:5',
-    options: ['Provérbios 3:5', 'Salmos 37:5', 'Jeremias 17:7', 'Isaías 26:4'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Porque', 'eu', 'bem', 'sei', 'os', 'planos', 'que', 'tenho', 'a', 'vosso', 'respeito,', 'diz', 'o', 'Senhor.'],
-    reference: 'Jeremias 29:11',
-    options: ['Jeremias 29:11', 'Isaías 55:8', 'Romanos 8:28', 'Salmos 139:16'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Quem', 'não', 'ama', 'não', 'conheceu', 'a', 'Deus,', 'porque', 'Deus', 'é', 'amor.'],
-    reference: '1 João 4:8',
-    options: ['1 João 4:8', '1 João 3:16', 'João 3:16', 'Romanos 5:8'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Sede', 'sempre', 'prontos', 'para', 'dar', 'razão', 'da', 'esperança', 'que', 'há', 'em', 'vós.'],
-    reference: '1 Pedro 3:15',
-    options: ['1 Pedro 3:15', 'Romanos 10:10', 'Hebreus 11:1', 'Efésios 6:15'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Sede', 'sóbrios', 'e', 'vigilantes.', 'O', 'diabo,', 'vosso', 'adversário,', 'anda', 'em', 'derredor', 'como', 'leão', 'que', 'ruge.'],
-    reference: '1 Pedro 5:8',
-    options: ['1 Pedro 5:8', 'Efésios 6:11', 'Apocalipse 20:2', 'Tiago 4:7'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Cada', 'um', 'dê', 'segundo', 'propôs', 'no', 'seu', 'coração,', 'porque', 'Deus', 'ama', 'o', 'que', 'dá', 'com', 'alegria.'],
-    reference: '2 Coríntios 9:7',
-    options: ['2 Coríntios 9:7', 'Lucas 21:4', 'Provérbios 11:24', 'Malaquias 3:10'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Nada', 'te', 'perturbe,', 'nada', 'te', 'espante,', 'tudo', 'passa,', 'Deus', 'não', 'muda.'],
-    reference: 'Santa Teresa de Ávila',
-    options: ['Santa Teresa de Ávila', 'Santa Teresa de Lisieux', 'Santa Catarina de Siena', 'São João da Cruz'],
-    type: 'santo', difficulty: 'medio',
-  },
-  {
-    words: ['Ora,', 'espera', 'e', 'não', 'te', 'preocupes.'],
-    reference: 'São Padre Pio',
-    options: ['São Padre Pio', 'São João Bosco', 'São Pio X', 'São João Maria Vianney'],
-    type: 'santo', difficulty: 'medio',
-  },
-  {
-    words: ['Não', 'tenhais', 'medo!', 'Abri,', 'mais,', 'escancarai', 'as', 'portas', 'a', 'Cristo!'],
-    reference: 'São João Paulo II',
-    options: ['São João Paulo II', 'São João XXIII', 'São Paulo VI', 'Bento XVI'],
-    type: 'papa', difficulty: 'medio',
-  },
-  {
-    words: ['No', 'fim', 'da', 'vida,', 'seremos', 'examinados', 'no', 'amor.'],
-    reference: 'São João da Cruz',
-    options: ['São João da Cruz', 'Santa Teresa de Ávila', 'São Francisco de Sales', 'Santo Agostinho'],
-    type: 'santo', difficulty: 'medio',
-  },
-  {
-    words: ['Farei', 'o', 'bem', 'até', 'o', 'fim;', 'espalhá-lo-ei', 'como', 'uma', 'chuva', 'de', 'rosas.'],
-    reference: 'Santa Teresa de Lisieux',
-    options: ['Santa Teresa de Lisieux', 'Santa Teresa de Ávila', 'Santa Bernadette Soubirous', 'Santa Faustina Kowalska'],
-    type: 'santo', difficulty: 'medio',
-  },
-  {
-    words: ['É', 'preferível', 'uma', 'Igreja', 'acidentada,', 'ferida', 'e', 'suja', 'de', 'sair', 'pelas', 'estradas.'],
-    reference: 'Papa Francisco',
-    options: ['Papa Francisco', 'Bento XVI', 'São João Paulo II', 'São João XXIII'],
-    type: 'papa', difficulty: 'medio',
-  },
-  {
-    words: ['Sede', 'a', 'luz', 'do', 'mundo.', 'Não', 'se', 'pode', 'esconder', 'uma', 'cidade', 'edificada', 'sobre', 'um', 'monte.'],
-    reference: 'Mateus 5:14',
-    options: ['Mateus 5:14', 'João 8:12', 'João 1:9', 'Mateus 5:16'],
-    type: 'versículo', difficulty: 'medio',
-  },
-  {
-    words: ['Se', 'quiserdes', 'saber', 'se', 'amais', 'a', 'Deus,', 'vede', 'se', 'amais', 'o', 'vosso', 'próximo.'],
-    reference: 'São João da Cruz',
-    options: ['São João da Cruz', 'Santa Teresa de Ávila', 'São Francisco de Sales', 'São Bernardo de Claraval'],
-    type: 'santo', difficulty: 'medio',
-  },
-  {
-    words: ['A', 'cruz', 'é', 'o', 'livro', 'de', 'amor', 'mais', 'profundo', 'que', 'Deus', 'escreveu', 'para', 'nós.'],
-    reference: 'São João Paulo II',
-    options: ['São João Paulo II', 'São Paulo VI', 'Bento XVI', 'São João XXIII'],
-    type: 'papa', difficulty: 'medio',
-  },
-
-  // ── DIFÍCIL ─────────────────────────────────────────────────────────────────
-  {
-    words: ['Vivo', 'eu,', 'mas', 'não', 'sou', 'mais', 'eu', 'que', 'vivo;', 'é', 'Cristo', 'que', 'vive', 'em', 'mim.'],
-    reference: 'Gálatas 2:20',
-    options: ['Gálatas 2:20', 'Romanos 8:10', 'Colossenses 3:3', 'Filipenses 1:21'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-  {
-    words: ['O', 'próprio', 'Espírito', 'intercede', 'por', 'nós', 'com', 'gemidos', 'inefáveis.'],
-    reference: 'Romanos 8:26',
-    options: ['Romanos 8:26', 'João 14:16', '1 Coríntios 2:10', 'Efésios 3:16'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-  {
-    words: ['Onde', 'está,', 'ó', 'morte,', 'a', 'tua', 'vitória?', 'Onde', 'está,', 'ó', 'morte,', 'o', 'teu', 'aguilhão?'],
-    reference: '1 Coríntios 15:55',
-    options: ['1 Coríntios 15:55', 'Oseias 13:14', 'Apocalipse 21:4', 'Romanos 6:23'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-  {
-    words: ['Eu', 'sou', 'o', 'pão', 'da', 'vida;', 'aquele', 'que', 'vem', 'a', 'mim', 'jamais', 'terá', 'fome.'],
-    reference: 'João 6:35',
-    options: ['João 6:35', 'João 4:14', 'João 7:37', 'Apocalipse 22:17'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-  {
-    words: ['Estou', 'à', 'porta', 'e', 'bato;', 'se', 'alguém', 'ouvir', 'a', 'minha', 'voz', 'e', 'abrir', 'a', 'porta,', 'entrarei.'],
-    reference: 'Apocalipse 3:20',
-    options: ['Apocalipse 3:20', 'João 10:9', 'Mateus 7:7', 'Lucas 11:9'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-  {
-    words: ['Amai', 'e', 'fazei', 'o', 'que', 'quiserdes.'],
-    reference: 'Santo Agostinho',
-    options: ['Santo Agostinho', 'São Tomás de Aquino', 'São Bernardo de Claraval', 'São Cirilo de Alexandria'],
-    type: 'santo', difficulty: 'dificil',
-  },
-  {
-    words: ['A', 'graça', 'não', 'destrói', 'a', 'natureza,', 'mas', 'a', 'pressupõe', 'e', 'a', 'aperfeiçoa.'],
-    reference: 'São Tomás de Aquino',
-    options: ['São Tomás de Aquino', 'Santo Agostinho', 'São Boaventura', 'São Anselmo de Cantuária'],
-    type: 'santo', difficulty: 'dificil',
-  },
-  {
-    words: ['Aquele', 'que', 'canta', 'ora', 'duas', 'vezes.'],
-    reference: 'Santo Agostinho',
-    options: ['Santo Agostinho', 'São Gregório Magno', 'São Jerônimo', 'São Ambrósio'],
-    type: 'santo', difficulty: 'dificil',
-  },
-  {
-    words: ['O', 'homem', 'não', 'pode', 'viver', 'sem', 'amor;', 'permanece', 'para', 'si', 'mesmo', 'um', 'ser', 'incompreensível.'],
-    reference: 'São João Paulo II',
-    options: ['São João Paulo II', 'São Paulo VI', 'Bento XVI', 'São João XXIII'],
-    type: 'papa', difficulty: 'dificil',
-  },
-  {
-    words: ['A', 'fé', 'e', 'a', 'razão', 'são', 'como', 'as', 'duas', 'asas', 'pelas', 'quais', 'o', 'espírito', 'humano', 'se', 'eleva', 'para', 'a', 'contemplação', 'da', 'verdade.'],
-    reference: 'São João Paulo II',
-    options: ['São João Paulo II', 'São Paulo VI', 'Bento XVI', 'São João XXIII'],
-    type: 'papa', difficulty: 'dificil',
-  },
-  {
-    words: ['As', 'alegrias', 'e', 'as', 'esperanças,', 'as', 'tristezas', 'e', 'as', 'angústias', 'dos', 'homens', 'de', 'hoje', 'são', 'também', 'as', 'dos', 'discípulos', 'de', 'Cristo.'],
-    reference: 'Gaudium et Spes',
-    options: ['Gaudium et Spes', 'Lumen Gentium', 'Dei Verbum', 'Apostolicam Actuositatem'],
-    type: 'documento', difficulty: 'dificil',
-  },
-  {
-    words: ['Deus', 'é', 'espírito,', 'e', 'importa', 'que', 'os', 'que', 'o', 'adoram', 'o', 'adorem', 'em', 'espírito', 'e', 'em', 'verdade.'],
-    reference: 'João 4:24',
-    options: ['João 4:24', 'João 1:18', '1 João 4:16', '1 Coríntios 3:16'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-  {
-    words: ['A', 'dignidade', 'da', 'pessoa', 'humana', 'exige', 'que', 'o', 'homem', 'aja', 'segundo', 'a', 'própria', 'consciência', 'e', 'o', 'seu', 'livre', 'arbítrio.'],
-    reference: 'Dignitatis Humanae',
-    options: ['Dignitatis Humanae', 'Gaudium et Spes', 'Lumen Gentium', 'Nostra Aetate'],
-    type: 'documento', difficulty: 'dificil',
-  },
-  {
-    words: ['A', 'Igreja', 'de', 'Cristo', 'subsiste', 'na', 'Igreja', 'Católica', 'Romana,', 'governada', 'pelo', 'sucessor', 'de', 'Pedro.'],
-    reference: 'Lumen Gentium',
-    options: ['Lumen Gentium', 'Gaudium et Spes', 'Unitatis Redintegratio', 'Dei Verbum'],
-    type: 'documento', difficulty: 'dificil',
-  },
-  {
-    words: ['Arrependei-vos', 'e', 'fazei-vos', 'batizar', 'cada', 'um', 'de', 'vós', 'em', 'nome', 'de', 'Jesus', 'Cristo,', 'para', 'remissão', 'dos', 'vossos', 'pecados.'],
-    reference: 'Atos 2:38',
-    options: ['Atos 2:38', 'Mateus 28:19', 'Marcos 16:16', 'Lucas 3:16'],
-    type: 'versículo', difficulty: 'dificil',
-  },
-];
-
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -386,6 +70,7 @@ export default function VersiculoMisteriosoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
   const { user, refreshProfile } = useAuth();
+  const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('versiculo');
   const [phase, setPhase] = useState<Phase>('idle');
   const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
@@ -406,11 +91,12 @@ export default function VersiculoMisteriosoScreen() {
       const maxScore = frases.length * 5;
       const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
       reportResult({
-        gameId: 'versiculo',
+        gameId: GAME_ID,
         score: correctCount * XP[difficulty],
         allVersesCorrect: allCorrect,
         pct: maxScore > 0 ? Math.round((score / maxScore) * 100) : 0,
       });
+      markLevelComplete(GAME_ID, difficulty);
       if (user?.id) {
         const coins = ECONOMY.COMPLETAR_QUIZ + (allCorrect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
         supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
@@ -419,7 +105,7 @@ export default function VersiculoMisteriosoScreen() {
       }
     }
     if (phase === 'playing') reported.current = false;
-  }, [phase, score, correctCount, frases.length, reportResult, user, refreshProfile]);
+  }, [phase, score, correctCount, frases.length, reportResult, user, refreshProfile, difficulty, markLevelComplete]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
     const allF = mergeVersiculo(ALL_FRASES, packs);
@@ -506,6 +192,7 @@ export default function VersiculoMisteriosoScreen() {
             <ThemedText type="subtitle" style={s.textCenter}>Qual nível deseja jogar?</ThemedText>
             {(['facil', 'medio', 'dificil'] as Difficulty[]).map(diff => {
               const dc = DIFFICULTY_CONFIG[diff];
+              const done = isLevelComplete(GAME_ID, diff);
               return (
                 <TouchableOpacity
                   key={diff}
@@ -513,11 +200,16 @@ export default function VersiculoMisteriosoScreen() {
                   onPress={() => startWithDifficulty(diff)}
                   activeOpacity={0.8}>
                   <ThemedView type="backgroundElement" style={s.diffBtnInner}>
-                    <View style={[s.diffBadge, { backgroundColor: dc.color + '22' }]}>
-                      <ThemedText style={[s.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
+                    <View style={s.diffHeaderRow}>
+                      <View style={[s.diffBadge, { backgroundColor: dc.color + '22' }]}>
+                        <ThemedText style={[s.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
+                      </View>
+                      {done && <ThemedText style={{ fontSize: 16 }}>✅</ThemedText>}
                     </View>
                     <ThemedText themeColor="textSecondary" style={s.diffDesc}>{dc.desc}</ThemedText>
-                    <ThemedText style={[s.diffCount, { color: dc.color }]}>15 frases · começa com {dc.initialReveal} palavra{dc.initialReveal > 1 ? 's' : ''}</ThemedText>
+                    <ThemedText style={[s.diffCount, { color: dc.color }]}>
+                      {done ? 'Concluído · jogar novamente' : `15 frases · começa com ${dc.initialReveal} palavra${dc.initialReveal > 1 ? 's' : ''}`}
+                    </ThemedText>
                   </ThemedView>
                 </TouchableOpacity>
               );
@@ -569,6 +261,7 @@ export default function VersiculoMisteriosoScreen() {
       <SafeAreaView style={s.fill} edges={['top']}>
         <GameHeader
           title="Sabedoria Católica"
+          onBack={() => setPhase('difficulty')}
           right={
             <ThemedText type="smallBold" style={{ color: cfg.color }}>
               {score} pts
@@ -735,6 +428,7 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   diffBtnInner: { padding: Spacing.three, gap: Spacing.one },
+  diffHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   diffBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.two,
