@@ -8,11 +8,15 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
+import { ALL_QUESTIONS } from '@/constants/liturgico-questions';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
+import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeLiturgQuestions } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
+
+const GAME_ID = 'desafio-liturgico';
 
 type Difficulty = 'facil' | 'medio' | 'dificil';
 type Phase = 'idle' | 'difficulty' | 'playing' | 'result';
@@ -30,329 +34,6 @@ const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; emoj
   medio:   { label: 'Médio',   color: C.gold,  emoji: '✝️', desc: 'Semana Santa, ritos e datas litúrgicas', time: 75 },
   dificil: { label: 'Difícil', color: C.red,   emoji: '📿', desc: 'Preces, Triduum, história e documentos', time: 60 },
 };
-
-const ALL_QUESTIONS: LiturgQuestion[] = [
-  // ── FÁCIL ───────────────────────────────────────────────────────────────────
-  {
-    question: 'Qual é a cor litúrgica do Tempo do Advento?',
-    options: ['Branco/Dourado', 'Vermelho', 'Roxo (Violeta)', 'Verde'],
-    correct: 2,
-    hint: 'Tempo de penitência, espera e conversão.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é a cor litúrgica do Tempo de Natal?',
-    options: ['Vermelho', 'Branco/Dourado', 'Roxo', 'Verde'],
-    correct: 1,
-    hint: 'Celebração e alegria pelo nascimento do Senhor.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é a cor litúrgica da Quaresma?',
-    options: ['Branco', 'Verde', 'Azul', 'Roxo (Violeta)'],
-    correct: 3,
-    hint: '40 dias de jejum, oração e conversão.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é a cor litúrgica do Tempo Pascal (Páscoa)?',
-    options: ['Vermelho', 'Roxo', 'Verde', 'Branco/Dourado'],
-    correct: 3,
-    hint: 'Ressurreição, glória e alegria do Cristo vivo.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é a cor litúrgica do Tempo Comum?',
-    options: ['Azul', 'Verde', 'Branco', 'Amarelo'],
-    correct: 1,
-    hint: 'Crescimento e esperança na caminhada da fé.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é a cor usada em Pentecostes e nas festas de mártires?',
-    options: ['Roxo', 'Laranja', 'Vermelho', 'Dourado'],
-    correct: 2,
-    hint: 'Fogo do Espírito Santo e sangue dos mártires.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Quantos sacramentos existem na Igreja Católica?',
-    options: ['5', '6', '7', '10'],
-    correct: 2,
-    hint: 'Batismo, Crisma, Eucaristia, Confissão, Unção, Ordem e Matrimônio.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é o primeiro sacramento da iniciação cristã?',
-    options: ['Eucaristia', 'Crisma', 'Batismo', 'Penitência'],
-    correct: 2,
-    hint: 'Por ele nascemos para a vida em Cristo.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual período litúrgico precede diretamente a Páscoa?',
-    options: ['Advento', 'Natal', 'Quaresma', 'Pentecostes'],
-    correct: 2,
-    hint: 'Quarenta dias de preparação para a maior festa cristã.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'A Solenidade de Corpus Christi celebra o quê?',
-    options: ['A Ressurreição', 'A Eucaristia', 'O Espírito Santo', 'A Natividade'],
-    correct: 1,
-    hint: '"Corpo de Cristo" em latim — o Santíssimo Sacramento.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é a maior festa do ano litúrgico?',
-    options: ['Natal', 'Páscoa', 'Pentecostes', 'Corpus Christi'],
-    correct: 1,
-    hint: 'A festa das festas — a Ressurreição do Senhor.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Em que dia da semana a Igreja celebra o Dia do Senhor?',
-    options: ['Sexta-feira', 'Sábado', 'Domingo', 'Segunda-feira'],
-    correct: 2,
-    hint: 'Dia em que Cristo ressuscitou dos mortos.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual é o sacramento celebrado na Missa?',
-    options: ['Batismo', 'Crisma', 'Eucaristia', 'Matrimônio'],
-    correct: 2,
-    hint: 'Fonte e cume de toda a vida cristã.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'Qual sacramento fortalece a fé e concede o dom pleno do Espírito Santo?',
-    options: ['Batismo', 'Eucaristia', 'Crisma', 'Penitência'],
-    correct: 2,
-    hint: 'Sacramento da confirmação e maturidade na fé.',
-    difficulty: 'facil',
-  },
-  {
-    question: 'O Advento é um tempo de preparação para qual festa?',
-    options: ['Páscoa', 'Pentecostes', 'Natal', 'Corpus Christi'],
-    correct: 2,
-    hint: 'Espera pela vinda do Senhor — Deus que se fez homem.',
-    difficulty: 'facil',
-  },
-
-  // ── MÉDIO ───────────────────────────────────────────────────────────────────
-  {
-    question: 'Quantas semanas dura o Tempo do Advento?',
-    options: ['2', '3', '4', '6'],
-    correct: 2,
-    hint: 'Quatro domingos de espera e preparação.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Quando começa o ano litúrgico católico?',
-    options: ['1º de janeiro', 'No primeiro Domingo do Advento', 'Na Quarta-feira de Cinzas', 'No Domingo de Páscoa'],
-    correct: 1,
-    hint: 'O ano litúrgico abre com a espera pelo Senhor.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Em qual dia da Semana Santa se celebra a Última Ceia do Senhor?',
-    options: ['Quarta-feira', 'Quinta-feira Santa', 'Sexta-feira Santa', 'Sábado Santo'],
-    correct: 1,
-    hint: 'Instituição da Eucaristia e do sacerdócio ministerial.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Em qual dia se celebra liturgicamente a morte de Jesus na Cruz?',
-    options: ['Quarta-feira de Cinzas', 'Quinta-feira Santa', 'Sexta-feira Santa', 'Sábado Santo'],
-    correct: 2,
-    hint: 'Via Sacra, adoração da Cruz e silêncio.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'O que caracteriza o Sábado Santo na liturgia?',
-    options: ['A morte de Cristo é celebrada', 'Silêncio e vigília antes da Ressurreição', 'A Ceia do Senhor é renovada', 'A vinda do Espírito Santo'],
-    correct: 1,
-    hint: 'O dia em que Cristo jaz no sepulcro — a grande vigília pascal.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'O que é o "Tempo Pascal"?',
-    options: ['Os 40 dias da Quaresma', 'Os 50 dias após a Páscoa até Pentecostes', 'O período do Natal ao Batismo do Senhor', 'A Semana Santa'],
-    correct: 1,
-    hint: 'Cinquenta dias de Aleluia — da Ressurreição ao Espírito Santo.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Em que período litúrgico se suprime o "Aleluia"?',
-    options: ['Advento', 'Quaresma', 'Tempo Comum', 'Tempo Pascal'],
-    correct: 1,
-    hint: 'Tempo de sobriedade — o Aleluia retorna triunfalmente na Páscoa.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Qual é a cor litúrgica especial do 3º Domingo do Advento (Gaudete)?',
-    options: ['Roxo', 'Vermelho', 'Rosa', 'Azul'],
-    correct: 2,
-    hint: '"Gaudete" — Alegrai-vos! Domingo de alegria no meio da penitência.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Qual é o nome do livro litúrgico que contém as orações do sacerdote na Missa?',
-    options: ['Breviário', 'Missal Romano', 'Saltério', 'Evangeliário'],
-    correct: 1,
-    hint: 'Livro fundamental que guia toda a celebração eucarística.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Em qual solenidade se comemora a vinda do Espírito Santo sobre os Apóstolos?',
-    options: ['Natal', 'Ascensão', 'Pentecostes', 'Corpus Christi'],
-    correct: 2,
-    hint: 'Cinquenta dias após a Páscoa — nascimento da Igreja.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'O que é a "Quarta-feira de Cinzas"?',
-    options: ['Início da Semana Santa', 'Início da Quaresma com imposição de cinzas', 'Encerramento do Advento', 'Vigília pascal'],
-    correct: 1,
-    hint: '"Lembra-te de que és pó e ao pó voltarás."',
-    difficulty: 'medio',
-  },
-  {
-    question: 'A primeira leitura da Missa é geralmente retirada de qual parte da Bíblia?',
-    options: ['Novo Testamento', 'Antigo Testamento', 'Evangelho', 'Atos dos Apóstolos'],
-    correct: 1,
-    hint: 'A Liturgia da Palavra começa com a história da salvação.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'O "Pai Nosso" é rezado em qual parte da Missa?',
-    options: ['Na abertura', 'Após o Evangelho', 'Antes da Comunhão', 'No encerramento'],
-    correct: 2,
-    hint: 'Preparação final para receber o Corpo de Cristo.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'Qual solenidade mariana é celebrada em 15 de agosto?',
-    options: ['Imaculada Conceição', 'Nossa Senhora de Fátima', 'Assunção de Maria', 'Maternidade de Maria'],
-    correct: 2,
-    hint: 'Maria foi elevada ao Céu em corpo e alma.',
-    difficulty: 'medio',
-  },
-  {
-    question: 'O "Tempo Comum" ocorre em quantos períodos no ano litúrgico?',
-    options: ['Um', 'Dois', 'Três', 'Quatro'],
-    correct: 1,
-    hint: 'Um após o Natal e outro após Pentecostes.',
-    difficulty: 'medio',
-  },
-
-  // ── DIFÍCIL ─────────────────────────────────────────────────────────────────
-  {
-    question: 'Em que Concílio foi permitida a Missa em vernáculo (língua local)?',
-    options: ['Concílio de Trento', 'Concílio de Niceia', 'Concílio Vaticano II', 'Concílio de Calcedônia'],
-    correct: 2,
-    hint: 'Reforma litúrgica do século XX que abriu a Igreja ao mundo.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'O "Triduum Pascal" compreende quais dias sagrados?',
-    options: ['Domingo de Ramos a Domingo de Páscoa', 'Quinta-feira Santa, Sexta-feira Santa e Vigília Pascal', 'Quarta-feira de Cinzas a Sábado Santo', 'Sexta-feira Santa a Segunda-feira de Páscoa'],
-    correct: 1,
-    hint: 'O coração do ano litúrgico — os três dias que mudam tudo.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Como se chama a invocação do Espírito Santo sobre os dons eucarísticos na Missa?',
-    options: ['Doxologia', 'Anamnese', 'Epiclese', 'Prefácio'],
-    correct: 2,
-    hint: 'Do grego "epiklesis" — invocar sobre. Pede a transformação do pão e do vinho.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'O "Sanctus" ("Santo, Santo, Santo...") pertence a qual parte da Missa?',
-    options: ['Rito de abertura', 'Liturgia da Palavra', 'Prefácio da Prece Eucarística', 'Rito de Comunhão'],
-    correct: 2,
-    hint: 'Canto de louvor que une a Igreja ao coro dos anjos.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Quantos anos dura o ciclo de leituras dominicais (Anos A, B e C)?',
-    options: ['2', '3', '4', '7'],
-    correct: 1,
-    hint: 'Ano A: Mateus · Ano B: Marcos · Ano C: Lucas.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Como se chama o pano branco sobre o qual repousam o cálice e a patena durante a Missa?',
-    options: ['Purificador', 'Pala', 'Corporal', 'Véu do cálice'],
-    correct: 2,
-    hint: 'Simboliza o sudário que envolveu o Corpo de Cristo.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Em qual parte da Missa se proclama o Evangelho?',
-    options: ['Liturgia Eucarística', 'Liturgia da Palavra', 'Rito de Abertura', 'Rito de Envio'],
-    correct: 1,
-    hint: 'A assembleia fica de pé em honra ao Senhor que fala.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Qual é o nome da mais antiga Prece Eucarística da Missa romana?',
-    options: ['Prece Eucarística II', 'Cânon Romano (Prece Eucarística I)', 'Prece Eucarística III', 'Prece Eucarística IV'],
-    correct: 1,
-    hint: 'Remonta ao século IV — patrimônio precioso da liturgia latina.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'O que é a "Anamnese" na Missa?',
-    options: ['Oração de abertura da Missa', 'Oração do Ofertório', 'Memorial proclamado após a Consagração', 'Cântico de encerramento'],
-    correct: 2,
-    hint: '"Anunciamos a vossa morte, proclamamos a vossa ressurreição..."',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Qual solenidade é celebrada no domingo imediatamente após Pentecostes?',
-    options: ['Corpus Christi', 'Sagrado Coração de Jesus', 'Santíssima Trindade', 'Cristo Rei'],
-    correct: 2,
-    hint: 'Mistério central da fé cristã — Pai, Filho e Espírito Santo.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'O que contém o "Lecionário"?',
-    options: ['As orações do sacerdote na Missa', 'As leituras bíblicas para as Missas', 'Os Salmos da Liturgia das Horas', 'Os rituais dos sacramentos'],
-    correct: 1,
-    hint: 'Da Escritura proclamada nasce a homilia e a fé do povo.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Qual é o nome do rito pelo qual o sacerdote lava as mãos durante o Ofertório?',
-    options: ['Ablução', 'Lavabo', 'Purificação', 'Aspersão'],
-    correct: 1,
-    hint: '"Lavai-me da minha culpa, purificai-me do meu pecado" (Salmo 51).',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'A "Liturgia das Horas" é composta por quantas Horas canônicas?',
-    options: ['3', '5', '7', '12'],
-    correct: 2,
-    hint: 'Laudes, Terça, Sexta, Nona, Vésperas, Completas... santificando todo o dia.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Qual é o nome do último domingo do ano litúrgico?',
-    options: ['Domingo de Cristo Rei', 'Último Domingo do Advento', 'Domingo após Pentecostes', 'Festa de Todos os Santos'],
-    correct: 0,
-    hint: 'O ano litúrgico se fecha com a solenidade do Reinado de Cristo.',
-    difficulty: 'dificil',
-  },
-  {
-    question: 'Como se chama a parte da Missa em que o pão e o vinho se tornam o Corpo e Sangue de Cristo?',
-    options: ['Ofertório', 'Consagração', 'Comunhão', 'Pós-comunhão'],
-    correct: 1,
-    hint: 'Pelas palavras da instituição, Cristo se faz realmente presente.',
-    difficulty: 'dificil',
-  },
-];
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -373,6 +54,7 @@ export default function DesafioLiturgicoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
   const { user, refreshProfile } = useAuth();
+  const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('liturgico');
   const [phase, setPhase] = useState<Phase>('idle');
   const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
@@ -393,7 +75,8 @@ export default function DesafioLiturgicoScreen() {
       reported.current = true;
       const isPerfect = questions.length > 0 && score === questions.length;
       const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
-      reportResult({ gameId: 'desafio-liturgico', score: score * XP[difficulty], liturgyTimeLeft: finalTimeRef.current });
+      reportResult({ gameId: GAME_ID, score: score * XP[difficulty], liturgyTimeLeft: finalTimeRef.current });
+      markLevelComplete(GAME_ID, difficulty);
       if (user?.id) {
         const coins = ECONOMY.COMPLETAR_QUIZ + (isPerfect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
         supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
@@ -406,7 +89,7 @@ export default function DesafioLiturgicoScreen() {
       finalTimeRef.current = cfg.time;
       setCoinsEarned(null);
     }
-  }, [phase, score, questions.length, cfg.time, reportResult, user, refreshProfile]);
+  }, [phase, score, questions.length, cfg.time, reportResult, user, refreshProfile, difficulty, markLevelComplete]);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -492,6 +175,7 @@ export default function DesafioLiturgicoScreen() {
             <ThemedText type="subtitle" style={styles.textCenter}>Qual nível deseja jogar?</ThemedText>
             {(['facil', 'medio', 'dificil'] as Difficulty[]).map(diff => {
               const dc = DIFFICULTY_CONFIG[diff];
+              const done = isLevelComplete(GAME_ID, diff);
               return (
                 <TouchableOpacity
                   key={diff}
@@ -499,11 +183,16 @@ export default function DesafioLiturgicoScreen() {
                   onPress={() => startWithDifficulty(diff)}
                   activeOpacity={0.8}>
                   <ThemedView type="backgroundElement" style={styles.diffBtnInner}>
-                    <View style={[styles.diffBadge, { backgroundColor: dc.color + '22' }]}>
-                      <ThemedText style={[styles.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
+                    <View style={styles.diffHeaderRow}>
+                      <View style={[styles.diffBadge, { backgroundColor: dc.color + '22' }]}>
+                        <ThemedText style={[styles.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
+                      </View>
+                      {done && <ThemedText style={{ fontSize: 16 }}>✅</ThemedText>}
                     </View>
                     <ThemedText themeColor="textSecondary" style={styles.diffDesc}>{dc.desc}</ThemedText>
-                    <ThemedText style={[styles.diffCount, { color: dc.color }]}>15 questões · ⏱ {dc.time}s</ThemedText>
+                    <ThemedText style={[styles.diffCount, { color: dc.color }]}>
+                      {done ? 'Concluído · jogar novamente' : `15 questões · ⏱ ${dc.time}s`}
+                    </ThemedText>
                   </ThemedView>
                 </TouchableOpacity>
               );
@@ -550,6 +239,7 @@ export default function DesafioLiturgicoScreen() {
       <SafeAreaView style={styles.fill} edges={['top']}>
         <GameHeader
           title="Desafio Litúrgico"
+          onBack={() => setPhase('difficulty')}
           right={
             <ThemedText type="smallBold" style={{ color: timerColor, fontSize: 18 }}>
               {timeLeft}s
@@ -654,6 +344,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   diffBtnInner: { padding: Spacing.three, gap: Spacing.one },
+  diffHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   diffBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.two,

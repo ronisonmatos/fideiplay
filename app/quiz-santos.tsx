@@ -7,13 +7,17 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
+import { ALL_QUESTIONS } from '@/constants/quiz-questions';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
+import { useGameLevels } from '@/context/game-levels-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeQuizQuestions } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
 import { GameRewardBanner } from '@/components/game-reward-banner';
+
+const GAME_ID = 'quiz-santos';
 
 type Difficulty = 'facil' | 'medio' | 'dificil';
 type Phase = 'idle' | 'difficulty' | 'playing' | 'result';
@@ -24,332 +28,12 @@ const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; emoj
   dificil: { label: 'Difícil', color: C.red,    emoji: '📖', desc: 'Teologia, concílios e história da Igreja' },
 };
 
-const ALL_QUESTIONS = [
-  // ── FÁCIL ───────────────────────────────────────────────────────────────────
-  {
-    topic: 'Maria',
-    question: 'Quem é a mãe de Jesus Cristo?',
-    options: ['Maria Madalena', 'Maria, a Virgem', 'Isabel', 'Ana'],
-    correct: 1,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Bíblia',
-    question: 'Qual é o primeiro livro da Bíblia?',
-    options: ['Êxodo', 'Salmos', 'Gênesis', 'Mateus'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Jesus',
-    question: 'Em que cidade Jesus nasceu?',
-    options: ['Nazaré', 'Jerusalém', 'Belém', 'Cafarnaum'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Apóstolos',
-    question: 'Quantos apóstolos Jesus escolheu?',
-    options: ['7', '10', '12', '14'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Apóstolos',
-    question: 'Qual apóstolo negou Jesus três vezes antes do canto do galo?',
-    options: ['João', 'Tiago', 'André', 'Pedro'],
-    correct: 3,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Apóstolos',
-    question: 'Qual apóstolo traiu Jesus por trinta moedas de prata?',
-    options: ['Tomé', 'Judas Iscariotes', 'Simão', 'Felipe'],
-    correct: 1,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Jesus',
-    question: 'Qual foi o primeiro milagre de Jesus, segundo o Evangelho de João?',
-    options: ['Multiplicação dos pães', 'Cura de um cego', 'Água transformada em vinho', 'Ressurreição de Lázaro'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'João Batista',
-    question: 'Quem batizou Jesus no Rio Jordão?',
-    options: ['São Pedro', 'São Paulo', 'João Batista', 'São José'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Nossa Senhora Aparecida',
-    question: 'Nossa Senhora Aparecida é padroeira de qual país?',
-    options: ['Portugal', 'Argentina', 'México', 'Brasil'],
-    correct: 3,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Bíblia',
-    question: 'Quantos livros tem a Bíblia Católica?',
-    options: ['66', '73', '72', '80'],
-    correct: 1,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Sacramentos',
-    question: 'Qual é o primeiro sacramento que um cristão recebe?',
-    options: ['Eucaristia', 'Crisma', 'Batismo', 'Confissão'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'São José',
-    question: 'Qual era a profissão de São José, pai adotivo de Jesus?',
-    options: ['Pescador', 'Comerciante', 'Carpinteiro', 'Pastor'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Jesus',
-    question: 'Em qual dia da semana Jesus ressuscitou?',
-    options: ['Sexta-feira', 'Sábado', 'Domingo', 'Segunda-feira'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'São Paulo',
-    question: 'Qual era o nome de São Paulo antes de sua conversão?',
-    options: ['Simão', 'Barnabé', 'Saulo', 'Matias'],
-    correct: 2,
-    difficulty: 'facil' as Difficulty,
-  },
-  {
-    topic: 'Oração',
-    question: 'Qual oração Jesus ensinou diretamente aos seus discípulos?',
-    options: ['Ave Maria', 'Pai Nosso', 'Credo', 'Salve Rainha'],
-    correct: 1,
-    difficulty: 'facil' as Difficulty,
-  },
-  // ── MÉDIO ───────────────────────────────────────────────────────────────────
-  {
-    topic: 'São Francisco de Assis',
-    question: 'São Francisco de Assis fundou qual ordem religiosa?',
-    options: ['Dominicanos', 'Jesuítas', 'Franciscanos', 'Beneditinos'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Santa Teresa de Ávila',
-    question: 'Santa Teresa de Ávila pertencia a qual ordem religiosa?',
-    options: ['Franciscanas', 'Carmelitas', 'Dominicanas', 'Beneditinas'],
-    correct: 1,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Doutrina',
-    question: 'Qual é o significado da palavra "Eucaristia"?',
-    options: ['Sacrifício Santo', 'Ação de Graças', 'Corpo de Cristo', 'Pão do Céu'],
-    correct: 1,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'São Tomás de Aquino',
-    question: 'Quem escreveu a "Suma Teológica", obra fundamental da teologia católica?',
-    options: ['Santo Agostinho', 'São Boaventura', 'São Tomás de Aquino', 'São Bernardo'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'São Domingos',
-    question: 'São Domingos de Gusmão fundou qual ordem religiosa?',
-    options: ['Franciscanos', 'Jesuítas', 'Dominicanos', 'Carmelitas'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Fátima',
-    question: 'Em que ano ocorreram as aparições de Nossa Senhora em Fátima, Portugal?',
-    options: ['1910', '1917', '1920', '1929'],
-    correct: 1,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Sacramentos',
-    question: 'Qual sacramento fortalece a fé e une o cristão à Igreja através do Espírito Santo?',
-    options: ['Eucaristia', 'Ordem', 'Matrimônio', 'Crisma'],
-    correct: 3,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Liturgia',
-    question: 'O "Advento" é o período litúrgico preparatório para qual festa?',
-    options: ['Páscoa', 'Pentecostes', 'Natal', 'Corpus Christi'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Bíblia',
-    question: 'Quantos livros tem o Novo Testamento?',
-    options: ['22', '25', '27', '39'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'São Pedro',
-    question: 'Quem foi o primeiro papa da Igreja Católica?',
-    options: ['São Paulo', 'São Pedro', 'São João', 'São Tiago'],
-    correct: 1,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Doutrina',
-    question: 'Qual sacramento apaga os pecados cometidos após o Batismo?',
-    options: ['Eucaristia', 'Unção dos Enfermos', 'Confissão', 'Crisma'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Nossa Senhora de Lourdes',
-    question: 'Em qual cidade francesa apareceu Nossa Senhora a Santa Bernadette Soubirous?',
-    options: ['Paris', 'Lyon', 'Lourdes', 'Versailles'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'São João Bosco',
-    question: 'São João Bosco é o patrono de qual grupo?',
-    options: ['Sacerdotes', 'Pescadores', 'Jovens', 'Enfermos'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'Doutrina',
-    question: 'Qual dogma proclamado em 1854 afirma que Maria foi concebida sem pecado original?',
-    options: ['Assunção de Maria', 'Imaculada Conceição', 'Maternidade Divina', 'Perpétua Virgindade'],
-    correct: 1,
-    difficulty: 'medio' as Difficulty,
-  },
-  {
-    topic: 'São Nicolau',
-    question: 'São Nicolau de Bari inspirou qual personagem popular do Natal?',
-    options: ['Os Reis Magos', 'São Valentim', 'Papai Noel', 'Anjo do Natal'],
-    correct: 2,
-    difficulty: 'medio' as Difficulty,
-  },
-  // ── DIFÍCIL ─────────────────────────────────────────────────────────────────
-  {
-    topic: 'Concílio de Niceia',
-    question: 'Qual Concílio (325 d.C.) combateu o arianismo definindo que o Filho é "da mesma substância" que o Pai?',
-    options: ['Concílio de Éfeso', 'Concílio de Calcedônia', 'Concílio de Niceia I', 'Concílio de Constantinopla I'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Santo Agostinho',
-    question: 'Quem escreveu as "Confissões" e "A Cidade de Deus", pilares da patrística ocidental?',
-    options: ['São Jerônimo', 'Santo Agostinho', 'São Gregório Magno', 'Tertuliano'],
-    correct: 1,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Grande Cisma',
-    question: 'Em que ano ocorreu o Grande Cisma que dividiu a Igreja em Católica Romana e Ortodoxa Oriental?',
-    options: ['1054', '1095', '1215', '1309'],
-    correct: 0,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Heresias',
-    question: 'Qual heresia, condenada pelo Concílio de Niceia, negava a plena divindade de Cristo?',
-    options: ['Gnosticismo', 'Arianismo', 'Pelagianismo', 'Nestorianismo'],
-    correct: 1,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'São Tomás de Aquino',
-    question: 'São Tomás de Aquino pertencia a qual ordem religiosa?',
-    options: ['Franciscanos', 'Jesuítas', 'Dominicanos', 'Beneditinos'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Concílio Vaticano II',
-    question: 'Em que anos foi realizado o Concílio Vaticano II, convocado por João XXIII?',
-    options: ['1950–1958', '1958–1962', '1962–1965', '1965–1970'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Santa Catarina de Siena',
-    question: 'Santa Catarina de Siena convenceu qual papa a retornar de Avignon para Roma?',
-    options: ['Clemente VI', 'Inocêncio VI', 'Gregório XI', 'Urbano VI'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Bíblia',
-    question: 'Quantos livros deuterocanônicos a Bíblia Católica possui (ausentes no cânon protestante)?',
-    options: ['5', '6', '7', '9'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Mártires',
-    question: 'Quem foi o primeiro mártir cristão, apedrejado por pregar o Evangelho em Jerusalém?',
-    options: ['São Pedro', 'Santo Estêvão', 'São Tiago', 'São João'],
-    correct: 1,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Concílio de Calcedônia',
-    question: 'O Concílio de Calcedônia (451 d.C.) definiu que Cristo possui quantas naturezas em uma única Pessoa?',
-    options: ['Uma (divina)', 'Uma (humano-divina mista)', 'Duas (divina e humana)', 'Três'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'São Inácio de Loyola',
-    question: 'São Inácio de Loyola fundou qual ordem, conhecida por missões, educação e pelo lema "Ad Majorem Dei Gloriam"?',
-    options: ['Dominicanos', 'Franciscanos', 'Companhia de Jesus (Jesuítas)', 'Carmelitas Descalços'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Doutrina',
-    question: 'O "Filioque" — polêmico no Cisma de 1054 — afirma que o Espírito Santo procede do Pai e de quem?',
-    options: ['Da Igreja', 'De Maria', 'Do Filho', 'Dos Apóstolos'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Doutrina Social',
-    question: 'Qual encíclica do Papa Leão XIII (1891) é considerada o marco fundador da Doutrina Social da Igreja?',
-    options: ['Rerum Novarum', 'Humanae Vitae', 'Evangelii Gaudium', 'Laudato Si'],
-    correct: 0,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'Santa Teresa de Lisieux',
-    question: 'Santa Teresa do Menino Jesus ficou conhecida por qual "caminho espiritual"?',
-    options: ['Via da Contemplação Mística', 'Pequeno Caminho da Infância Espiritual', 'Caminho da Mortificação', 'Via Negativa'],
-    correct: 1,
-    difficulty: 'dificil' as Difficulty,
-  },
-  {
-    topic: 'São João Paulo II',
-    question: 'João Paulo II (1978) foi o primeiro papa não italiano em quantos anos?',
-    options: ['100 anos', '250 anos', '455 anos', '600 anos'],
-    correct: 2,
-    difficulty: 'dificil' as Difficulty,
-  },
-];
-
 export default function QuizSantosScreen() {
   const theme  = useTheme();
   const scheme = useColorScheme() ?? 'light';
   const { reportResult } = useGameStore();
   const { user, refreshProfile } = useAuth();
+  const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('quiz');
   const allQuestions = useMemo(() => mergeQuizQuestions(ALL_QUESTIONS, packs), [packs]);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -366,7 +50,8 @@ export default function QuizSantosScreen() {
       reported.current = true;
       const isPerfect = score === questions.length;
       const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
-      reportResult({ gameId: 'quiz-santos', score: score * XP[difficulty], perfectQuiz: isPerfect });
+      reportResult({ gameId: GAME_ID, score: score * XP[difficulty], perfectQuiz: isPerfect });
+      markLevelComplete(GAME_ID, difficulty);
       if (user?.id) {
         const coins = ECONOMY.COMPLETAR_QUIZ + (isPerfect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
         supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
@@ -375,7 +60,7 @@ export default function QuizSantosScreen() {
       }
     }
     if (phase === 'playing') reported.current = false;
-  }, [phase, score, questions.length, reportResult, user, refreshProfile]);
+  }, [phase, score, questions.length, reportResult, user, refreshProfile, difficulty, markLevelComplete]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
     setCoinsEarned(null);
@@ -447,6 +132,7 @@ export default function QuizSantosScreen() {
             <ThemedText type="subtitle" style={styles.textCenter}>Qual nível deseja jogar?</ThemedText>
             {(['facil', 'medio', 'dificil'] as Difficulty[]).map(diff => {
               const dc = DIFFICULTY_CONFIG[diff];
+              const done = isLevelComplete(GAME_ID, diff);
               return (
                 <TouchableOpacity
                   key={diff}
@@ -454,12 +140,15 @@ export default function QuizSantosScreen() {
                   onPress={() => startWithDifficulty(diff)}
                   activeOpacity={0.8}>
                   <View style={styles.diffBtnInner}>
-                    <View style={[styles.diffBadge, { backgroundColor: dc.color + '22' }]}>
-                      <ThemedText style={[styles.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
+                    <View style={styles.diffHeaderRow}>
+                      <View style={[styles.diffBadge, { backgroundColor: dc.color + '22' }]}>
+                        <ThemedText style={[styles.diffBadgeText, { color: dc.color }]}>{dc.emoji} {dc.label}</ThemedText>
+                      </View>
+                      {done && <ThemedText style={{ fontSize: 16 }}>✅</ThemedText>}
                     </View>
                     <ThemedText themeColor="textSecondary" style={styles.diffDesc}>{dc.desc}</ThemedText>
                     <ThemedText style={[styles.diffCount, { color: dc.color }]}>
-                      {allQuestions.filter(q => q.difficulty === diff).length} perguntas
+                      {done ? 'Concluído · jogar novamente' : `${allQuestions.filter(q => q.difficulty === diff).length} perguntas`}
                     </ThemedText>
                   </View>
                 </TouchableOpacity>
@@ -508,6 +197,7 @@ export default function QuizSantosScreen() {
       <SafeAreaView style={styles.fill} edges={['top']}>
         <GameHeader
           title="Quiz Católico"
+          onBack={() => setPhase('difficulty')}
           right={
             <ThemedText type="smallBold" style={{ color: cfg.color }}>
               {score} pts
@@ -627,6 +317,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     backgroundColor: 'transparent',
   },
+  diffHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   diffBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.two,

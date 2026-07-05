@@ -9,87 +9,38 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 
+import { BannerAd } from '@/components/banner-ad';
 import { GuestBanner } from '@/components/guest-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Colors, Spacing } from '@/constants/theme';
+import { GAMES } from '@/constants/games';
+import { ALL_QUESTIONS as QUIZ_QUESTIONS } from '@/constants/quiz-questions';
+import { ALL_QUESTIONS as LITURGICO_QUESTIONS } from '@/constants/liturgico-questions';
+import { ALL_FRASES } from '@/constants/versiculo-frases';
+import { PUZZLE_THEMES } from '@/constants/puzzle-themes';
+import { SANCTUARIES } from '@/constants/sanctuaries';
+import { LATIM_BOGGLE_LEVELS } from '@/constants/latim-boggle-levels';
+import { getDailyMission, getLast7DaysStars } from '@/lib/daily-mission';
+import {
+  MAX_XP_STOP,
+  maxXpLatim,
+  maxXpLiturgico,
+  maxXpPalavras,
+  maxXpPeregrinacao,
+  maxXpQuiz,
+  maxXpVersiculo,
+} from '@/lib/game-xp';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useGamePacks } from '@/hooks/use-game-packs';
 import { useAuth } from '@/context/auth-context';
+import { useGameStore } from '@/context/game-store';
 import { useNotifications } from '@/context/notifications-context';
 
 const FILTER_TAGS = ['Todos', 'Quiz', 'Bíblia', 'Aventura', 'Vocabulário', 'Liturgia'];
-
-const GAMES = [
-  {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    image: require('@/assets/images/quiz.png') as number,
-    title: 'Quiz Católico',
-    tag: 'Quiz',
-    tagColor: C.gold,
-    xp: 100,
-    desc: '45 perguntas · 3 níveis de dificuldade',
-    route: '/quiz-santos' as const,
-  },
-  {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    image: require('@/assets/images/frase_misteriosa.png') as number,
-    title: 'Sabedoria Católica',
-    tag: 'Bíblia',
-    tagColor: C.purple,
-    xp: 50,
-    desc: '45 frases · Versículos, santos e papas',
-    route: '/versiculo-misterioso' as const,
-  },
-  {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    image: require('@/assets/images/peregrinacao.png') as number,
-    title: 'Peregrinação Virtual',
-    tag: 'Aventura',
-    tagColor: C.green,
-    xp: 150,
-    desc: '10 santuários · Perguntas por etapa',
-    route: '/peregrinacao' as const,
-  },
-  {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    image: require('@/assets/images/palavra_cruzada.png') as number,
-    title: 'Palavras da Fé',
-    tag: 'Vocabulário',
-    tagColor: '#3B82F6',
-    xp: 50,
-    desc: '9 temas · 3 níveis de dificuldade',
-    route: '/palavras-fe' as const,
-  },
-  {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    image: require('@/assets/images/desafio_calendário_liturgico.png') as number,
-    title: 'Desafio Litúrgico',
-    tag: 'Liturgia',
-    tagColor: C.red,
-    xp: 100,
-    desc: '45 questões · 3 níveis de dificuldade',
-    route: '/desafio-liturgico' as const,
-  },
-  {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    image: require('@/assets/images/stop.png') as number,
-    title: 'Stop Católico',
-    tag: 'Vocabulário',
-    tagColor: C.gold,
-    xp: 80,
-    desc: '6 categorias · Letra sorteada',
-    route: '/stop-catolico' as const,
-  },
-];
-
-const STREAK = 7;
-
-function getDailyMission() {
-  const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
-  return GAMES[dayIndex % GAMES.length];
-}
+const WEEKDAY_LETTERS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 function useCountdown() {
   const [time, setTime] = useState('');
@@ -140,6 +91,7 @@ export default function HomeScreen() {
   }, [mission]);
   const { user, profile, refreshProfile } = useAuth();
   const { unreadCount } = useNotifications();
+  const { missionDaysPlayed } = useGameStore();
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -148,8 +100,27 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [refreshProfile]);
 
+  // XP real de cada jogo — máximo alcançável considerando também os packs do
+  // banco (game_packs), não um número fixo. Ver lib/game-xp.ts.
+  const { packs: quizPacks }      = useGamePacks('quiz');
+  const { packs: versiculoPacks } = useGamePacks('versiculo');
+  const { packs: peregrinacaoPacks } = useGamePacks('peregrinacao');
+  const { packs: palavrasPacks }  = useGamePacks('palavras');
+  const { packs: liturgicoPacks } = useGamePacks('liturgico');
+  const { packs: latimPacks }     = useGamePacks('latim');
+
+  const xpByGameId = useMemo<Record<string, number>>(() => ({
+    'quiz-santos':        maxXpQuiz(QUIZ_QUESTIONS, quizPacks),
+    'versiculo':          maxXpVersiculo(ALL_FRASES, versiculoPacks),
+    'peregrinacao':       maxXpPeregrinacao(SANCTUARIES, peregrinacaoPacks),
+    'palavras-fe':        maxXpPalavras(PUZZLE_THEMES, palavrasPacks),
+    'desafio-liturgico':  maxXpLiturgico(LITURGICO_QUESTIONS, liturgicoPacks),
+    'stop-solo':          MAX_XP_STOP,
+    'latim-boggle':       maxXpLatim(LATIM_BOGGLE_LEVELS, latimPacks),
+  }), [quizPacks, versiculoPacks, peregrinacaoPacks, palavrasPacks, liturgicoPacks, latimPacks]);
+
   const cardBorder = scheme === 'dark' ? C.border : 'rgba(0,0,0,0.08)';
-  const streakBg   = scheme === 'dark' ? '#2E1A08' : C.gold + '22';
+  const weekStars  = getLast7DaysStars(missionDaysPlayed);
 
   const filtered = activeTag === 'Todos' ? GAMES : GAMES.filter(g => g.tag === activeTag);
   const rows = chunkArray(filtered, 2);
@@ -175,9 +146,6 @@ export default function HomeScreen() {
               <ThemedText style={[styles.appName, { color: colors.text }]}>Salve Maria! 🕊️</ThemedText>
             </View>
             <View style={styles.headerRight}>
-              <View style={[styles.streakBadge, { backgroundColor: streakBg }]}>
-                <ThemedText style={styles.streakText}>🔥 {STREAK}</ThemedText>
-              </View>
               <TouchableOpacity
                 style={styles.bellWrap}
                 activeOpacity={0.7}
@@ -191,6 +159,33 @@ export default function HomeScreen() {
                   </View>
                 )}
               </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ── SEQUÊNCIA DA MISSÃO DO DIA (7 estrelas, uma por dia) ── */}
+          <View style={styles.streakRow}>
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+              SEQUÊNCIA DA MISSÃO DO DIA
+            </ThemedText>
+            <View style={styles.starsRow}>
+              {weekStars.map((lit, i) => {
+                const isToday = i === 6;
+                const dow = (new Date().getDay() - (6 - i) + 7) % 7;
+                return (
+                  <View key={i} style={styles.starItem}>
+                    <ThemedText style={[styles.starEmoji, { opacity: lit ? 1 : 0.28 }]}>
+                      ⭐
+                    </ThemedText>
+                    <ThemedText
+                      style={[
+                        styles.starLabel,
+                        { color: isToday ? C.gold : colors.textSecondary, fontWeight: isToday ? '800' : '600' },
+                      ]}>
+                      {WEEKDAY_LETTERS[dow]}
+                    </ThemedText>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
@@ -277,7 +272,7 @@ export default function HomeScreen() {
                     {/* info bottom */}
                     <View style={styles.gridInfo}>
                       <ThemedText style={[styles.gridTitle, { color: colors.text }]}>{game.title}</ThemedText>
-                      <ThemedText style={styles.gridXp}>+{game.xp} XP</ThemedText>
+                      <ThemedText style={styles.gridXp}>+{xpByGameId[game.gameId] ?? 0} XP</ThemedText>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -287,6 +282,9 @@ export default function HomeScreen() {
           </View>
 
         </ScrollView>
+
+        {/* Fixo acima da tab bar — fora do ScrollView; some sem ocupar espaço se não houver anúncio */}
+        <BannerAd />
       </SafeAreaView>
     </ThemedView>
   );
@@ -310,14 +308,6 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 13, fontWeight: '500' },
   appName: { fontSize: 26, fontWeight: '800', letterSpacing: 0.2, lineHeight: 34 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginTop: 4 },
-  streakBadge: {
-    borderRadius: C.radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: C.gold + '55',
-  },
-  streakText: { fontSize: 14, fontWeight: '700', color: C.gold },
   bellWrap: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   bellIcon: { width: 22, height: 22 },
   notifBadge: {
@@ -345,6 +335,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.3,
   },
+
+  /* ── Sequência da Missão do Dia ── */
+  streakRow: { gap: Spacing.two },
+  starsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+  },
+  starItem: { alignItems: 'center', gap: 2 },
+  starEmoji: { fontSize: 24, lineHeight: 28 },
+  starLabel: { fontSize: 11 },
 
   /* ── Missão do Dia ── */
   missionCard: {

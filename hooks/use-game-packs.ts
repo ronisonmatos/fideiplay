@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/auth-context';
+import type { LatimBoggleLevel } from '@/constants/latim-boggle-levels';
 
-export type GameType = 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop';
+export type GameType = 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop' | 'latim';
 
 export interface GamePack {
   id: string;
@@ -181,6 +182,19 @@ export function mergeLiturgQuestions(
     if (!pack.owned) continue;
     const perguntas = (pack.conteudo as { perguntas?: LiturgQuestion[] }).perguntas;
     if (Array.isArray(perguntas)) extra.push(...perguntas);
+  }
+  return [...hardcoded, ...extra];
+}
+
+export function mergeLatimLevels(
+  hardcoded: LatimBoggleLevel[],
+  packs: GamePack[],
+): LatimBoggleLevel[] {
+  const extra: LatimBoggleLevel[] = [];
+  for (const pack of packs) {
+    if (!pack.owned) continue;
+    const niveis = (pack.conteudo as { niveis?: LatimBoggleLevel[] }).niveis;
+    if (Array.isArray(niveis)) extra.push(...niveis);
   }
   return [...hardcoded, ...extra];
 }

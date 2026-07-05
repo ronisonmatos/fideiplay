@@ -109,7 +109,7 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications' | 'ads';
+type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'config';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type FilterStatus   = 'pending' | 'approved' | 'rejected';
@@ -158,6 +158,19 @@ interface AdRow {
   active: boolean;
   start_date: string | null;
   end_date: string | null;
+  created_at: string;
+}
+
+interface BannerAdRow {
+  id: string;
+  anunciante: string;
+  titulo: string;
+  descricao: string | null;
+  link: string | null;
+  imagem_url: string | null;
+  ativo: boolean;
+  impressoes: number;
+  cliques: number;
   created_at: string;
 }
 
@@ -263,6 +276,30 @@ export default function AdminTab() {
   const [aEndDate,     setAEndDate]     = useState('');
   const [aEndTime,     setAEndTime]     = useState('');
 
+  // ── Estado: Banners do feed (lista + formulário de criar/editar) ──────────
+  const [banners,        setBanners]        = useState<BannerAdRow[]>([]);
+  const [bannersLoading, setBannersLoading]  = useState(false);
+  const [bannersRefresh, setBannersRefresh]  = useState(false);
+  const [bannersError,   setBannersError]    = useState<string | null>(null);
+  const [bannerToggling, setBannerToggling]  = useState<string | null>(null);
+  const [bannerDeleting, setBannerDeleting]  = useState<string | null>(null);
+
+  const [bannerModalVisible, setBannerModalVisible] = useState(false);
+  const [bannerEditingId,    setBannerEditingId]    = useState<string | null>(null);
+  const [bannerSaving,       setBannerSaving]       = useState(false);
+
+  const [bAnunciante, setBAnunciante] = useState('');
+  const [bTitulo,     setBTitulo]     = useState('');
+  const [bDescricao,  setBDescricao]  = useState('');
+  const [bLink,       setBLink]       = useState('');
+  const [bImagemUrl,  setBImagemUrl]  = useState('');
+  const [bAtivo,      setBAtivo]      = useState(true);
+
+  // ── Estado: Configurações do app (banner ligado/desligado) ────────────────
+  const [configBannerAtivo, setConfigBannerAtivo] = useState(true);
+  const [configLoading,     setConfigLoading]     = useState(false);
+  const [configSaving,      setConfigSaving]      = useState(false);
+
   // ── Fetch: Contestações ───────────────────────────────────────────────────
   const fetchContests = useCallback(async (silent = false) => {
     if (!profile?.is_admin) return;
@@ -314,12 +351,39 @@ export default function AdminTab() {
     setAdsRefresh(false);
   }, [profile?.is_admin]);
 
+  // ── Fetch: Banners do feed ────────────────────────────────────────────────
+  const fetchBanners = useCallback(async (silent = false) => {
+    if (!profile?.is_admin) return;
+    if (!silent) setBannersLoading(true);
+    setBannersError(null);
+    const { data, error } = await supabase
+      .from('banner_ads')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) setBannersError(error.message);
+    else setBanners((data ?? []) as BannerAdRow[]);
+    setBannersLoading(false);
+    setBannersRefresh(false);
+  }, [profile?.is_admin]);
+
+  // ── Fetch: Configurações ──────────────────────────────────────────────────
+  const fetchConfig = useCallback(async () => {
+    if (!profile?.is_admin) return;
+    setConfigLoading(true);
+    const { data } = await supabase.from('app_config').select('value').eq('key', 'banner_ativo').maybeSingle();
+    setConfigBannerAtivo(data?.value !== 'false');
+    setConfigLoading(false);
+  }, [profile?.is_admin]);
+
   // Recarrega ao focar a aba
   useFocusEffect(useCallback(() => {
     if (section === 'contests') fetchContests();
     else if (section === 'support') fetchSupport();
     else if (section === 'ads') fetchAds();
-  }, [section, fetchContests, fetchSupport, fetchAds]));
+    else if (section === 'banners') fetchBanners();
+    else if (section === 'config') fetchConfig();
+  }, [section, fetchContests, fetchSupport, fetchAds, fetchBanners, fetchConfig]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {
@@ -752,6 +816,102 @@ export default function AdminTab() {
     );
   }, []);
 
+  // ── Ações: Banners do feed ────────────────────────────────────────────────
+  const handleOpenCreateBanner = useCallback(() => {
+    setBannerEditingId(null);
+    setBAnunciante(''); setBTitulo(''); setBDescricao(''); setBLink(''); setBImagemUrl('');
+    setBAtivo(true);
+    setBannerModalVisible(true);
+  }, []);
+
+  const handleOpenEditBanner = useCallback((b: BannerAdRow) => {
+    setBannerEditingId(b.id);
+    setBAnunciante(b.anunciante);
+    setBTitulo(b.titulo);
+    setBDescricao(b.descricao ?? '');
+    setBLink(b.link ?? '');
+    setBImagemUrl(b.imagem_url ?? '');
+    setBAtivo(b.ativo);
+    setBannerModalVisible(true);
+  }, []);
+
+  const handleSaveBanner = useCallback(async () => {
+    const anunciante = bAnunciante.trim();
+    const titulo     = bTitulo.trim();
+    if (!anunciante || !titulo) {
+      Alert.alert('Preencha tudo', 'Anunciante e título são obrigatórios.');
+      return;
+    }
+
+    const payload = {
+      anunciante,
+      titulo,
+      descricao:  bDescricao.trim() || null,
+      link:       bLink.trim() || null,
+      imagem_url: bImagemUrl.trim() || null,
+      ativo:      bAtivo,
+    };
+
+    setBannerSaving(true);
+    const { error } = bannerEditingId
+      ? await supabase.from('banner_ads').update(payload).eq('id', bannerEditingId)
+      : await supabase.from('banner_ads').insert(payload);
+    setBannerSaving(false);
+
+    if (error) {
+      Alert.alert('Erro', 'Não foi possível salvar o anúncio.');
+      return;
+    }
+    setBannerModalVisible(false);
+    fetchBanners(true);
+  }, [bAnunciante, bTitulo, bDescricao, bLink, bImagemUrl, bAtivo, bannerEditingId, fetchBanners]);
+
+  const handleToggleBannerActive = useCallback(async (b: BannerAdRow) => {
+    setBannerToggling(b.id);
+    const { error } = await supabase.from('banner_ads').update({ ativo: !b.ativo }).eq('id', b.id);
+    if (error) {
+      Alert.alert('Erro', 'Não foi possível atualizar.');
+    } else {
+      setBanners(prev => prev.map(x => x.id === b.id ? { ...x, ativo: !x.ativo } : x));
+    }
+    setBannerToggling(null);
+  }, []);
+
+  const handleDeleteBanner = useCallback((b: BannerAdRow) => {
+    Alert.alert(
+      'Excluir anúncio?',
+      `"${b.titulo}" será removido permanentemente do banco de dados.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir', style: 'destructive',
+          onPress: async () => {
+            setBannerDeleting(b.id);
+            const { error } = await supabase.from('banner_ads').delete().eq('id', b.id);
+            setBannerDeleting(null);
+            if (error) Alert.alert('Erro', 'Não foi possível excluir o anúncio.');
+            else setBanners(prev => prev.filter(x => x.id !== b.id));
+          },
+        },
+      ],
+    );
+  }, []);
+
+  // ── Ações: Configurações ──────────────────────────────────────────────────
+  const handleToggleConfigBannerAtivo = useCallback(async (value: boolean) => {
+    setConfigSaving(true);
+    setConfigBannerAtivo(value);
+    const { error } = await supabase
+      .from('app_config')
+      .update({ value: value ? 'true' : 'false', updated_at: new Date().toISOString() })
+      .eq('key', 'banner_ativo');
+    if (error) {
+      setConfigBannerAtivo(!value);
+      Alert.alert('Erro', 'Não foi possível atualizar a configuração.');
+    }
+    setConfigSaving(false);
+  }, []);
+
   function getAdStatus(ad: AdRow): { label: string; color: string } {
     if (!ad.active) return { label: 'Desativado', color: theme.textSecondary };
     const now = Date.now();
@@ -1057,6 +1217,101 @@ export default function AdminTab() {
         </ThemedView>
       </Modal>
 
+      <Modal
+        visible={bannerModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setBannerModalVisible(false)}>
+        <ThemedView style={s.fill}>
+          <SafeAreaView style={s.fill} edges={['top']}>
+            <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              <View style={[s.header, { borderBottomColor: C.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                <ThemedText style={s.headerTitle}>{bannerEditingId ? 'Editar anúncio' : 'Novo anúncio'}</ThemedText>
+                <TouchableOpacity onPress={() => setBannerModalVisible(false)} hitSlop={8} activeOpacity={0.7}>
+                  <ThemedText style={{ fontSize: 18, fontWeight: '700', color: theme.textSecondary }}>✕</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+                <ThemedView type="backgroundElement" style={s.card}>
+                  <TextInput
+                    style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={bAnunciante}
+                    onChangeText={setBAnunciante}
+                    placeholder="Anunciante"
+                    placeholderTextColor={theme.textSecondary}
+                    maxLength={60}
+                  />
+                  <TextInput
+                    style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={bTitulo}
+                    onChangeText={setBTitulo}
+                    placeholder="Título"
+                    placeholderTextColor={theme.textSecondary}
+                    maxLength={60}
+                  />
+                  <TextInput
+                    style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={bDescricao}
+                    onChangeText={setBDescricao}
+                    placeholder="Descrição (opcional)"
+                    placeholderTextColor={theme.textSecondary}
+                    multiline
+                    numberOfLines={2}
+                    textAlignVertical="top"
+                  />
+                  <TextInput
+                    style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={bLink}
+                    onChangeText={setBLink}
+                    placeholder="Link (aberto no navegador ao tocar em Saiba mais)"
+                    placeholderTextColor={theme.textSecondary}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                  />
+                  <View style={{ flexDirection: 'row', gap: Spacing.two, alignItems: 'center' }}>
+                    {bImagemUrl ? <Image source={{ uri: bImagemUrl }} style={s.adThumb} /> : null}
+                    <TextInput
+                      style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={bImagemUrl}
+                      onChangeText={setBImagemUrl}
+                      placeholder="Imagem URL (opcional — sem imagem usa ✝️)"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
+                </ThemedView>
+
+                <ThemedView type="backgroundElement" style={[s.card, s.playerRow, { justifyContent: 'space-between' }]}>
+                  <ThemedText type="smallBold">Ativo</ThemedText>
+                  <Switch
+                    value={bAtivo}
+                    onValueChange={setBAtivo}
+                    trackColor={{ false: '#3a3a5c', true: C.purple }}
+                    thumbColor="#ffffff"
+                  />
+                </ThemedView>
+
+                <TouchableOpacity
+                  style={[s.sendNotifBtn, bannerSaving && { opacity: 0.6 }]}
+                  onPress={handleSaveBanner}
+                  disabled={bannerSaving}
+                  activeOpacity={0.85}>
+                  {bannerSaving
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : (
+                      <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+                        {bannerEditingId ? 'Salvar alterações' : 'Cadastrar anúncio'}
+                      </ThemedText>
+                    )}
+                </TouchableOpacity>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </ThemedView>
+      </Modal>
+
       <SafeAreaView style={s.fill} edges={['top']}>
         <KeyboardAvoidingView
           style={s.fill}
@@ -1076,6 +1331,8 @@ export default function AdminTab() {
             { key: 'trilhas',       label: 'Trilhas',       icon: '🔓' },
             { key: 'notifications', label: 'Notificar',     icon: '🔔' },
             { key: 'ads',           label: 'Anúncios',      icon: '📢' },
+            { key: 'banners',       label: 'Banners',       icon: '🪧' },
+            { key: 'config',        label: 'Config',        icon: '⚙️' },
           ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
             const active = section === key;
             return (
@@ -1699,6 +1956,110 @@ export default function AdminTab() {
               </ScrollView>
             )}
           </>
+        )}
+
+        {/* ══ SEÇÃO: BANNERS DO FEED ══ */}
+        {section === 'banners' && (
+          <>
+            <View style={s.newAdBtnWrap}>
+              <TouchableOpacity style={s.newAdBtn} onPress={handleOpenCreateBanner} activeOpacity={0.85}>
+                <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>+ Novo anúncio</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {bannersLoading ? (
+              <View style={s.centerFlex}><ActivityIndicator color={C.purple} /></View>
+            ) : bannersError ? (
+              <ErrorState message={bannersError} onRetry={() => fetchBanners()} />
+            ) : (
+              <ScrollView
+                contentContainerStyle={s.scroll}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={bannersRefresh}
+                    onRefresh={() => { setBannersRefresh(true); fetchBanners(true); }}
+                    tintColor={C.purple}
+                  />
+                }>
+                {banners.length === 0 ? (
+                  <EmptyState icon="🪧" color={C.purple}
+                    title="Nenhum banner"
+                    subtitle="Toque em “+ Novo anúncio” para cadastrar o primeiro." />
+                ) : banners.map(b => {
+                  const isToggling = bannerToggling === b.id;
+                  const isDeleting = bannerDeleting === b.id;
+                  return (
+                    <ThemedView key={b.id} type="backgroundElement" style={s.card}>
+                      <View style={s.playerRow}>
+                        {b.imagem_url ? (
+                          <Image source={{ uri: b.imagem_url }} style={s.adThumb} />
+                        ) : (
+                          <View style={[s.adThumb, s.adThumbPlaceholder]}>
+                            <ThemedText style={{ fontSize: 20 }}>✝️</ThemedText>
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="smallBold" numberOfLines={1}>{b.titulo}</ThemedText>
+                          <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>
+                            {b.anunciante} · 👁 {b.impressoes} · 🖱 {b.cliques}
+                          </ThemedText>
+                        </View>
+                        {isToggling ? (
+                          <ActivityIndicator size="small" color={C.purple} />
+                        ) : (
+                          <Switch
+                            value={b.ativo}
+                            onValueChange={() => handleToggleBannerActive(b)}
+                            trackColor={{ false: '#3a3a5c', true: C.purple }}
+                            thumbColor="#ffffff"
+                          />
+                        )}
+                      </View>
+
+                      <View style={s.msgFooter}>
+                        <TouchableOpacity onPress={() => handleOpenEditBanner(b)} activeOpacity={0.7}>
+                          <ThemedText style={{ fontSize: 12, color: C.purple, fontWeight: '700' }}>✏️ Editar</ThemedText>
+                        </TouchableOpacity>
+                        <View style={{ flex: 1 }} />
+                        {isDeleting ? (
+                          <ActivityIndicator size="small" color={C.red} />
+                        ) : (
+                          <TouchableOpacity onPress={() => handleDeleteBanner(b)} activeOpacity={0.7} hitSlop={8}>
+                            <ThemedText style={{ fontSize: 11, color: C.red, fontWeight: '600' }}>🗑 Excluir</ThemedText>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </ThemedView>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </>
+        )}
+
+        {/* ══ SEÇÃO: CONFIGURAÇÕES ══ */}
+        {section === 'config' && (
+          <ScrollView contentContainerStyle={s.scroll}>
+            <ThemedView type="backgroundElement" style={[s.card, s.playerRow, { justifyContent: 'space-between' }]}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="smallBold">Banner de anúncios ativo</ThemedText>
+                <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                  Quando desligado, o banner some do app para todos os usuários imediatamente.
+                </ThemedText>
+              </View>
+              {configLoading ? (
+                <ActivityIndicator size="small" color={C.purple} />
+              ) : (
+                <Switch
+                  value={configBannerAtivo}
+                  onValueChange={handleToggleConfigBannerAtivo}
+                  disabled={configSaving}
+                  trackColor={{ false: '#3a3a5c', true: C.purple }}
+                  thumbColor="#ffffff"
+                />
+              )}
+            </ThemedView>
+          </ScrollView>
         )}
 
         </KeyboardAvoidingView>

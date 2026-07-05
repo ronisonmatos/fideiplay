@@ -10,14 +10,17 @@ interface GameHeaderProps {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
+  // Sobrescreve o botão de voltar — usado nas telas "em partida" dos jogos,
+  // onde voltar deve retornar à seleção de nível em vez de sair do jogo inteiro.
+  onBack?: () => void;
 }
 
-export function GameHeader({ title, subtitle, right }: GameHeaderProps) {
+export function GameHeader({ title, subtitle, right, onBack }: GameHeaderProps) {
   const theme = useTheme();
 
   return (
     <ThemedView style={[styles.header, { borderBottomColor: C.border }]}>
-      <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+      <Pressable onPress={onBack ?? (() => router.back())} hitSlop={12} style={styles.backBtn}>
         <ThemedText style={styles.backArrow}>←</ThemedText>
       </Pressable>
 

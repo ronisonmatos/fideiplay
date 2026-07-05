@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -186,7 +186,13 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three, gap: Spacing.three },
   backBtn: { alignSelf: 'flex-start', marginBottom: Spacing.two, padding: Spacing.two },
-  backText: { fontSize: 22, fontWeight: '700', color: C.purple },
+  // No Android a glifo "←" renderiza visivelmente menor que no iOS no mesmo fontSize.
+  backText: {
+    fontSize: Platform.OS === 'android' ? 30 : 22,
+    lineHeight: Platform.OS === 'android' ? 34 : undefined,
+    fontWeight: '700',
+    color: C.purple,
+  },
   headerCard: {
     borderRadius: 20,
     padding: Spacing.four,

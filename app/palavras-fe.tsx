@@ -8,11 +8,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
+import { PUZZLE_THEMES } from '@/constants/puzzle-themes';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
+import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergePuzzleThemes } from '@/hooks/use-game-packs';
+import { placeWords } from '@/lib/word-grid';
 import { supabase } from '@/lib/supabase';
+
+const GAME_ID = 'palavras-fe';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Difficulty = 'facil' | 'medio' | 'dificil';
@@ -32,102 +37,11 @@ interface ActivePuzzle {
   grid: string[][];
 }
 
-// ── Puzzle content ─────────────────────────────────────────────────────────────
-const PUZZLE_THEMES: PuzzleTheme[] = [
-  // FÁCIL — 8×8 — 5 palavras
-  {
-    difficulty: 'facil', gridSize: 8,
-    title: 'Fundamentos', subtitle: 'O essencial da fé',
-    words: ['JESUS', 'DEUS', 'AMOR', 'CRUZ', 'MARIA'],
-  },
-  {
-    difficulty: 'facil', gridSize: 8,
-    title: 'Latim: Oração', subtitle: 'Palavras sagradas',
-    words: ['GLORIA', 'CREDO', 'FIDES', 'LUMEN', 'AMEN'],
-  },
-  {
-    difficulty: 'facil', gridSize: 8,
-    title: 'A Igreja', subtitle: 'Vida da comunidade',
-    words: ['MISSA', 'BISPO', 'NATAL', 'ALTAR', 'PADRE'],
-  },
-  // MÉDIO — 9×9 — 6 palavras
-  {
-    difficulty: 'medio', gridSize: 9,
-    title: 'Sacramentos', subtitle: '7 sinais de graça',
-    words: ['BATISMO', 'CRISMA', 'NOVENA', 'CORPUS', 'PATER', 'ORDEM'],
-  },
-  {
-    difficulty: 'medio', gridSize: 9,
-    title: 'Latim Litúrgico', subtitle: 'A língua da Igreja',
-    words: ['DOMINUS', 'GRATIA', 'SANCTUS', 'AGNUS', 'MATER', 'KYRIE'],
-  },
-  {
-    difficulty: 'medio', gridSize: 9,
-    title: 'Devoção', subtitle: 'Práticas e virtudes',
-    words: ['ROSARIO', 'VIRGEM', 'MILAGRE', 'RELIQUIA', 'PROFETA', 'PROMESSA'],
-  },
-  // DIFÍCIL — 10×10 — 7 palavras
-  {
-    difficulty: 'dificil', gridSize: 10,
-    title: 'Latim Avançado', subtitle: 'Dogmas e credos',
-    words: ['FILIOQUE', 'ALLELUIA', 'VERITAS', 'SANCTUS', 'GLORIA', 'KYRIE', 'DOMINUS'],
-  },
-  {
-    difficulty: 'dificil', gridSize: 10,
-    title: 'Liturgia', subtitle: 'A celebração eucarística',
-    words: ['LITURGIA', 'HOMILIA', 'PREFACIO', 'SALTERIO', 'CANTICO', 'INCENSO', 'LEITOR'],
-  },
-  {
-    difficulty: 'dificil', gridSize: 10,
-    title: 'Doutrina', subtitle: 'O ensinamento da Igreja',
-    words: ['DOUTRINA', 'ENCICLICA', 'DOGMA', 'CATECISMO', 'HERESIA', 'CONCILIO', 'MAGISTER'],
-  },
-];
-
 const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; emoji: string; desc: string }> = {
   facil:  { label: 'Fácil',   color: C.green, emoji: '🌱', desc: '3 temas · grade 8×8 · 5 palavras'   },
   medio:  { label: 'Médio',   color: C.gold,  emoji: '🌿', desc: '3 temas · grade 9×9 · 6 palavras'   },
   dificil:{ label: 'Difícil', color: C.red,   emoji: '🌳', desc: '3 temas · grade 10×10 · 7 palavras' },
 };
-
-// ── Grid generator ─────────────────────────────────────────────────────────────
-const DIRS: [number, number][] = [[0,1],[1,0],[1,1],[1,-1],[0,-1],[-1,0],[-1,-1],[-1,1]];
-const FILL = 'ABCDEFGHIJKLMNOPRSTUVWX';
-
-function placeWords(words: string[], size: number): { grid: string[][] } | null {
-  const grid: (string | null)[][] = Array.from({ length: size }, () => Array(size).fill(null));
-
-  for (const word of words) {
-    let placed = false;
-    for (let attempt = 0; attempt < 200 && !placed; attempt++) {
-      const [dr, dc] = DIRS[Math.floor(Math.random() * DIRS.length)];
-      const len = word.length;
-      const rMin = dr < 0 ? len - 1 : 0;
-      const rMax = dr > 0 ? size - len : size - 1;
-      const cMin = dc < 0 ? len - 1 : 0;
-      const cMax = dc > 0 ? size - len : size - 1;
-      if (rMax < rMin || cMax < cMin) continue;
-      const rS = rMin + Math.floor(Math.random() * (rMax - rMin + 1));
-      const cS = cMin + Math.floor(Math.random() * (cMax - cMin + 1));
-      let ok = true;
-      for (let i = 0; i < len; i++) {
-        const r = rS + dr * i;
-        const c = cS + dc * i;
-        if (grid[r][c] !== null && grid[r][c] !== word[i]) { ok = false; break; }
-      }
-      if (!ok) continue;
-      for (let i = 0; i < len; i++) grid[rS + dr * i][cS + dc * i] = word[i];
-      placed = true;
-    }
-    if (!placed) return null;
-  }
-
-  for (let r = 0; r < size; r++)
-    for (let c = 0; c < size; c++)
-      if (grid[r][c] === null) grid[r][c] = FILL[Math.floor(Math.random() * FILL.length)];
-
-  return { grid: grid as string[][] };
-}
 
 // ── Path helpers ───────────────────────────────────────────────────────────────
 function getPath(start: Cell, end: Cell): Cell[] | null {
@@ -167,6 +81,7 @@ export default function PalavrasFeScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
   const { user, refreshProfile } = useAuth();
+  const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('palavras');
 
   const [phase, setPhase] = useState<Phase>('select');
@@ -239,7 +154,8 @@ export default function PalavrasFeScreen() {
           if (!reported.current) {
             reported.current = true;
             const XP = { facil: ECONOMY.XP_FACIL, medio: ECONOMY.XP_MEDIO, dificil: ECONOMY.XP_DIFICIL };
-            reportResult({ gameId: 'palavras-fe', score: words.length * XP[activeDiff] });
+            reportResult({ gameId: GAME_ID, score: words.length * XP[activeDiff] });
+            markLevelComplete(GAME_ID, activeDiff);
             if (user?.id) {
               supabase.rpc('add_coins', { p_user_id: user.id, p_amount: ECONOMY.COMPLETAR_QUIZ })
                 .then(() => { setCoinsEarned(ECONOMY.COMPLETAR_QUIZ); refreshProfile(); })
@@ -253,7 +169,7 @@ export default function PalavrasFeScreen() {
         setPreview([cell]);
       }
     },
-    [phase, activePuzzle, start, foundWords, foundCells, reportResult],
+    [phase, activePuzzle, start, foundWords, foundCells, reportResult, markLevelComplete],
   );
 
   // ── SELECT ─────────────────────────────────────────────────────────────────
@@ -269,6 +185,7 @@ export default function PalavrasFeScreen() {
             </ThemedText>
             {(['facil', 'medio', 'dificil'] as Difficulty[]).map(diff => {
               const cfg = DIFFICULTY_CONFIG[diff];
+              const done = isLevelComplete(GAME_ID, diff);
               return (
                 <TouchableOpacity
                   key={diff}
@@ -280,8 +197,11 @@ export default function PalavrasFeScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <ThemedText style={[styles.diffLabel, { color: cfg.color }]}>{cfg.label}</ThemedText>
-                    <ThemedText themeColor="textSecondary" style={styles.diffDesc}>{cfg.desc}</ThemedText>
+                    <ThemedText themeColor="textSecondary" style={styles.diffDesc}>
+                      {done ? 'Concluído · jogar novamente' : cfg.desc}
+                    </ThemedText>
                   </View>
+                  {done && <ThemedText style={{ fontSize: 16 }}>✅</ThemedText>}
                 </TouchableOpacity>
               );
             })}
@@ -349,6 +269,7 @@ export default function PalavrasFeScreen() {
         <GameHeader
           title="Palavras da Fé"
           subtitle="VOCABULÁRIO"
+          onBack={() => setPhase('select')}
           right={
             <View style={{ alignItems: 'flex-end', gap: 2 }}>
               <ThemedText type="smallBold" style={{ color: cfg.color }}>
