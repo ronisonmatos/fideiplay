@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { fetchActiveBannerAds, fetchBannerAtivo, type BannerAd } from '@/lib/banner-ads';
+import { useLocalizacao } from '@/hooks/use-location';
 
 const LAST_AD_KEY = '@santosplay:ultimo_anuncio_id';
 
 export function useBannerAd(): BannerAd | null {
   const [ad, setAd] = useState<BannerAd | null>(null);
   const adsRef = useRef<BannerAd[]>([]);
+  const { localizacao } = useLocalizacao();
 
   const pickNext = useCallback(async () => {
     const ads = adsRef.current;
@@ -42,24 +44,18 @@ export function useBannerAd(): BannerAd | null {
         setAd(null);
         return;
       }
-      adsRef.current = await fetchActiveBannerAds();
+      adsRef.current = await fetchActiveBannerAds({
+        estado: localizacao?.estado ?? null,
+        cidade: localizacao?.cidade ?? null,
+      });
       await pickNext();
     } catch {
       setAd(null);
     }
-  }, [pickNext]);
+  }, [pickNext, localizacao]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Só troca quando o app volta do background — nunca enquanto está em uso
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') load();
-    });
-    return () => sub.remove();
-  }, [load]);
+  // Troca o anúncio toda vez que a tela recebe foco (nunca duas vezes seguidas o mesmo)
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return ad;
 }

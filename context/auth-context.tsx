@@ -8,17 +8,22 @@ import { supabase } from '@/lib/supabase';
 import { getAvatarUrl, isSaintAvatar } from '@/constants/avatares';
 
 export interface Profile {
-  id:                string;
-  name:              string;
-  avatar_emoji:      string;
-  total_score:       number;
-  coins:             number;
-  last_coin_reward:  string | null;
-  ad_watches_today:  number | null;
-  ad_watches_date:   string | null;
-  is_admin:          boolean;
-  birth_date:        string | null;
-  accepted_terms_at: string | null;
+  id:                        string;
+  name:                      string;
+  avatar_emoji:              string;
+  total_score:               number;
+  coins:                     number;
+  last_coin_reward:          string | null;
+  ad_watches_today:          number | null;
+  ad_watches_date:           string | null;
+  is_admin:                  boolean;
+  birth_date:                string | null;
+  accepted_terms_at:         string | null;
+  cidade:                    string | null;
+  estado:                    string | null;
+  latitude:                  number | null;
+  longitude:                 number | null;
+  localizacao_atualizada_em: string | null;
 }
 
 interface AuthCtx {

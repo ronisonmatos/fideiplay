@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 
 import { AvatarImage } from '@/components/avatar-image';
+import { DateField } from '@/components/date-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
@@ -35,6 +36,7 @@ import {
   unlockTrilha,
 } from '@/lib/admin-trilhas';
 import { broadcastNotification, sendNotificationToUser, triggerDispatchNow } from '@/lib/admin-notifications';
+import { suggestBannerDescription } from '@/lib/banner-ads';
 
 const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 
@@ -73,9 +75,46 @@ function isoToTimePart(iso: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// Abre a galeria, sobe a(s) imagem(ns) escolhida(s) no bucket "ads" e devolve as URLs públicas
-// na ordem selecionada. Array vazio = usuário cancelou (erros de permissão/upload lançam).
-async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number }): Promise<string[]> {
+// Converte AAAA-MM-DD (coluna date) em Date local, sem shift de timezone
+function isoToLocalDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// "SP, RJ" -> ["SP", "RJ"] — mesma normalização (maiúsculas) usada em hooks/use-location.ts
+function parseListaCsv(text: string): string[] {
+  return text.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+}
+
+interface PickedAsset {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+}
+
+// Sobe uma imagem já escolhida no bucket "ads" e devolve a URL pública.
+async function uploadAdImage(asset: PickedAsset): Promise<string> {
+  const ext  = (asset.fileName?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const bytes = await new File(asset.uri).bytes();
+  const { error } = await supabase.storage
+    .from('ads')
+    .upload(path, bytes, { contentType: asset.mimeType || 'image/jpeg', upsert: true });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('ads').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Abre a galeria e devolve os assets escolhidos, sem subir nada ainda.
+// Array vazio = usuário cancelou (erro de permissão só mostra o alerta).
+async function pickAdImages(opts?: { multiple?: boolean; limit?: number }): Promise<PickedAsset[]> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
     Alert.alert('Permissão negada', 'Autorize o acesso às fotos para escolher uma imagem.');
@@ -89,21 +128,15 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
     selectionLimit: opts?.limit ?? 1,
   });
   if (result.canceled || !result.assets?.length) return [];
+  return result.assets.map(a => ({ uri: a.uri, fileName: a.fileName, mimeType: a.mimeType }));
+}
 
+// Abre a galeria, sobe a(s) imagem(ns) escolhida(s) no bucket "ads" e devolve as URLs públicas
+// na ordem selecionada. Array vazio = usuário cancelou (erros de permissão/upload lançam).
+async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number }): Promise<string[]> {
+  const assets = await pickAdImages(opts);
   const urls: string[] = [];
-  for (const asset of result.assets) {
-    const ext  = (asset.fileName?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
-    const bytes = await new File(asset.uri).bytes();
-    const { error } = await supabase.storage
-      .from('ads')
-      .upload(path, bytes, { contentType: asset.mimeType || 'image/jpeg', upsert: true });
-    if (error) throw error;
-
-    const { data } = supabase.storage.from('ads').getPublicUrl(path);
-    urls.push(data.publicUrl);
-  }
+  for (const asset of assets) urls.push(await uploadAdImage(asset));
   return urls;
 }
 
@@ -168,6 +201,14 @@ interface BannerAdRow {
   descricao: string | null;
   link: string | null;
   imagem_url: string | null;
+  tipo: 'comercial' | 'evento';
+  data_evento: string | null;
+  local_evento: string | null;
+  periodo_inicio: string | null;
+  periodo_fim: string | null;
+  alcance: 'nacional' | 'estado' | 'cidade';
+  estados: string[];
+  cidades: string[];
   ativo: boolean;
   impressoes: number;
   cliques: number;
@@ -294,6 +335,19 @@ export default function AdminTab() {
   const [bLink,       setBLink]       = useState('');
   const [bImagemUrl,  setBImagemUrl]  = useState('');
   const [bAtivo,      setBAtivo]      = useState(true);
+  // Imagem escolhida na galeria mas ainda não enviada — só sobe pro storage ao salvar,
+  // pra não acumular imagem órfã no bucket quando o admin escolhe e desiste de cadastrar.
+  const [bImagemPendingAsset, setBImagemPendingAsset] = useState<PickedAsset | null>(null);
+  const [bPickingImagem, setBPickingImagem] = useState(false);
+  const [bSuggestingDesc, setBSuggestingDesc] = useState(false);
+  const [bTipo,          setBTipo]          = useState<'comercial' | 'evento'>('comercial');
+  const [bDataEvento,    setBDataEvento]    = useState<string | null>(null);
+  const [bLocalEvento,   setBLocalEvento]   = useState('');
+  const [bAlcance, setBAlcance] = useState<'nacional' | 'estado' | 'cidade'>('nacional');
+  const [bEstados, setBEstados] = useState(''); // texto separado por vírgula, ex.: "SP, RJ"
+  const [bCidades, setBCidades] = useState('');
+  const [bPeriodoInicio, setBPeriodoInicio] = useState<string | null>(null);
+  const [bPeriodoFim,    setBPeriodoFim]    = useState<string | null>(null);
 
   // ── Estado: Configurações do app (banner ligado/desligado) ────────────────
   const [configBannerAtivo, setConfigBannerAtivo] = useState(true);
@@ -817,10 +871,46 @@ export default function AdminTab() {
   }, []);
 
   // ── Ações: Banners do feed ────────────────────────────────────────────────
+  // Só escolhe da galeria aqui — o upload real acontece em handleSaveBanner,
+  // pra não subir imagem no storage se o admin desistir de cadastrar.
+  const handlePickBannerImage = useCallback(async () => {
+    setBPickingImagem(true);
+    try {
+      const [asset] = await pickAdImages({ multiple: false });
+      if (asset) setBImagemPendingAsset(asset);
+    } finally {
+      setBPickingImagem(false);
+    }
+  }, []);
+
+  const handleSuggestBannerDescricao = useCallback(async () => {
+    const anunciante = bAnunciante.trim();
+    if (!anunciante) {
+      Alert.alert('Preencha o anunciante', 'Informe o nome do anunciante antes de gerar a sugestão.');
+      return;
+    }
+    setBSuggestingDesc(true);
+    const sugestao = await suggestBannerDescription({
+      anunciante,
+      titulo: bTitulo.trim(),
+      descricaoAtual: bDescricao.trim() || undefined,
+    });
+    setBSuggestingDesc(false);
+    if (!sugestao) {
+      Alert.alert('Erro', 'Não foi possível gerar uma sugestão agora. Tente novamente.');
+      return;
+    }
+    setBDescricao(sugestao);
+  }, [bAnunciante, bTitulo, bDescricao]);
+
   const handleOpenCreateBanner = useCallback(() => {
     setBannerEditingId(null);
     setBAnunciante(''); setBTitulo(''); setBDescricao(''); setBLink(''); setBImagemUrl('');
+    setBImagemPendingAsset(null);
     setBAtivo(true);
+    setBTipo('comercial'); setBDataEvento(null); setBLocalEvento('');
+    setBPeriodoInicio(todayISO()); setBPeriodoFim(null);
+    setBAlcance('nacional'); setBEstados(''); setBCidades('');
     setBannerModalVisible(true);
   }, []);
 
@@ -831,7 +921,16 @@ export default function AdminTab() {
     setBDescricao(b.descricao ?? '');
     setBLink(b.link ?? '');
     setBImagemUrl(b.imagem_url ?? '');
+    setBImagemPendingAsset(null);
     setBAtivo(b.ativo);
+    setBTipo(b.tipo ?? 'comercial');
+    setBDataEvento(b.data_evento ?? null);
+    setBLocalEvento(b.local_evento ?? '');
+    setBPeriodoInicio(b.periodo_inicio ?? null);
+    setBPeriodoFim(b.periodo_fim ?? null);
+    setBAlcance(b.alcance ?? 'nacional');
+    setBEstados((b.estados ?? []).join(', '));
+    setBCidades((b.cidades ?? []).join(', '));
     setBannerModalVisible(true);
   }, []);
 
@@ -842,17 +941,56 @@ export default function AdminTab() {
       Alert.alert('Preencha tudo', 'Anunciante e título são obrigatórios.');
       return;
     }
+    if (bTipo === 'evento' && (!bDataEvento || !bLocalEvento.trim() || !bPeriodoInicio || !bPeriodoFim)) {
+      Alert.alert('Preencha tudo', 'Data, local e período de exibição são obrigatórios para eventos.');
+      return;
+    }
+    if (bPeriodoInicio && bPeriodoFim && bPeriodoInicio > bPeriodoFim) {
+      Alert.alert('Período inválido', 'A data final do período precisa ser depois da inicial.');
+      return;
+    }
+    const estadosList = parseListaCsv(bEstados);
+    const cidadesList = parseListaCsv(bCidades);
+    if (bAlcance === 'estado' && estadosList.length === 0) {
+      Alert.alert('Preencha o alcance', 'Informe ao menos um estado (ex.: SP, RJ).');
+      return;
+    }
+    if (bAlcance === 'cidade' && cidadesList.length === 0) {
+      Alert.alert('Preencha o alcance', 'Informe ao menos uma cidade.');
+      return;
+    }
+
+    setBannerSaving(true);
+
+    // Só sobe a imagem pro storage agora que o cadastro foi confirmado
+    let imagemUrl = bImagemUrl.trim() || null;
+    if (bImagemPendingAsset) {
+      try {
+        imagemUrl = await uploadAdImage(bImagemPendingAsset);
+      } catch {
+        setBannerSaving(false);
+        Alert.alert('Erro', 'Não foi possível enviar a imagem. Tente novamente.');
+        return;
+      }
+    }
 
     const payload = {
       anunciante,
       titulo,
-      descricao:  bDescricao.trim() || null,
-      link:       bLink.trim() || null,
-      imagem_url: bImagemUrl.trim() || null,
-      ativo:      bAtivo,
+      descricao:      bDescricao.trim() || null,
+      link:           bLink.trim() || null,
+      imagem_url:     imagemUrl,
+      ativo:          bAtivo,
+      tipo:           bTipo,
+      data_evento:    bTipo === 'evento' ? bDataEvento : null,
+      local_evento:   bTipo === 'evento' ? bLocalEvento.trim() : null,
+      periodo_inicio: bPeriodoInicio,
+      periodo_fim:    bPeriodoFim,
+      alcance:        bAlcance,
+      estados:        bAlcance === 'estado' ? estadosList : [],
+      cidades:        bAlcance === 'cidade' ? cidadesList : [],
     };
 
-    setBannerSaving(true);
     const { error } = bannerEditingId
       ? await supabase.from('banner_ads').update(payload).eq('id', bannerEditingId)
       : await supabase.from('banner_ads').insert(payload);
@@ -864,7 +1002,7 @@ export default function AdminTab() {
     }
     setBannerModalVisible(false);
     fetchBanners(true);
-  }, [bAnunciante, bTitulo, bDescricao, bLink, bImagemUrl, bAtivo, bannerEditingId, fetchBanners]);
+  }, [bAnunciante, bTitulo, bDescricao, bLink, bImagemUrl, bImagemPendingAsset, bAtivo, bTipo, bDataEvento, bLocalEvento, bPeriodoInicio, bPeriodoFim, bAlcance, bEstados, bCidades, bannerEditingId, fetchBanners]);
 
   const handleToggleBannerActive = useCallback(async (b: BannerAdRow) => {
     setBannerToggling(b.id);
@@ -1258,8 +1396,18 @@ export default function AdminTab() {
                     placeholderTextColor={theme.textSecondary}
                     multiline
                     numberOfLines={2}
+                    maxLength={80}
                     textAlignVertical="top"
                   />
+                  <TouchableOpacity
+                    style={s.galleryBtn}
+                    onPress={handleSuggestBannerDescricao}
+                    disabled={bSuggestingDesc}
+                    activeOpacity={0.8}>
+                    {bSuggestingDesc
+                      ? <ActivityIndicator size="small" color={C.purple} />
+                      : <ThemedText style={s.galleryBtnText}>✨ Sugerir descrição com IA</ThemedText>}
+                  </TouchableOpacity>
                   <TextInput
                     style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
                     value={bLink}
@@ -1270,17 +1418,115 @@ export default function AdminTab() {
                     keyboardType="url"
                   />
                   <View style={{ flexDirection: 'row', gap: Spacing.two, alignItems: 'center' }}>
-                    {bImagemUrl ? <Image source={{ uri: bImagemUrl }} style={s.adThumb} /> : null}
+                    {(bImagemPendingAsset?.uri || bImagemUrl) ? (
+                      <Image source={{ uri: bImagemPendingAsset?.uri || bImagemUrl }} style={s.adThumb} />
+                    ) : null}
                     <TextInput
                       style={[s.searchInput, { flex: 1, color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
-                      value={bImagemUrl}
-                      onChangeText={setBImagemUrl}
-                      placeholder="Imagem URL (opcional — sem imagem usa ✝️)"
+                      value={bImagemPendingAsset ? '' : bImagemUrl}
+                      onChangeText={t => { setBImagemPendingAsset(null); setBImagemUrl(t); }}
+                      placeholder={bImagemPendingAsset ? 'Imagem selecionada (enviada ao salvar)' : 'Imagem URL (opcional — sem imagem usa ✝️)'}
                       placeholderTextColor={theme.textSecondary}
+                      editable={!bImagemPendingAsset}
                       autoCapitalize="none"
                       keyboardType="url"
                     />
                   </View>
+                  <TouchableOpacity
+                    style={s.galleryBtn}
+                    onPress={handlePickBannerImage}
+                    disabled={bPickingImagem}
+                    activeOpacity={0.8}>
+                    {bPickingImagem
+                      ? <ActivityIndicator size="small" color={C.purple} />
+                      : <ThemedText style={s.galleryBtnText}>📁 Escolher foto da galeria</ThemedText>}
+                  </TouchableOpacity>
+                  {bTipo === 'comercial' && (
+                    <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                      ⚠️ A imagem deve ser a logo do anunciante (fundo liso ou transparente), não uma foto — logos ficam nítidos no espaço pequeno do banner.
+                    </ThemedText>
+                  )}
+
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    <TouchableOpacity
+                      style={[s.modeBtn, bTipo === 'comercial' && s.modeBtnActive]}
+                      onPress={() => setBTipo('comercial')}
+                      activeOpacity={0.8}>
+                      <ThemedText style={[s.modeBtnText, bTipo === 'comercial' && s.modeBtnTextActive]}>💼 Comercial</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[s.modeBtn, bTipo === 'evento' && { backgroundColor: C.green, borderColor: C.green }]}
+                      onPress={() => setBTipo('evento')}
+                      activeOpacity={0.8}>
+                      <ThemedText style={[s.modeBtnText, bTipo === 'evento' && s.modeBtnTextActive]}>📅 Evento</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+
+                  {bTipo === 'evento' && (
+                    <>
+                      <DateField label="Data do evento" value={bDataEvento} onChange={setBDataEvento} />
+                      <TextInput
+                        style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                        value={bLocalEvento}
+                        onChangeText={setBLocalEvento}
+                        placeholder="Local do evento"
+                        placeholderTextColor={theme.textSecondary}
+                        maxLength={80}
+                      />
+                    </>
+                  )}
+
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginTop: 4 }}>
+                    PERÍODO DE EXIBIÇÃO NO APP{bTipo === 'comercial' ? ' (opcional)' : ''}
+                  </ThemedText>
+                  <DateField label="De" value={bPeriodoInicio} onChange={setBPeriodoInicio} />
+                  <DateField
+                    label="Até"
+                    value={bPeriodoFim}
+                    onChange={setBPeriodoFim}
+                    minimumDate={bPeriodoInicio ? isoToLocalDate(bPeriodoInicio) : undefined}
+                  />
+
+                  <ThemedText style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginTop: 4 }}>
+                    ALCANCE GEOGRÁFICO
+                  </ThemedText>
+                  <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                    {(['nacional', 'estado', 'cidade'] as const).map(opcao => (
+                      <TouchableOpacity
+                        key={opcao}
+                        style={[s.modeBtn, bAlcance === opcao && s.modeBtnActive]}
+                        onPress={() => setBAlcance(opcao)}
+                        activeOpacity={0.8}>
+                        <ThemedText style={[s.modeBtnText, bAlcance === opcao && s.modeBtnTextActive]}>
+                          {opcao === 'nacional' ? '🇧🇷 Nacional' : opcao === 'estado' ? '📍 Estado' : '🏙️ Cidade'}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {bAlcance === 'estado' && (
+                    <TextInput
+                      style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={bEstados}
+                      onChangeText={setBEstados}
+                      placeholder="Estados (sigla, separados por vírgula) — ex.: SP, RJ"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="characters"
+                    />
+                  )}
+                  {bAlcance === 'cidade' && (
+                    <TextInput
+                      style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                      value={bCidades}
+                      onChangeText={setBCidades}
+                      placeholder="Cidades, separadas por vírgula — ex.: São Paulo, Campinas"
+                      placeholderTextColor={theme.textSecondary}
+                    />
+                  )}
+                  {bAlcance !== 'nacional' && (
+                    <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                      Só aparece pra usuários cuja localização (perfil/GPS) bater com um dos valores informados. Sem localização disponível, o usuário só vê banners nacionais.
+                    </ThemedText>
+                  )}
                 </ThemedView>
 
                 <ThemedView type="backgroundElement" style={[s.card, s.playerRow, { justifyContent: 'space-between' }]}>

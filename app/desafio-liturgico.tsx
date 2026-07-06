@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -53,7 +53,7 @@ function shuffleQuestion(q: LiturgQuestion): LiturgQuestion {
 export default function DesafioLiturgicoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
-  const { user, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('liturgico');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -64,6 +64,7 @@ export default function DesafioLiturgicoScreen() {
   const [selected, setSelected] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
+  const [usouTempoExtra, setUsouTempoExtra] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reported = useRef(false);
   const finalTimeRef = useRef(60);
@@ -78,7 +79,7 @@ export default function DesafioLiturgicoScreen() {
       reportResult({ gameId: GAME_ID, score: score * XP[difficulty], liturgyTimeLeft: finalTimeRef.current });
       markLevelComplete(GAME_ID, difficulty);
       if (user?.id) {
-        const coins = ECONOMY.COMPLETAR_QUIZ + (isPerfect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
+        const coins = ECONOMY.COMPLETAR_JOGO + (isPerfect ? ECONOMY.BONUS_PERFEITO : 0);
         supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
           .then(() => { setCoinsEarned(coins); refreshProfile(); })
           .catch(() => {});
@@ -123,8 +124,29 @@ export default function DesafioLiturgicoScreen() {
     setScore(0);
     setTimeLeft(totalTime);
     finalTimeRef.current = totalTime;
+    setUsouTempoExtra(false);
     setPhase('playing');
   }, []);
+
+  const handleTempoExtra = useCallback(async () => {
+    if (!user || usouTempoExtra) return;
+    if (!profile || profile.coins < ECONOMY.DESAFIO_LITURGICO_TEMPO_EXTRA) {
+      Alert.alert(
+        'Moedas insuficientes',
+        `Você precisa de ${ECONOMY.DESAFIO_LITURGICO_TEMPO_EXTRA} 🪙 para ganhar mais tempo. Assista um anúncio ou aguarde o bônus de moedas.`,
+      );
+      return;
+    }
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.DESAFIO_LITURGICO_TEMPO_EXTRA });
+      if (error) throw error;
+      setUsouTempoExtra(true);
+      setTimeLeft(t => t + 15);
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar essa dica agora. Tente novamente.');
+    }
+  }, [user, profile, usouTempoExtra, refreshProfile]);
 
   const q = questions[index];
 
@@ -254,6 +276,13 @@ export default function DesafioLiturgicoScreen() {
           <View style={[styles.timerBar, { backgroundColor: theme.backgroundElement }]}>
             <View style={[styles.timerFill, { width: `${timerPct}%`, backgroundColor: timerColor }]} />
           </View>
+          {timeLeft < 10 && !usouTempoExtra && (
+            <TouchableOpacity onPress={handleTempoExtra} style={styles.tempoExtraBtn} activeOpacity={0.8}>
+              <ThemedText style={styles.tempoExtraText}>
+                ⏱️ +15 segundos ({ECONOMY.DESAFIO_LITURGICO_TEMPO_EXTRA} 🪙)
+              </ThemedText>
+            </TouchableOpacity>
+          )}
           <View style={styles.progressRow}>
             <ThemedText themeColor="textSecondary" style={styles.smallText}>
               {index + 1}/{questions.length}
@@ -381,4 +410,12 @@ const styles = StyleSheet.create({
   },
   hintLabel: { fontSize: 11, letterSpacing: 1.1 },
   hintText: { fontSize: 14, fontStyle: 'italic' },
+  tempoExtraBtn: {
+    alignSelf: 'center',
+    backgroundColor: C.gold,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 8,
+    borderRadius: C.radius.pill,
+  },
+  tempoExtraText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

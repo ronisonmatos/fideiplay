@@ -248,7 +248,7 @@ export default function ContaScreen() {
     return (
       <ThemedView style={styles.fill}>
         <CoinsAnimation
-          amount={ECONOMY.BONUS_2_HORAS}
+          amount={ECONOMY.BONUS_2H}
           visible={coinAnim}
           onDone={() => setCoinAnim(false)}
         />

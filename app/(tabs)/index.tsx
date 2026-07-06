@@ -281,10 +281,10 @@ export default function HomeScreen() {
             ))}
           </View>
 
-        </ScrollView>
+          {/* ── Banner de anúncios — logo após a listagem de jogos ── */}
+          <BannerAd />
 
-        {/* Fixo acima da tab bar — fora do ScrollView; some sem ocupar espaço se não houver anúncio */}
-        <BannerAd />
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );

@@ -13,6 +13,8 @@ import { GameStoreProvider, useGameStore } from '@/context/game-store';
 import { GameLevelsProvider } from '@/context/game-levels-context';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { NotificationsProvider, useNotifications } from '@/context/notifications-context';
+import { useLocalizacao } from '@/hooks/use-location';
+import { processarConvitePendente } from '@/lib/convites';
 import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications, registerAndSavePushToken } from '@/lib/notifications';
 import { pullProgress, pushProgress } from '@/lib/progress-sync';
 
@@ -151,6 +153,12 @@ function AuthGate() {
   const { loading } = useAuth();
   const segments = useSegments();
   const { user, isGuest } = useAuth();
+  const { solicitarPermissao } = useLocalizacao();
+
+  // Ref estável — solicitarPermissao muda de identidade quando a localização é
+  // resolvida (atualiza o profile), e isso não pode disparar o efeito de novo.
+  const solicitarLocalizacaoRef = useRef(solicitarPermissao);
+  useEffect(() => { solicitarLocalizacaoRef.current = solicitarPermissao; }, [solicitarPermissao]);
 
   useEffect(() => {
     if (loading) return;
@@ -158,7 +166,7 @@ function AuthGate() {
     const inResetPassword = segments[0] === 'reset-password';
     if (inResetPassword) return;
     if (!user && !inAuth && !isGuest) {
-      router.replace('/(auth)/register');
+      router.replace('/(auth)/login');
     } else if (user && inAuth) {
       router.replace('/(tabs)');
     }
@@ -168,7 +176,17 @@ function AuthGate() {
     if (loading) return;
     setupNotificationChannel();
     scheduleDailyReminder();
+    // Pede localização logo em seguida da permissão de notificação — mesmo
+    // momento de onboarding, evita ter que ir em Configurações pedir depois.
+    solicitarLocalizacaoRef.current().catch(() => {});
   }, [loading]);
+
+  // Aplica convite salvo localmente (usuário abriu o link de convite antes de
+  // logar) assim que uma sessão fica disponível — sem isso o bônus nunca cai.
+  useEffect(() => {
+    if (loading || !user?.id) return;
+    processarConvitePendente(user.id).catch(() => {});
+  }, [loading, user?.id]);
 
   return null;
 }

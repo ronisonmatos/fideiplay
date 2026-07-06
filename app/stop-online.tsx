@@ -23,6 +23,7 @@ import { GameHeader } from '@/components/game-header';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { ECONOMY } from '@/constants/economy';
 import { ALL_LETTERS, ALL_STOP_CATEGORIES, computeAvailableLetters, StopCategory } from '@/constants/stop-categories';
 import { supabase } from '@/lib/supabase';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
@@ -48,14 +49,14 @@ function pickSixKeys(cats: StopCategory[]): string[] {
 const ROOM_TIMEOUT_S   = 120; // 2 min para sala encher; depois inicia com quem entrou
 
 const COINS = {
-  WIN_RT:   20,
-  DRAW_RT:  10,
-  LOSE_RT:   0,
-  WIN_AS:   15,
-  DRAW_AS:   8,
-  LOSE_AS:   0,
-  ABANDON: -15,
-  OPP_OUT:  25,
+  WIN_RT:   ECONOMY.STOP_ONLINE_VITORIA,
+  DRAW_RT:  ECONOMY.STOP_ONLINE_EMPATE,
+  LOSE_RT:  0,
+  WIN_AS:   ECONOMY.STOP_ONLINE_VITORIA_ASSINCRONA,
+  DRAW_AS:  ECONOMY.STOP_ONLINE_EMPATE_ASSINCRONO,
+  LOSE_AS:  0,
+  ABANDON: -ECONOMY.STOP_PENALIDADE_ABANDONO,
+  OPP_OUT:  ECONOMY.STOP_ONLINE_ADVERSARIO_ABANDONOU,
 } as const;
 
 const LETTERS     = ['A','B','C','D','E','F','G','H','I','J','L','M','N','O','P','R','S','T','U','V'];
@@ -796,20 +797,20 @@ export default function StopOnlineScreen() {
   }, []);
 
   const handleShuffle = useCallback(async () => {
-    if (!user || !profile || profile.coins < 5) {
-      Alert.alert('Moedas insuficientes', 'Você precisa de 5 🪙 para sortear novas categorias.');
+    if (!user || !profile || profile.coins < ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS) {
+      Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS} 🪙 para sortear novas categorias.`);
       return;
     }
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -5 });
+    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS });
     setSlots(pickSixKeys(allCategoriesRef.current));
-    setCoinSpend(-5);
+    setCoinSpend(-ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS);
     refreshProfile();
   }, [user, profile, refreshProfile]);
 
   const cycleCat = useCallback(async (slotIdx: number, dir: 1 | -1) => {
     if (!user || !profile) return;
-    if (profile.coins < 1) {
-      Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para trocar uma categoria.');
+    if (profile.coins < ECONOMY.STOP_TROCAR_CATEGORIA) {
+      Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.STOP_TROCAR_CATEGORIA} 🪙 para trocar uma categoria.`);
       return;
     }
     const cats         = allCategoriesRef.current;
@@ -826,14 +827,21 @@ export default function StopOnlineScreen() {
     const newSlots = [...currentSlots];
     newSlots[slotIdx] = cats[nextIdx].key;
     setSlots(newSlots);
-    setCoinSpend(-1);
-    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 }).then(() => refreshProfile());
+    setCoinSpend(-ECONOMY.STOP_TROCAR_CATEGORIA);
+    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_TROCAR_CATEGORIA }).then(() => refreshProfile());
   }, [user, profile, refreshProfile]);
 
+  // Dica estilo Wordle: não entrega a resposta — só diz se a letra inicial da
+  // resposta certa vem antes ou depois (ordem alfabética) do que o jogador já digitou.
   const handleHint = useCallback(async (cat: StopCategory) => {
     if (!user || !profile) return;
-    if (profile.coins < 2) {
-      Alert.alert('Moedas insuficientes', 'Você precisa de 2 🪙 para usar uma dica.');
+    const digitado = (answersRef.current[cat.key] ?? '').trim();
+    if (!digitado) {
+      Alert.alert('Digite algo primeiro', 'Escreva uma tentativa nesse campo antes de pedir a dica.');
+      return;
+    }
+    if (profile.coins < ECONOMY.STOP_DICA_CATEGORIA) {
+      Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.STOP_DICA_CATEGORIA} 🪙 para usar uma dica.`);
       return;
     }
     if (loadingHint) return;
@@ -853,11 +861,24 @@ export default function StopOnlineScreen() {
       return;
     }
 
-    setAnswer(cat.key, word.slice(0, 3));
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -2 });
-    refreshProfile();
-    setLoadingHint(null);
-  }, [user, profile, hints, loadingHint, setAnswer, refreshProfile]);
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_DICA_CATEGORIA });
+      if (error) throw error;
+      const minhaLetra  = digitado[0].toUpperCase();
+      const letraCerta  = word.trim()[0]?.toUpperCase() ?? '';
+      const mensagem = letraCerta === minhaLetra
+        ? 'Você pode estar certo! A primeira letra bate. 🎯'
+        : letraCerta > minhaLetra
+          ? 'A resposta certa vem depois, em ordem alfabética.'
+          : 'A resposta certa vem antes, em ordem alfabética.';
+      Alert.alert('💡 Dica', mensagem);
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    } finally {
+      setLoadingHint(null);
+    }
+  }, [user, profile, hints, loadingHint, refreshProfile]);
 
   // ── Fetch room lists ───────────────────────────────────────────────────────
   const fetchRealtimeRooms = useCallback(async (silent = false) => {
@@ -1555,16 +1576,16 @@ export default function StopOnlineScreen() {
             <View style={s.selectHeader}>
               <ThemedText style={[s.selectTitle, { color: theme.text }]}>Categorias</ThemedText>
               <TouchableOpacity
-                style={[s.shuffleBtn, (!profile || profile.coins < 5) && { opacity: 0.35 }]}
+                style={[s.shuffleBtn, (!profile || profile.coins < ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS) && { opacity: 0.35 }]}
                 onPress={handleShuffle}
-                disabled={!profile || profile.coins < 5}
+                disabled={!profile || profile.coins < ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS}
                 activeOpacity={0.8}>
-                <ThemedText style={s.shuffleBtnText}>🔀 Novas  −5 🪙</ThemedText>
+                <ThemedText style={s.shuffleBtnText}>🔀 Novas  −{ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS} 🪙</ThemedText>
               </TouchableOpacity>
             </View>
 
             <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12 }]}>
-              Use ‹ › para trocar cada categoria  (−1 🪙)
+              Use ‹ › para trocar cada categoria  (−{ECONOMY.STOP_TROCAR_CATEGORIA} 🪙)
             </ThemedText>
 
             {/* Slots */}
@@ -2399,11 +2420,11 @@ export default function StopOnlineScreen() {
                     <ThemedText style={s.catLabel}>{cat.label}</ThemedText>
                     <TouchableOpacity
                       onPress={() => handleHint(cat)}
-                      disabled={!profile || profile.coins < 2 || !!loadingHint}
-                      style={[s.hintBtn, (!profile || profile.coins < 2) && { opacity: 0.35 }]}
+                      disabled={!profile || profile.coins < ECONOMY.STOP_DICA_CATEGORIA || !!loadingHint}
+                      style={[s.hintBtn, (!profile || profile.coins < ECONOMY.STOP_DICA_CATEGORIA) && { opacity: 0.35 }]}
                       activeOpacity={0.7}>
                       <ThemedText style={s.hintBtnText}>
-                        {loadingHint === cat.key ? '...' : '🪙 Dica −2'}
+                        {loadingHint === cat.key ? '...' : `🪙 Dica −${ECONOMY.STOP_DICA_CATEGORIA}`}
                       </ThemedText>
                     </TouchableOpacity>
                   </View>

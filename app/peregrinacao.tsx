@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -52,7 +52,7 @@ type Screen = 'map' | 'quiz' | 'result';
 export default function PeregrinacaoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
-  const { user, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('peregrinacao');
   const allSanctuaries = useMemo(() => mergeSanctuaries(SANCTUARIES, packs), [packs]);
@@ -77,6 +77,9 @@ export default function PeregrinacaoScreen() {
   const [qIndex, setQIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [correct, setCorrect] = useState(0);
+  const [errosSeguidos, setErrosSeguidos] = useState(0);
+  const [eliminatedOptions, setEliminatedOptions] = useState<number[]>([]);
+  const [revealedAnswer, setRevealedAnswer] = useState(false);
   const reportedSanctuaries = useRef<Set<number>>(new Set());
   const coinsAwardedRef = useRef<Set<number>>(new Set());
 
@@ -93,7 +96,7 @@ export default function PeregrinacaoScreen() {
       ? Math.min(unlocked + 1, allSanctuaries.length)
       : unlocked;
     const isComplete = nextUnlockedCalc >= allSanctuaries.length;
-    const coins = ECONOMY.COMPLETAR_QUIZ + (isComplete ? ECONOMY.COMPLETAR_TRILHA_INTEIRA : 0);
+    const coins = ECONOMY.PEREGRINACAO_SANTUARIO + (isComplete ? ECONOMY.PEREGRINACAO_COMPLETA : 0);
     supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
       .then(() => { setCoinsEarned(coins); refreshProfile(); })
       .catch(() => {});
@@ -106,6 +109,9 @@ export default function PeregrinacaoScreen() {
     setSelected(null);
     setCorrect(0);
     setCoinsEarned(null);
+    setErrosSeguidos(0);
+    setEliminatedOptions([]);
+    setRevealedAnswer(false);
     setScreen('quiz');
   };
 
@@ -113,19 +119,52 @@ export default function PeregrinacaoScreen() {
     (i: number) => {
       if (!q || selected !== null) return;
       setSelected(i);
-      if (i === q.correct) setCorrect(c => c + 1);
+      if (i === q.correct) {
+        setCorrect(c => c + 1);
+        setErrosSeguidos(0);
+      } else {
+        setErrosSeguidos(e => e + 1);
+      }
     },
     [selected, q],
   );
 
   const nextQ = () => {
     setSelected(null);
+    setEliminatedOptions([]);
+    setRevealedAnswer(false);
     if (qIndex + 1 < shuffledQuestions.length) {
       setQIndex(qi => qi + 1);
     } else {
       setScreen('result');
     }
   };
+
+  const handleDica = useCallback(async (custo: number, nivel: 'direcao' | 'texto' | 'revelar') => {
+    if (!user || !q) return;
+    if (!profile || profile.coins < custo) {
+      Alert.alert('Moedas insuficientes', `Você precisa de ${custo} 🪙 para essa dica. Assista um anúncio ou aguarde o bônus de moedas.`);
+      return;
+    }
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -custo });
+      if (error) throw error;
+      if (nivel === 'revelar') {
+        setRevealedAnswer(true);
+      } else {
+        const wrongIdx = q.options
+          .map((_, i) => i)
+          .filter(i => i !== q.correct && !eliminatedOptions.includes(i));
+        if (wrongIdx.length > 0) {
+          const toRemove = wrongIdx[Math.floor(Math.random() * wrongIdx.length)];
+          setEliminatedOptions(prev => [...prev, toRemove]);
+        }
+      }
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    }
+  }, [user, profile, q, eliminatedOptions, refreshProfile]);
 
   const finishSanctuary = () => {
     const passed = correct >= 2;
@@ -175,24 +214,56 @@ export default function PeregrinacaoScreen() {
               />
             </View>
             <ThemedText style={styles.questionText}>{q.question}</ThemedText>
+            {errosSeguidos >= 2 && selected === null && (
+              <View style={styles.dicaRow}>
+                <TouchableOpacity
+                  onPress={() => handleDica(ECONOMY.PEREGRINACAO_DICA_DIRECAO, 'direcao')}
+                  style={[styles.dicaBtn, { borderColor: C.gold }]}
+                  activeOpacity={0.8}>
+                  <ThemedText style={[styles.dicaBtnText, { color: C.gold }]}>
+                    💡 Eliminar 1 ({ECONOMY.PEREGRINACAO_DICA_DIRECAO} 🪙)
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDica(ECONOMY.PEREGRINACAO_DICA_TEXTO, 'texto')}
+                  style={[styles.dicaBtn, { borderColor: C.gold }]}
+                  activeOpacity={0.8}>
+                  <ThemedText style={[styles.dicaBtnText, { color: C.gold }]}>
+                    💡 Eliminar 2 ({ECONOMY.PEREGRINACAO_DICA_TEXTO} 🪙)
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDica(ECONOMY.PEREGRINACAO_REVELAR_SANTUARIO, 'revelar')}
+                  style={[styles.dicaBtn, { borderColor: C.purple }]}
+                  activeOpacity={0.8}>
+                  <ThemedText style={[styles.dicaBtnText, { color: C.purple }]}>
+                    🔓 Revelar ({ECONOMY.PEREGRINACAO_REVELAR_SANTUARIO} 🪙)
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.options}>
               {q.options.map((opt, i) => {
                 const revealed = selected !== null;
                 const isCorrect = i === q.correct;
                 const isSelected = i === selected;
+                const eliminated = !revealed && eliminatedOptions.includes(i);
                 let bg: string = theme.backgroundElement;
                 let textColor: string = theme.text;
                 let borderColor: string = C.border;
                 if (revealed) {
                   if (isCorrect) { bg = C.green; textColor = '#fff'; borderColor = C.green; }
                   else if (isSelected) { bg = C.red; textColor = '#fff'; borderColor = C.red; }
+                } else if (!eliminated && revealedAnswer && isCorrect) {
+                  bg = C.purple + '33'; borderColor = C.purple;
                 }
                 return (
                   <TouchableOpacity
                     key={i}
                     onPress={() => handleSelect(i)}
+                    disabled={eliminated}
                     activeOpacity={0.75}
-                    style={[styles.option, { backgroundColor: bg, borderColor }]}>
+                    style={[styles.option, { backgroundColor: bg, borderColor }, eliminated && { opacity: 0.3 }]}>
                     <ThemedText style={[styles.optLetter, { color: textColor }]}>
                       {String.fromCharCode(65 + i)}
                     </ThemedText>
@@ -397,4 +468,7 @@ const styles = StyleSheet.create({
   },
   outlineBtnText: { fontSize: 14, fontWeight: '700', letterSpacing: 1 },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 1.1 },
+  dicaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  dicaBtn: { paddingHorizontal: Spacing.two, paddingVertical: 6, borderRadius: C.radius.pill, borderWidth: 1.5 },
+  dicaBtnText: { fontSize: 11, fontWeight: '700' },
 });

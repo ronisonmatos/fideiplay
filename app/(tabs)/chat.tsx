@@ -1,7 +1,6 @@
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -17,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -27,19 +26,17 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/context/notifications-context';
+import { useChatMensagens, type MensagemChat } from '@/hooks/use-chat-mensagens';
 import { useTheme } from '@/hooks/use-theme';
 import { askChatAI } from '@/lib/chat-ai';
 import { playChatSound } from '@/lib/chat-sound';
 import { sendChatOSNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 
-const EXPIRE_MS    = 60 * 60 * 1000;  // 1 hora
-const FADE_MS      = 30 * 1000;
 const MAX_LEN      = 200;
 const HISTORY_24H  = 24 * 60 * 60 * 1000;
 
 const AI_COMMAND = '/ia ';
-const AI_COST    = 20;
 
 const EMAIL_LIKE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -53,10 +50,6 @@ function userColor(uid: string): string {
   return USER_COLORS[h % USER_COLORS.length];
 }
 
-function msLeft(expiresAt: string): number {
-  return new Date(expiresAt).getTime() - Date.now();
-}
-
 function fmtTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -68,17 +61,6 @@ function fmtDateTime(iso: string): string {
   const isToday = d.toDateString() === today.toDateString();
   if (isToday) return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
   return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-interface ChatMessage {
-  id: string;
-  user_id: string;
-  user_name: string;
-  avatar_emoji: string | null;
-  content: string;
-  created_at: string;
-  expires_at: string;
-  deleted_at?: string | null;
 }
 
 interface HistoryMessage {
@@ -100,72 +82,21 @@ interface AiItem {
 }
 
 type FeedItem =
-  | { kind: 'chat'; key: string; createdAt: string; msg: ChatMessage }
+  | { kind: 'chat'; key: string; createdAt: string; msg: MensagemChat }
   | { kind: 'ai';   key: string; createdAt: string; item: AiItem };
 
-// ── Bolha com animação de expiração ──────────────────────────────────────────
-function MessageBubble({
+// ── Bolha de mensagem — memoizada (evita re-render ao rolar a lista) ────────
+const MessageBubble = memo(function MessageBubble({
   msg,
   isOwn,
-  onExpired,
   onDelete,
 }: {
-  msg: ChatMessage;
+  msg: MensagemChat;
   isOwn: boolean;
-  onExpired: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const theme      = useTheme();
-  const opacity    = useRef(new Animated.Value(1)).current;
-  const scale      = useRef(new Animated.Value(1)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
-  const doneRef    = useRef(false);
+  const theme = useTheme();
 
-  // Barra de progresso via state (mais confiável que Animated % width)
-  const [barPct, setBarPct] = useState(() =>
-    Math.min(1, Math.max(0, msLeft(msg.expires_at) / EXPIRE_MS))
-  );
-
-  useEffect(() => {
-    const left = msLeft(msg.expires_at);
-    if (left <= 0) { onExpired(msg.id); return; }
-
-    // Atualiza a barra a cada 5s — suficiente para 1h de duração
-    const barInterval = setInterval(() => {
-      const ratio = Math.max(0, msLeft(msg.expires_at) / EXPIRE_MS);
-      setBarPct(ratio);
-    }, 5000);
-
-    // Fade gradual começa nos últimos 30s
-    const fadeDelay = Math.max(0, left - FADE_MS);
-    const fadeTimer = setTimeout(() => {
-      Animated.timing(opacity, {
-        toValue: 0.18,
-        duration: Math.min(left, FADE_MS) - 800,
-        useNativeDriver: true,
-      }).start();
-    }, fadeDelay);
-
-    // Animação final: dissolve + sobe + some
-    const expireTimer = setTimeout(() => {
-      if (doneRef.current) return;
-      doneRef.current = true;
-      Animated.parallel([
-        Animated.timing(opacity,    { toValue: 0,    duration: 600, useNativeDriver: true }),
-        Animated.timing(scale,      { toValue: 0.88, duration: 600, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: -14,  duration: 600, useNativeDriver: true }),
-      ]).start(() => onExpired(msg.id));
-    }, left);
-
-    return () => {
-      clearInterval(barInterval);
-      clearTimeout(fadeTimer);
-      clearTimeout(expireTimer);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msg.expires_at]);
-
-  const barColor  = barPct > 0.5 ? C.green : barPct > 0.2 ? C.gold : C.red;
   const uColor    = userColor(msg.user_id);
   const bubbleBg  = isOwn ? C.purple : uColor + '28';
   const borderCol = isOwn ? 'transparent' : uColor;
@@ -184,13 +115,7 @@ function MessageBubble({
   }
 
   return (
-    <Animated.View
-      style={[
-        s.bubbleWrap,
-        isOwn ? s.bubbleRight : s.bubbleLeft,
-        s.bubbleRow,
-        { opacity, transform: [{ scale }, { translateY }] },
-      ]}>
+    <View style={[s.bubbleWrap, isOwn ? s.bubbleRight : s.bubbleLeft, s.bubbleRow]}>
       {!isOwn && (
         <AvatarImage value={msg.avatar_emoji || '🙏'} size={28} borderColor={uColor} />
       )}
@@ -210,25 +135,15 @@ function MessageBubble({
         <ThemedText style={[s.bubbleText, { color: textColor }]}>
           {msg.content}
         </ThemedText>
-        {/* Horário + barra de expiração */}
         <View style={s.bubbleFooter}>
           <ThemedText style={[s.bubbleTime, { color: timeColor }]}>
             {fmtTime(msg.created_at)}
           </ThemedText>
-          <View style={[s.barBg, {
-            flex: 1,
-            backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : theme.backgroundSelected,
-          }]}>
-            <View style={[s.barFill, {
-              width: `${barPct * 100}%`,
-              backgroundColor: isOwn ? 'rgba(255,255,255,0.75)' : barColor,
-            }]} />
-          </View>
         </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
-}
+});
 
 // Markdown inline simples (**negrito**, *itálico*/_itálico_) — a resposta da
 // IA vem com essa formatação em texto puro e precisa virar Text estilizado.
@@ -252,7 +167,7 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
 }
 
 // ── Troca com a IA católica (/ia) — visível só para quem perguntou ──────────
-function AiBubble({ item, onDelete }: { item: AiItem; onDelete: (id: string) => void }) {
+const AiBubble = memo(function AiBubble({ item, onDelete }: { item: AiItem; onDelete: (id: string) => void }) {
   const theme = useTheme();
 
   function handleShare() {
@@ -310,15 +225,18 @@ function AiBubble({ item, onDelete }: { item: AiItem; onDelete: (id: string) => 
       </View>
     </View>
   );
-}
+});
 
 // ── Tela principal ────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const theme   = useTheme();
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile } = useAuth();
   const { addChatNotification, markAllRead, muteChat } = useNotifications();
 
-  const [messages,        setMessages]        = useState<ChatMessage[]>([]);
+  const {
+    mensagens, carregandoMais, temMais,
+    carregarInicial, carregarMais, novaMensagem, removerMensagem,
+  } = useChatMensagens();
   const [inputText,       setInputText]       = useState('');
   const [sending,         setSending]         = useState(false);
   const [historyVisible,  setHistoryVisible]  = useState(false);
@@ -355,56 +273,18 @@ export default function ChatScreen() {
     setAiItems(prev => prev.filter(it => it.id !== id));
   }, []);
 
-  // Animação de moeda ao enviar
-  const coinY       = useRef(new Animated.Value(0)).current;
-  const coinOpacity = useRef(new Animated.Value(0)).current;
-  const coinScale   = useRef(new Animated.Value(1)).current;
-  const [coinVisible, setCoinVisible] = useState(false);
-
-  const animateCoin = useCallback(() => {
-    coinY.setValue(0);
-    coinOpacity.setValue(1);
-    coinScale.setValue(1);
-    setCoinVisible(true);
-    Animated.parallel([
-      Animated.timing(coinY,    { toValue: -90, duration: 1100, useNativeDriver: true }),
-      Animated.sequence([
-        Animated.timing(coinScale, { toValue: 1.4, duration: 300, useNativeDriver: true }),
-        Animated.timing(coinScale, { toValue: 0.6, duration: 800, useNativeDriver: true }),
-      ]),
-      Animated.sequence([
-        Animated.delay(400),
-        Animated.timing(coinOpacity, { toValue: 0, duration: 700, useNativeDriver: true }),
-      ]),
-    ]).start(() => setCoinVisible(false));
-  }, [coinY, coinOpacity, coinScale]);
-
-  // ── Carrega mensagens ─────────────────────────────────────────────────────
-  const loadMessages = useCallback(async () => {
-    const { data } = await supabase
-      .from('community_messages')
-      .select('id, user_id, user_name, avatar_emoji, content, created_at, expires_at')
-      .gt('expires_at', new Date().toISOString())
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true })
-      .limit(80);
-    if (data) setMessages(data as ChatMessage[]);
-  }, []);
-
   // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-    loadMessages();
+    carregarInicial();
 
     const channel = supabase
       .channel('community_chat')
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'community_messages' },
         (payload) => {
-          const msg = payload.new as ChatMessage;
-          if (msLeft(msg.expires_at) <= 0) return;
-          setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
-          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+          const msg = payload.new as MensagemChat;
+          novaMensagem(msg);
           if (msg.user_id !== user?.id) {
             if (!muteChatRef.current) {
               playChatSound().catch(() => {});
@@ -420,13 +300,13 @@ export default function ChatScreen() {
         { event: 'DELETE', schema: 'public', table: 'community_messages' },
         (payload) => {
           const id = (payload.old as { id: string }).id;
-          setMessages(prev => prev.filter(m => m.id !== id));
+          removerMensagem(id);
         },
       )
       .on('broadcast',
         { event: 'message_deleted' },
         ({ payload }) => {
-          setMessages(prev => prev.filter(m => m.id !== payload.id));
+          removerMensagem(payload.id);
         },
       )
       .subscribe();
@@ -434,27 +314,25 @@ export default function ChatScreen() {
     channelRef.current = channel;
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, loadMessages]);
+  }, [user, carregarInicial, novaMensagem, removerMensagem]);
 
-  // Ao focar: limpa expiradas e marca notificações como lidas
+  // Ao focar: marca notificações do chat como lidas
   useFocusEffect(useCallback(() => {
     isFocused.current = true;
-    setMessages(prev => prev.filter(m => msLeft(m.expires_at) > 0));
     markAllRead();
     return () => { isFocused.current = false; };
   }, [markAllRead]));
 
-  // Callback do MessageBubble: remove do estado + limpa do banco
-  const handleExpired = useCallback((id: string) => {
-    setMessages(prev => prev.filter(m => m.id !== id));
-    supabase.from('community_messages').delete().eq('id', id).then(() => {});
-  }, []);
-
+  // Exclusão manual (long-press na própria bolha) — soft delete: marca
+  // deleted_at em vez de apagar a linha, mensagens ficam guardadas indefinidamente.
   const handleDeleteMessage = useCallback((id: string) => {
-    setMessages(prev => prev.filter(m => m.id !== id));
+    removerMensagem(id);
     channelRef.current?.send({ type: 'broadcast', event: 'message_deleted', payload: { id } });
-    supabase.from('community_messages').delete().eq('id', id).then(() => {});
-  }, []);
+    supabase.from('community_messages')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .then(() => {});
+  }, [removerMensagem]);
 
   // ── Histórico admin ───────────────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
@@ -478,22 +356,15 @@ export default function ChatScreen() {
     if (!user || !profile) return;
     setSending(true);
     setInputText('');
-    animateCoin();
-
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 });
-    refreshProfile();
 
     const { error } = await supabase.from('community_messages').insert({
       user_id:      user.id,
       user_name:    profile.name ?? 'Jogador',
       avatar_emoji: profile.avatar_emoji ?? null,
       content:      text,
-      expires_at:   new Date(Date.now() + EXPIRE_MS).toISOString(),
     });
 
     if (error) {
-      await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: 1 });
-      refreshProfile();
       Alert.alert('Erro', 'Não foi possível enviar a mensagem. Tente novamente.');
       setInputText(text);
     } else {
@@ -502,11 +373,12 @@ export default function ChatScreen() {
         user_name: profile.name ?? 'Jogador',
         content:   text,
       }).then(() => {});
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
+      // Lista é invertida — "voltar ao fim" é offset 0, não scrollToEnd
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 150);
     }
 
     setSending(false);
-  }, [user, profile, animateCoin, refreshProfile]);
+  }, [user, profile]);
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -531,35 +403,21 @@ export default function ChatScreen() {
         Alert.alert('Pergunte algo', 'Use assim: /ia Quem foi Santo Agostinho?');
         return;
       }
-      if ((profile.coins ?? 0) < AI_COST) {
-        Alert.alert('Moedas insuficientes', `Você precisa de ${AI_COST} 🪙 para perguntar à IA.\n\nGanhe moedas jogando!`);
-        return;
-      }
 
       const id = `ai-${Date.now()}`;
       setAiItems(prev => [...prev, { id, question, answer: null, error: null, createdAt: new Date().toISOString() }]);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-
-      await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -AI_COST });
-      refreshProfile();
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
 
       const { answer, error } = await askChatAI(question);
 
       if (error || !answer) {
-        await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: AI_COST });
-        refreshProfile();
         setAiItems(prev => prev.map(it => it.id === id
           ? { ...it, error: 'Não foi possível responder agora. Tente de novo em instantes.' }
           : it));
       } else {
         setAiItems(prev => prev.map(it => it.id === id ? { ...it, answer } : it));
       }
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
-      return;
-    }
-
-    if ((profile.coins ?? 0) < 1) {
-      Alert.alert('Moedas insuficientes', 'Você precisa de 1 🪙 para enviar uma mensagem.\n\nGanhe moedas jogando!');
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 150);
       return;
     }
 
@@ -580,12 +438,15 @@ export default function ChatScreen() {
     await sendPlainMessage(text);
   }, [inputText, user, profile, sending, fetchHistory, sendPlainMessage]);
 
-  // Mescla chat público + trocas com a IA (local, só para quem perguntou)
+  // Mescla chat público + trocas com a IA (local, só para quem perguntou) — ascendente
   const feed: FeedItem[] = useMemo(() => {
-    const chatItems: FeedItem[] = messages.map(m => ({ kind: 'chat', key: `c-${m.id}`, createdAt: m.created_at, msg: m }));
+    const chatItems: FeedItem[] = mensagens.map(m => ({ kind: 'chat', key: `c-${m.id}`, createdAt: m.created_at, msg: m }));
     const aiFeedItems: FeedItem[] = aiItems.map(a => ({ kind: 'ai', key: `a-${a.id}`, createdAt: a.createdAt, item: a }));
     return [...chatItems, ...aiFeedItems].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [messages, aiItems]);
+  }, [mensagens, aiItems]);
+
+  // FlatList é `inverted` (mais recente embaixo) — precisa do array na ordem contrária
+  const invertedFeed: FeedItem[] = useMemo(() => [...feed].reverse(), [feed]);
 
   // ── Login gate ────────────────────────────────────────────────────────────
   if (!user) {
@@ -614,7 +475,7 @@ export default function ChatScreen() {
   }
 
   const coins     = profile?.coins ?? 0;
-  const canSend   = inputText.trim().length > 0 && coins >= 1 && !sending;
+  const canSend   = inputText.trim().length > 0 && !sending;
   const charsLeft = MAX_LEN - inputText.length;
 
   // ── Modal de histórico ────────────────────────────────────────────────────
@@ -713,30 +574,43 @@ export default function ChatScreen() {
             </View>
           </View>
 
-          {/* Banner efêmero */}
+          {/* Banner de info */}
           <View style={[s.ephemeralBanner, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText themeColor="textSecondary" style={s.ephemeralText}>
-              ⏳ Mensagens somem em 1h · 🤖 /ia sua pergunta ({AI_COST}🪙)
+              🤖 /ia sua pergunta
             </ThemedText>
           </View>
 
-          {/* Lista */}
+          {/* Lista — invertida (mais recente embaixo); onEndReached aqui corresponde
+              ao topo visual, carregando mensagens mais antigas ao chegar perto dele. */}
           <FlatList
             ref={listRef}
-            data={feed}
+            inverted
+            data={invertedFeed}
             keyExtractor={f => f.key}
             renderItem={({ item }) => item.kind === 'chat' ? (
               <MessageBubble
                 msg={item.msg}
                 isOwn={item.msg.user_id === user.id}
-                onExpired={handleExpired}
                 onDelete={handleDeleteMessage}
               />
             ) : (
               <AiBubble item={item.item} onDelete={handleDeleteAiItem} />
             )}
             contentContainerStyle={[s.listContent, { paddingBottom: BottomTabInset + 8 }]}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+            onEndReached={carregarMais}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={
+              carregandoMais ? (
+                <View style={s.paginationFooter}>
+                  <ActivityIndicator size="small" color={C.purple} />
+                </View>
+              ) : !temMais && mensagens.length > 0 ? (
+                <View style={s.paginationFooter}>
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>Início da conversa</ThemedText>
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               <View style={s.emptyWrap}>
                 <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
@@ -769,31 +643,16 @@ export default function ChatScreen() {
                 </ThemedText>
               )}
 
-              <View>
-                <TouchableOpacity
-                  style={[s.sendBtn, {
-                    backgroundColor: canSend ? C.purple : theme.backgroundSelected,
-                    opacity: canSend ? 1 : 0.5,
-                  }]}
-                  onPress={handleSend}
-                  disabled={!canSend}
-                  activeOpacity={0.8}>
-                  <ThemedText style={s.sendBtnText}>{sending ? '⏳' : '➤'}</ThemedText>
-                </TouchableOpacity>
-
-
-                {/* Moeda flutuando */}
-                {coinVisible && (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[s.floatingCoin, {
-                      opacity: coinOpacity,
-                      transform: [{ translateY: coinY }, { scale: coinScale }],
-                    }]}>
-                    <ThemedText style={s.floatingCoinText}>🪙</ThemedText>
-                  </Animated.View>
-                )}
-              </View>
+              <TouchableOpacity
+                style={[s.sendBtn, {
+                  backgroundColor: canSend ? C.purple : theme.backgroundSelected,
+                  opacity: canSend ? 1 : 0.5,
+                }]}
+                onPress={handleSend}
+                disabled={!canSend}
+                activeOpacity={0.8}>
+                <ThemedText style={s.sendBtnText}>{sending ? '⏳' : '➤'}</ThemedText>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -848,6 +707,10 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 80,
   },
+  paginationFooter: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
 
   bubbleWrap:  { maxWidth: '80%' },
   bubbleRow:   { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
@@ -873,9 +736,6 @@ const s = StyleSheet.create({
   bubbleText:   { fontSize: 15, lineHeight: 21 },
   bubbleFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
   bubbleTime:   { fontSize: 10, fontWeight: '500', flexShrink: 0 },
-
-  barBg:   { height: 2, borderRadius: 1, overflow: 'hidden' },
-  barFill: { height: 2, borderRadius: 1 },
 
   inputBar: {
     flexDirection: 'row',
@@ -908,15 +768,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnText: { fontSize: 16, color: '#fff', fontWeight: '700' },
-  sendCost:    { fontSize: 9, color: C.gold, textAlign: 'center' },
-
-  floatingCoin: {
-    position: 'absolute',
-    bottom: 44,
-    alignSelf: 'center',
-    zIndex: 99,
-  },
-  floatingCoinText: { fontSize: 22 },
 
   btn:    { paddingHorizontal: Spacing.five, paddingVertical: Spacing.two + 4, borderRadius: 99 },
   btnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },

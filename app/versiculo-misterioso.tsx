@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -69,7 +69,7 @@ function shuffle<T>(arr: T[]): T[] {
 export default function VersiculoMisteriosoScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
-  const { user, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('versiculo');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -82,7 +82,18 @@ export default function VersiculoMisteriosoScreen() {
   const [score, setScore] = useState(0);
   const [roundPoints, setRoundPoints] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  const [stuckSeconds, setStuckSeconds] = useState(0);
+  const [letraRevelada, setLetraRevelada] = useState<string | null>(null);
+  const [respostaRevelada, setRespostaRevelada] = useState(false);
   const reported = useRef(false);
+
+  // "Travado": 30s seguidos sem responder a frase atual — libera as dicas pagas
+  useEffect(() => {
+    if (phase !== 'playing') { setStuckSeconds(0); return; }
+    setStuckSeconds(0);
+    const id = setInterval(() => setStuckSeconds(sec => sec + 1), 1000);
+    return () => clearInterval(id);
+  }, [phase, idx]);
 
   useEffect(() => {
     if (phase === 'done' && !reported.current) {
@@ -98,7 +109,7 @@ export default function VersiculoMisteriosoScreen() {
       });
       markLevelComplete(GAME_ID, difficulty);
       if (user?.id) {
-        const coins = ECONOMY.COMPLETAR_QUIZ + (allCorrect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
+        const coins = ECONOMY.COMPLETAR_JOGO + (allCorrect ? ECONOMY.BONUS_PERFEITO : 0);
         supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
           .then(() => { setCoinsEarned(coins); refreshProfile(); })
           .catch(() => {});
@@ -120,6 +131,8 @@ export default function VersiculoMisteriosoScreen() {
     setCorrectCount(0);
     setRoundPoints(0);
     setCoinsEarned(null);
+    setLetraRevelada(null);
+    setRespostaRevelada(false);
     setPhase('playing');
   }, []);
 
@@ -127,6 +140,44 @@ export default function VersiculoMisteriosoScreen() {
   const frase = frases[idx];
   const totalWords = frase?.words.length ?? 0;
   const canRevealMore = revealed < totalWords;
+
+  const handleRevelarLetra = useCallback(async () => {
+    if (!user || !frase) return;
+    if (!profile || profile.coins < ECONOMY.SABEDORIA_REVELAR_LETRA) {
+      Alert.alert(
+        'Moedas insuficientes',
+        `Você precisa de ${ECONOMY.SABEDORIA_REVELAR_LETRA} 🪙 para essa dica. Assista um anúncio ou aguarde o bônus de moedas.`,
+      );
+      return;
+    }
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.SABEDORIA_REVELAR_LETRA });
+      if (error) throw error;
+      setLetraRevelada(frase.reference.trim().charAt(0).toUpperCase());
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    }
+  }, [user, profile, frase, refreshProfile]);
+
+  const handleRevelarPalavra = useCallback(async () => {
+    if (!user || !frase) return;
+    if (!profile || profile.coins < ECONOMY.SABEDORIA_REVELAR_PALAVRA) {
+      Alert.alert(
+        'Moedas insuficientes',
+        `Você precisa de ${ECONOMY.SABEDORIA_REVELAR_PALAVRA} 🪙 para revelar a resposta. Assista um anúncio ou aguarde o bônus de moedas.`,
+      );
+      return;
+    }
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.SABEDORIA_REVELAR_PALAVRA });
+      if (error) throw error;
+      setRespostaRevelada(true);
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    }
+  }, [user, profile, frase, refreshProfile]);
 
   const revealMore = () => setRevealed(r => Math.min(r + 2, totalWords));
   const calcPoints = () => Math.max(5 - Math.floor(revealed / 3), 1);
@@ -151,6 +202,8 @@ export default function VersiculoMisteriosoScreen() {
       setRevealed(cfg.initialReveal);
       setSelected(null);
       setRoundPoints(0);
+      setLetraRevelada(null);
+      setRespostaRevelada(false);
       setPhase('playing');
     } else {
       setPhase('done');
@@ -321,16 +374,46 @@ export default function VersiculoMisteriosoScreen() {
               <ThemedText type="smallBold" style={s.guessLabel}>
                 {GUESS_LABEL[frase.type]}
               </ThemedText>
-              <View style={s.options}>
-                {frase.options.map(opt => (
-                  <TouchableOpacity
-                    key={opt}
-                    onPress={() => handleGuess(opt)}
-                    activeOpacity={0.75}
-                    style={[s.option, { backgroundColor: theme.backgroundElement }]}>
-                    <ThemedText style={s.optText}>{opt}</ThemedText>
+
+              {stuckSeconds >= 30 && !respostaRevelada && (
+                <View style={s.dicaRow}>
+                  {!letraRevelada && (
+                    <TouchableOpacity onPress={handleRevelarLetra} style={[s.dicaBtn, { borderColor: C.gold }]} activeOpacity={0.8}>
+                      <ThemedText style={[s.dicaBtnText, { color: C.gold }]}>
+                        💡 Revelar letra ({ECONOMY.SABEDORIA_REVELAR_LETRA} 🪙)
+                      </ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={handleRevelarPalavra} style={[s.dicaBtn, { borderColor: C.purple }]} activeOpacity={0.8}>
+                    <ThemedText style={[s.dicaBtnText, { color: C.purple }]}>
+                      🔓 Revelar resposta ({ECONOMY.SABEDORIA_REVELAR_PALAVRA} 🪙)
+                    </ThemedText>
                   </TouchableOpacity>
-                ))}
+                </View>
+              )}
+              {letraRevelada && !respostaRevelada && (
+                <ThemedText themeColor="textSecondary" style={s.smallText}>
+                  💡 A resposta começa com “{letraRevelada}”
+                </ThemedText>
+              )}
+
+              <View style={s.options}>
+                {frase.options.map(opt => {
+                  const isRevealedCorrect = respostaRevelada && opt === frase.reference;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      onPress={() => handleGuess(opt)}
+                      activeOpacity={0.75}
+                      style={[
+                        s.option,
+                        { backgroundColor: isRevealedCorrect ? C.purple + '33' : theme.backgroundElement },
+                        isRevealedCorrect && { borderColor: C.purple },
+                      ]}>
+                      <ThemedText style={s.optText}>{opt}</ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </>
           )}
@@ -490,4 +573,7 @@ const s = StyleSheet.create({
     borderColor: C.border,
   },
   fullVerseText: { fontSize: 15, lineHeight: 22, fontStyle: 'italic' },
+  dicaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  dicaBtn: { paddingHorizontal: Spacing.two, paddingVertical: 6, borderRadius: C.radius.pill, borderWidth: 1.5 },
+  dicaBtnText: { fontSize: 11, fontWeight: '700' },
 });

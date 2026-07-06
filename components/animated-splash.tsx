@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
+import { C } from '@/constants/theme';
+
 export function AnimatedSplashOverlay() {
   const [visible, setVisible] = useState(true);
 
@@ -25,7 +27,7 @@ export function AnimatedSplashOverlay() {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#208AEF',
+    backgroundColor: C.purple,
     zIndex: 1000,
     alignItems: 'center',
     justifyContent: 'center',

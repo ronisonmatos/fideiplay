@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, LayoutChangeEvent, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, LayoutChangeEvent, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,9 +62,12 @@ const IDLE = 0;
 const IN_PATH = 1;
 const FOUND = 2;
 
-function maskWord(word: string): string {
+function maskWord(word: string, revealed: number[] = []): string {
   if (word.length <= 2) return word;
-  return word[0] + '-'.repeat(word.length - 2) + word[word.length - 1];
+  return word
+    .split('')
+    .map((ch, i) => (i === 0 || i === word.length - 1 || revealed.includes(i) ? ch : '-'))
+    .join('');
 }
 
 function cellIndex(row: number, col: number, gridSize: number) {
@@ -227,7 +230,7 @@ function FoundConnector({ index, segmentsSV, gridSizeSV, cellSizeSV, color }: Fo
 export default function LatimBoggleScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
-  const { user, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('latim');
   const allLevels = useMemo(() => mergeLatimLevels(LATIM_BOGGLE_LEVELS, packs), [packs]);
@@ -241,6 +244,8 @@ export default function LatimBoggleScreen() {
   const [coinsEarned, setCoinsEarned] = useState<number | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const [activeGrid, setActiveGrid] = useState<string[]>([]);
+  const [revealsUsed, setRevealsUsed] = useState(0);
+  const [revealedPositions, setRevealedPositions] = useState<Record<string, number[]>>({});
 
   const levels = useMemo(
     () => allLevels.filter(l => l.difficulty === difficulty),
@@ -267,8 +272,8 @@ export default function LatimBoggleScreen() {
     reported.current = true;
     reportResult({ gameId: GAME_ID, score: totalXp });
     if (user?.id) {
-      supabase.rpc('add_coins', { p_user_id: user.id, p_amount: ECONOMY.COMPLETAR_QUIZ })
-        .then(() => { setCoinsEarned(ECONOMY.COMPLETAR_QUIZ); refreshProfile(); })
+      supabase.rpc('add_coins', { p_user_id: user.id, p_amount: ECONOMY.COMPLETAR_JOGO })
+        .then(() => { setCoinsEarned(ECONOMY.COMPLETAR_JOGO); refreshProfile(); })
         .catch(() => {});
     }
   }, [phase, totalXp, reportResult, user, refreshProfile]);
@@ -316,8 +321,40 @@ export default function LatimBoggleScreen() {
     pathSV.value = [];
     gridSizeSV.value = lvl.gridSize;
     resetCellVisuals();
+    setRevealsUsed(0);
+    setRevealedPositions({});
     setPhase('playing');
   }, [foundCellsSV, foundSegmentsSV, gridSizeSV, pathSV, resetCellVisuals]);
+
+  const handleRevealLetter = useCallback(async () => {
+    if (!user || revealsUsed >= ECONOMY.BOGGLE_MAX_REVELACOES) return;
+    if (!profile || profile.coins < ECONOMY.BOGGLE_REVELAR_LETRA) {
+      Alert.alert(
+        'Moedas insuficientes',
+        `Você precisa de ${ECONOMY.BOGGLE_REVELAR_LETRA} 🪙 para revelar uma letra. Assista um anúncio ou resgate o bônus de moedas para conseguir mais.`,
+      );
+      return;
+    }
+    const unfound = levelRef.current.words.filter(w => !foundWordsRef.current.includes(w.word));
+    if (unfound.length === 0) return;
+
+    const target    = unfound[Math.floor(Math.random() * unfound.length)];
+    const revealed  = revealedPositions[target.word] ?? [];
+    const candidates = Array.from({ length: target.word.length }, (_, i) => i)
+      .filter(i => i !== 0 && i !== target.word.length - 1 && !revealed.includes(i));
+    if (candidates.length === 0) return;
+    const pos = candidates[Math.floor(Math.random() * candidates.length)];
+
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.BOGGLE_REVELAR_LETRA });
+      if (error) throw error;
+      setRevealedPositions(prev => ({ ...prev, [target.word]: [...(prev[target.word] ?? []), pos] }));
+      setRevealsUsed(prev => prev + 1);
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    }
+  }, [user, profile, revealsUsed, revealedPositions, refreshProfile]);
 
   const startWithDifficulty = useCallback((diff: LatimBoggleDifficulty) => {
     const filtered = allLevels.filter(l => l.difficulty === diff);
@@ -696,7 +733,7 @@ export default function LatimBoggleScreen() {
                         </ThemedText>
                       </>
                     ) : (
-                      <ThemedText style={styles.chipText}>{maskWord(w.word)}</ThemedText>
+                      <ThemedText style={styles.chipText}>{maskWord(w.word, revealedPositions[w.word])}</ThemedText>
                     )}
                   </ThemedView>
                 );
@@ -715,6 +752,14 @@ export default function LatimBoggleScreen() {
                 </ThemedText>
               </TouchableOpacity>
             </Animated.View>
+          )}
+
+          {!allWordsFound && revealsUsed < ECONOMY.BOGGLE_MAX_REVELACOES && (
+            <TouchableOpacity onPress={handleRevealLetter} style={styles.hintFab} activeOpacity={0.8}>
+              <ThemedText style={styles.hintFabText}>
+                💡 Revelar letra ({ECONOMY.BOGGLE_REVELAR_LETRA} 🪙)
+              </ThemedText>
+            </TouchableOpacity>
           )}
         </View>
       </SafeAreaView>
@@ -814,4 +859,14 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.one, borderRadius: C.radius.md, alignItems: 'center' },
   chipText: { fontSize: 14, fontWeight: '600' },
   chipMeaning: { fontSize: 11, marginTop: 1 },
+  hintFab: {
+    position: 'absolute',
+    right: Spacing.three,
+    bottom: Spacing.three,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: C.radius.pill,
+  },
+  hintFabText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 });

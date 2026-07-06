@@ -53,7 +53,7 @@ export default function QuizSantosScreen() {
       reportResult({ gameId: GAME_ID, score: score * XP[difficulty], perfectQuiz: isPerfect });
       markLevelComplete(GAME_ID, difficulty);
       if (user?.id) {
-        const coins = ECONOMY.COMPLETAR_QUIZ + (isPerfect ? ECONOMY.BONUS_QUIZ_PERFEITO : 0);
+        const coins = ECONOMY.COMPLETAR_JOGO + (isPerfect ? ECONOMY.BONUS_PERFEITO : 0);
         supabase.rpc('add_coins', { p_user_id: user.id, p_amount: coins })
           .then(() => { setCoinsEarned(coins); refreshProfile(); })
           .catch(() => {});

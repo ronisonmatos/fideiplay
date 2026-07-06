@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
@@ -74,13 +74,36 @@ function matchWord(path: Cell[], grid: string[][], words: string[]): string | nu
 
 function cellKey([r, c]: Cell) { return `${r},${c}`; }
 
+// Acha onde uma palavra está escondida na grade (8 direções, em linha reta) — usado
+// pela dica "revelar letra", já que o jogador já sabe a palavra, só não sabe onde está.
+function findWordCells(grid: string[][], word: string): Cell[] | null {
+  const size = grid.length;
+  const dirs: Cell[] = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      for (const [dr, dc] of dirs) {
+        let ok = true;
+        const cells: Cell[] = [];
+        for (let i = 0; i < word.length; i++) {
+          const rr = r + dr * i;
+          const cc = c + dc * i;
+          if (rr < 0 || cc < 0 || rr >= size || cc >= size || grid[rr][cc] !== word[i]) { ok = false; break; }
+          cells.push([rr, cc]);
+        }
+        if (ok) return cells;
+      }
+    }
+  }
+  return null;
+}
+
 // ── Screen ─────────────────────────────────────────────────────────────────────
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function PalavrasFeScreen() {
   const theme = useTheme();
   const { reportResult } = useGameStore();
-  const { user, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
   const { packs } = useGamePacks('palavras');
 
@@ -92,6 +115,7 @@ export default function PalavrasFeScreen() {
   const [foundCells, setFoundCells] = useState<Set<string>>(new Set());
   const [start, setStart] = useState<Cell | null>(null);
   const [preview, setPreview] = useState<Cell[]>([]);
+  const [hintCell, setHintCell] = useState<Cell | null>(null);
   const reported = useRef(false);
 
   function startDifficulty(diff: Difficulty) {
@@ -111,6 +135,7 @@ export default function PalavrasFeScreen() {
         setFoundCells(new Set());
         setStart(null);
         setPreview([]);
+        setHintCell(null);
         setCoinsEarned(null);
         reported.current = false;
         setPhase('playing');
@@ -150,6 +175,7 @@ export default function PalavrasFeScreen() {
         setFoundCells(newCells);
         setStart(null);
         setPreview([]);
+        setHintCell(null);
         if (newFound.length === words.length) {
           if (!reported.current) {
             reported.current = true;
@@ -157,8 +183,8 @@ export default function PalavrasFeScreen() {
             reportResult({ gameId: GAME_ID, score: words.length * XP[activeDiff] });
             markLevelComplete(GAME_ID, activeDiff);
             if (user?.id) {
-              supabase.rpc('add_coins', { p_user_id: user.id, p_amount: ECONOMY.COMPLETAR_QUIZ })
-                .then(() => { setCoinsEarned(ECONOMY.COMPLETAR_QUIZ); refreshProfile(); })
+              supabase.rpc('add_coins', { p_user_id: user.id, p_amount: ECONOMY.COMPLETAR_JOGO })
+                .then(() => { setCoinsEarned(ECONOMY.COMPLETAR_JOGO); refreshProfile(); })
                 .catch(() => {});
             }
           }
@@ -171,6 +197,31 @@ export default function PalavrasFeScreen() {
     },
     [phase, activePuzzle, start, foundWords, foundCells, reportResult, markLevelComplete],
   );
+
+  const handleRevealLetter = useCallback(async () => {
+    if (!user || !activePuzzle) return;
+    if (!profile || profile.coins < ECONOMY.PALAVRA_FE_REVELAR_LETRA) {
+      Alert.alert(
+        'Moedas insuficientes',
+        `Você precisa de ${ECONOMY.PALAVRA_FE_REVELAR_LETRA} 🪙 para revelar uma letra. Assista um anúncio ou aguarde o bônus de moedas.`,
+      );
+      return;
+    }
+    const unfound = activePuzzle.theme.words.filter(w => !foundWords.includes(w));
+    if (unfound.length === 0) return;
+    const target = unfound[Math.floor(Math.random() * unfound.length)];
+    const cells = findWordCells(activePuzzle.grid, target);
+    if (!cells || cells.length === 0) return;
+    const cell = cells[Math.floor(Math.random() * cells.length)];
+    try {
+      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.PALAVRA_FE_REVELAR_LETRA });
+      if (error) throw error;
+      setHintCell(cell);
+      refreshProfile();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    }
+  }, [user, profile, activePuzzle, foundWords, refreshProfile]);
 
   // ── SELECT ─────────────────────────────────────────────────────────────────
   if (phase === 'select') {
@@ -262,6 +313,7 @@ export default function PalavrasFeScreen() {
   const isSelected = (cell: Cell) => start !== null && cellKey(start) === cellKey(cell);
   const isPreview = (cell: Cell) => previewSet.has(cellKey(cell)) && !isSelected(cell);
   const isFound = (cell: Cell) => foundCells.has(cellKey(cell));
+  const isHinted = (cell: Cell) => !!hintCell && hintCell[0] === cell[0] && hintCell[1] === cell[1];
 
   return (
     <ThemedView style={styles.fill}>
@@ -302,14 +354,16 @@ export default function PalavrasFeScreen() {
                   const found = isFound(cell);
                   const sel = isSelected(cell);
                   const prev = isPreview(cell);
+                  const hinted = !found && isHinted(cell);
 
                   let bg = theme.backgroundElement;
                   let textColor = theme.text;
                   let borderColor = 'transparent';
 
-                  if (found)      { bg = cfg.color + '33'; borderColor = cfg.color; textColor = cfg.color; }
-                  else if (sel)   { bg = cfg.color; textColor = '#fff'; borderColor = cfg.color; }
-                  else if (prev)  { bg = cfg.color + '44'; borderColor = cfg.color + '88'; }
+                  if (found)       { bg = cfg.color + '33'; borderColor = cfg.color; textColor = cfg.color; }
+                  else if (sel)    { bg = cfg.color; textColor = '#fff'; borderColor = cfg.color; }
+                  else if (prev)   { bg = cfg.color + '44'; borderColor = cfg.color + '88'; }
+                  else if (hinted) { bg = C.gold + '55'; borderColor = C.gold; }
 
                   return (
                     <TouchableOpacity
@@ -353,6 +407,12 @@ export default function PalavrasFeScreen() {
             </View>
           </View>
         </ScrollView>
+
+        <TouchableOpacity onPress={handleRevealLetter} style={styles.hintFab} activeOpacity={0.8}>
+          <ThemedText style={styles.hintFabText}>
+            💡 Revelar letra ({ECONOMY.PALAVRA_FE_REVELAR_LETRA} 🪙)
+          </ThemedText>
+        </TouchableOpacity>
       </SafeAreaView>
     </ThemedView>
   );
@@ -423,4 +483,14 @@ const styles = StyleSheet.create({
   wordChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   chip: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.one, borderRadius: C.radius.pill },
   chipText: { fontSize: 14, fontWeight: '600' },
+  hintFab: {
+    position: 'absolute',
+    right: Spacing.three,
+    bottom: Spacing.three,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: C.radius.pill,
+  },
+  hintFabText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 });

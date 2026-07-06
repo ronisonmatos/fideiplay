@@ -25,6 +25,7 @@ import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/context/notifications-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useConvite } from '@/hooks/use-convite';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
@@ -43,6 +44,7 @@ export default function ConfiguracoesScreen() {
   const isDark      = colorScheme === 'dark';
 
   const { muteChat, setMuteChat } = useNotifications();
+  const { convidarAmigo, gerando: gerandoConvite } = useConvite();
   const [message,       setMessage]       = useState('');
   const [sending,       setSending]       = useState(false);
   const [avatarModal,   setAvatarModal]   = useState(false);
@@ -191,6 +193,37 @@ export default function ConfiguracoesScreen() {
                     </View>
                   </View>
                   <ThemedText style={{ color: C.purple, fontWeight: '700' }}>Trocar</ThemedText>
+                </TouchableOpacity>
+              </ThemedView>
+            </>
+          )}
+
+          {/* Convide amigos */}
+          {user && (
+            <>
+              <ThemedText style={s.sectionLabel}>CONVIDE AMIGOS</ThemedText>
+              <ThemedView type="backgroundElement" style={s.card}>
+                <View style={s.rowLeft}>
+                  <ThemedText style={{ fontSize: 22 }}>🎁</ThemedText>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText type="smallBold">Convide e ganhe moedas</ThemedText>
+                    <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
+                      Você e seu amigo ganham 30 🪙 cada quando ele entrar pelo seu link
+                    </ThemedText>
+                  </View>
+                </View>
+                <ThemedText themeColor="textSecondary" style={{ fontSize: 11, marginTop: Spacing.two, lineHeight: 16 }}>
+                  1️⃣ Seu amigo baixa o app SantosPlay{'\n'}
+                  2️⃣ Depois, abre o link que você mandou pra confirmar o convite
+                </ThemedText>
+                <TouchableOpacity
+                  style={[s.sendBtn, { marginTop: Spacing.two, opacity: gerandoConvite ? 0.6 : 1 }]}
+                  onPress={convidarAmigo}
+                  disabled={gerandoConvite}
+                  activeOpacity={0.8}>
+                  <ThemedText style={s.sendBtnText}>
+                    {gerandoConvite ? 'GERANDO LINK...' : 'CONVIDAR AMIGO'}
+                  </ThemedText>
                 </TouchableOpacity>
               </ThemedView>
             </>
