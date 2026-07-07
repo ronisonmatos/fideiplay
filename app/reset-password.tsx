@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
+import { PasswordInput } from '@/components/password-input';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
@@ -101,26 +102,24 @@ export default function ResetPasswordScreen() {
               <View style={s.form}>
                 <View style={s.field}>
                   <ThemedText style={[s.label, { color: theme.textSecondary }]}>NOVA SENHA</ThemedText>
-                  <TextInput
+                  <PasswordInput
                     style={[s.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}
                     value={password}
                     onChangeText={setPassword}
                     placeholder="Mínimo 6 caracteres"
                     placeholderTextColor={theme.textSecondary}
-                    secureTextEntry
                     returnKeyType="next"
                   />
                 </View>
 
                 <View style={s.field}>
                   <ThemedText style={[s.label, { color: theme.textSecondary }]}>CONFIRMAR SENHA</ThemedText>
-                  <TextInput
+                  <PasswordInput
                     style={[s.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     placeholder="Repita a senha"
                     placeholderTextColor={theme.textSecondary}
-                    secureTextEntry
                     returnKeyType="done"
                     onSubmitEditing={handleSubmit}
                   />

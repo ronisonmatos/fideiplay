@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
+import { PasswordInput } from '@/components/password-input';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
@@ -78,13 +79,12 @@ export default function LoginScreen() {
 
               <View style={s.field}>
                 <ThemedText style={[s.label, { color: theme.textSecondary }]}>SENHA</ThemedText>
-                <TextInput
+                <PasswordInput
                   style={[s.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}
                   value={password}
                   onChangeText={setPassword}
                   placeholder="Sua senha"
                   placeholderTextColor={theme.textSecondary}
-                  secureTextEntry
                   returnKeyType="done"
                   onSubmitEditing={handleLogin}
                 />

@@ -64,11 +64,12 @@ function fmtDateTime(iso: string): string {
 }
 
 interface HistoryMessage {
-  id:        string;
-  user_id:   string | null;
-  user_name: string | null;
-  content:   string | null;
-  sent_at:   string;
+  id:         string;
+  user_id:    string | null;
+  user_name:  string | null;
+  content:    string | null;
+  sent_at:    string;
+  deleted_at: string | null;
 }
 
 // Troca com a IA católica (/ia) — nunca gravada no banco/chat público, mas
@@ -83,7 +84,29 @@ interface AiItem {
 
 type FeedItem =
   | { kind: 'chat'; key: string; createdAt: string; msg: MensagemChat }
-  | { kind: 'ai';   key: string; createdAt: string; item: AiItem };
+  | { kind: 'ai';   key: string; createdAt: string; item: AiItem }
+  | { kind: 'date'; key: string; createdAt: string; label: string };
+
+function fmtDateSep(iso: string): string {
+  const d = new Date(iso);
+  const hoje = new Date();
+  const ontem = new Date();
+  ontem.setDate(hoje.getDate() - 1);
+  if (d.toDateString() === hoje.toDateString()) return 'Hoje';
+  if (d.toDateString() === ontem.toDateString()) return 'Ontem';
+  return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+}
+
+// ── Marcador de data entre mensagens de dias diferentes ─────────────────────
+const DateSeparator = memo(function DateSeparator({ label }: { label: string }) {
+  return (
+    <View style={s.dateSep}>
+      <View style={[s.dateSepLine, { backgroundColor: C.border }]} />
+      <ThemedText themeColor="textSecondary" style={s.dateSepLabel}>{label}</ThemedText>
+      <View style={[s.dateSepLine, { backgroundColor: C.border }]} />
+    </View>
+  );
+});
 
 // ── Bolha de mensagem — memoizada (evita re-render ao rolar a lista) ────────
 const MessageBubble = memo(function MessageBubble({
@@ -335,16 +358,19 @@ export default function ChatScreen() {
   }, [removerMensagem]);
 
   // ── Histórico admin ───────────────────────────────────────────────────────
+  // Consulta community_messages direto (não é apagada fisicamente, só soft
+  // delete) — inclui mensagens já excluídas pra fins de moderação, via a
+  // policy "admin_reads_all_messages". Não depende mais de um log separado
+  // guardando conteúdo por 6 meses.
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryVisible(true);
     const since = new Date(Date.now() - HISTORY_24H).toISOString();
     const { data } = await supabase
-      .from('community_message_log')
-      .select('id, user_id, user_name, content, sent_at')
-      .gte('sent_at', since)
-      .not('content', 'is', null)
-      .order('sent_at', { ascending: true });
+      .from('community_messages')
+      .select('id, user_id, user_name, content, sent_at:created_at, deleted_at')
+      .gte('created_at', since)
+      .order('created_at', { ascending: true });
     setHistoryMessages((data ?? []) as HistoryMessage[]);
     setHistoryLoading(false);
   }, []);
@@ -368,11 +394,10 @@ export default function ChatScreen() {
       Alert.alert('Erro', 'Não foi possível enviar a mensagem. Tente novamente.');
       setInputText(text);
     } else {
-      supabase.from('community_message_log').insert({
-        user_id:   user.id,
-        user_name: profile.name ?? 'Jogador',
-        content:   text,
-      }).then(() => {});
+      // Log de auditoria só com metadado (quem + quando) — sem conteúdo, por
+      // design (Marco Civil não exige o texto, e content aqui violaria a
+      // exclusão manual da mensagem original).
+      supabase.from('community_message_log').insert({ user_id: user.id }).then(() => {});
       // Lista é invertida — "voltar ao fim" é offset 0, não scrollToEnd
       setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 150);
     }
@@ -438,11 +463,24 @@ export default function ChatScreen() {
     await sendPlainMessage(text);
   }, [inputText, user, profile, sending, fetchHistory, sendPlainMessage]);
 
-  // Mescla chat público + trocas com a IA (local, só para quem perguntou) — ascendente
+  // Mescla chat público + trocas com a IA (local, só para quem perguntou) — ascendente,
+  // com marcador de data inserido sempre que muda o dia entre uma mensagem e a anterior.
   const feed: FeedItem[] = useMemo(() => {
     const chatItems: FeedItem[] = mensagens.map(m => ({ kind: 'chat', key: `c-${m.id}`, createdAt: m.created_at, msg: m }));
     const aiFeedItems: FeedItem[] = aiItems.map(a => ({ kind: 'ai', key: `a-${a.id}`, createdAt: a.createdAt, item: a }));
-    return [...chatItems, ...aiFeedItems].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const ordenado = [...chatItems, ...aiFeedItems].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+    const comSeparadores: FeedItem[] = [];
+    let diaAnterior: string | null = null;
+    for (const item of ordenado) {
+      const dia = new Date(item.createdAt).toDateString();
+      if (dia !== diaAnterior) {
+        comSeparadores.push({ kind: 'date', key: `d-${dia}`, createdAt: item.createdAt, label: fmtDateSep(item.createdAt) });
+        diaAnterior = dia;
+      }
+      comSeparadores.push(item);
+    }
+    return comSeparadores;
   }, [mensagens, aiItems]);
 
   // FlatList é `inverted` (mais recente embaixo) — precisa do array na ordem contrária
@@ -535,9 +573,14 @@ export default function ChatScreen() {
                       {fmtDateTime(msg.sent_at)}
                     </ThemedText>
                     <View style={[s.histBubble, { borderLeftColor: uColor, backgroundColor: uColor + '18' }]}>
-                      <ThemedText style={[s.histName, { color: uColor }]} numberOfLines={1}>
-                        {msg.user_name ?? 'Jogador'}
-                      </ThemedText>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <ThemedText style={[s.histName, { color: uColor }]} numberOfLines={1}>
+                          {msg.user_name ?? 'Jogador'}
+                        </ThemedText>
+                        {msg.deleted_at && (
+                          <ThemedText style={{ fontSize: 9, fontWeight: '700', color: C.red }}>EXCLUÍDA</ThemedText>
+                        )}
+                      </View>
                       <ThemedText style={[s.histContent, { color: theme.text }]}>
                         {msg.content ?? '—'}
                       </ThemedText>
@@ -594,8 +637,10 @@ export default function ChatScreen() {
                 isOwn={item.msg.user_id === user.id}
                 onDelete={handleDeleteMessage}
               />
-            ) : (
+            ) : item.kind === 'ai' ? (
               <AiBubble item={item.item} onDelete={handleDeleteAiItem} />
+            ) : (
+              <DateSeparator label={item.label} />
             )}
             contentContainerStyle={[s.listContent, { paddingBottom: BottomTabInset + 8 }]}
             onEndReached={carregarMais}
@@ -711,6 +756,10 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
   },
+
+  dateSep:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  dateSepLine:  { flex: 1, height: 1 },
+  dateSepLabel: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
 
   bubbleWrap:  { maxWidth: '80%' },
   bubbleRow:   { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },

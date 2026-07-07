@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AvatarImage } from '@/components/avatar-image';
+import { PasswordInput } from '@/components/password-input';
 import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
@@ -205,13 +206,12 @@ export default function RegisterScreen() {
             {/* Senha */}
             <View style={s.section}>
               <ThemedText style={[s.label, { color: theme.textSecondary }]}>SENHA</ThemedText>
-              <TextInput
+              <PasswordInput
                 style={[s.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Mínimo 6 caracteres"
                 placeholderTextColor={theme.textSecondary}
-                secureTextEntry
                 returnKeyType="next"
               />
             </View>
