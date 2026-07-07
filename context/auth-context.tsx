@@ -39,6 +39,7 @@ interface AuthCtx {
   refreshProfile: () => Promise<void>;
   trilhasDesbloqueadas: number[];
   refreshTrilhas: () => Promise<void>;
+  signInTick: number;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading]   = useState(true);
   const [isGuest, setGuest]     = useState(false);
   const [trilhasDesbloqueadas, setTrilhasDesbloqueadas] = useState<number[]>([]);
+  const [signInTick, setSignInTick] = useState(0);
 
   // Reset guest mode when user authenticates
   useEffect(() => { if (session) setGuest(false); }, [session]);
@@ -110,11 +112,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       setSession(s);
       if (s) {
         await loadProfile(s.user.id);
         await loadTrilhas(s.user.id);
+        // Login explícito (não a sessão persistida sendo restaurada no boot) —
+        // usado para forçar atualização de localização ignorando o cache de 24h.
+        if (event === 'SIGNED_IN') setSignInTick(t => t + 1);
       } else {
         setProfile(null);
         setTrilhasDesbloqueadas([]);
@@ -191,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, loading, isGuest, setGuest, signUp, signIn, signOut, refreshProfile, trilhasDesbloqueadas, refreshTrilhas }}>
+    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, loading, isGuest, setGuest, signUp, signIn, signOut, refreshProfile, trilhasDesbloqueadas, refreshTrilhas, signInTick }}>
       {children}
     </Ctx.Provider>
   );

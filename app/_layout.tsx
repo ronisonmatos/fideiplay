@@ -152,13 +152,24 @@ function NotificationBridge() {
 function AuthGate() {
   const { loading } = useAuth();
   const segments = useSegments();
-  const { user, isGuest } = useAuth();
-  const { solicitarPermissao } = useLocalizacao();
+  const { user, isGuest, signInTick } = useAuth();
+  const { solicitarPermissao, atualizarLocalizacao } = useLocalizacao();
 
   // Ref estável — solicitarPermissao muda de identidade quando a localização é
   // resolvida (atualiza o profile), e isso não pode disparar o efeito de novo.
   const solicitarLocalizacaoRef = useRef(solicitarPermissao);
   useEffect(() => { solicitarLocalizacaoRef.current = solicitarPermissao; }, [solicitarPermissao]);
+
+  const atualizarLocalizacaoRef = useRef(atualizarLocalizacao);
+  useEffect(() => { atualizarLocalizacaoRef.current = atualizarLocalizacao; }, [atualizarLocalizacao]);
+
+  // Login explícito (signInTick só incrementa no evento SIGNED_IN, não na
+  // sessão persistida restaurada no boot) força atualização da localização
+  // ignorando o cache de 24h.
+  useEffect(() => {
+    if (signInTick === 0) return;
+    atualizarLocalizacaoRef.current().catch(() => {});
+  }, [signInTick]);
 
   useEffect(() => {
     if (loading) return;
