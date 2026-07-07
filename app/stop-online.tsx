@@ -831,15 +831,10 @@ export default function StopOnlineScreen() {
     supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_TROCAR_CATEGORIA }).then(() => refreshProfile());
   }, [user, profile, refreshProfile]);
 
-  // Dica estilo Wordle: não entrega a resposta — só diz se a letra inicial da
-  // resposta certa vem antes ou depois (ordem alfabética) do que o jogador já digitou.
+  // Dica: revela as 3 primeiras letras da resposta certa (banco de palavras
+  // primeiro, IA Magisterium como fallback) — igual ao Stop solo.
   const handleHint = useCallback(async (cat: StopCategory) => {
     if (!user || !profile) return;
-    const digitado = (answersRef.current[cat.key] ?? '').trim();
-    if (!digitado) {
-      Alert.alert('Digite algo primeiro', 'Escreva uma tentativa nesse campo antes de pedir a dica.');
-      return;
-    }
     if (profile.coins < ECONOMY.STOP_DICA_CATEGORIA) {
       Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.STOP_DICA_CATEGORIA} 🪙 para usar uma dica.`);
       return;
@@ -864,21 +859,14 @@ export default function StopOnlineScreen() {
     try {
       const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_DICA_CATEGORIA });
       if (error) throw error;
-      const minhaLetra  = digitado[0].toUpperCase();
-      const letraCerta  = word.trim()[0]?.toUpperCase() ?? '';
-      const mensagem = letraCerta === minhaLetra
-        ? 'Você pode estar certo! A primeira letra bate. 🎯'
-        : letraCerta > minhaLetra
-          ? 'A resposta certa vem depois, em ordem alfabética.'
-          : 'A resposta certa vem antes, em ordem alfabética.';
-      Alert.alert('💡 Dica', mensagem);
+      setAnswer(cat.key, word.slice(0, 3));
       refreshProfile();
     } catch {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
     } finally {
       setLoadingHint(null);
     }
-  }, [user, profile, hints, loadingHint, refreshProfile]);
+  }, [user, profile, hints, loadingHint, setAnswer, refreshProfile]);
 
   // ── Fetch room lists ───────────────────────────────────────────────────────
   const fetchRealtimeRooms = useCallback(async (silent = false) => {
