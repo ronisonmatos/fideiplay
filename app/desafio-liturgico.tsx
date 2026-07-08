@@ -15,6 +15,7 @@ import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeLiturgQuestions } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
+import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'desafio-liturgico';
 
@@ -114,6 +115,7 @@ export default function DesafioLiturgicoScreen() {
   }, [phase, endGame, stopTimer]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
+    playClickSound();
     const totalTime = DIFFICULTY_CONFIG[diff].time;
     const allQ = mergeLiturgQuestions(ALL_QUESTIONS, packs);
     const filtered = shuffle(allQ.filter(q => q.difficulty === diff)).map(shuffleQuestion);
@@ -179,7 +181,7 @@ export default function DesafioLiturgicoScreen() {
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               45 questões sobre o calendário litúrgico.{'\n'}Escolha o nível e teste seu conhecimento!
             </ThemedText>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => setPhase('difficulty')} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => { playClickSound(); setPhase('difficulty'); }} activeOpacity={0.8}>
               <ThemedText style={styles.btnText}>ESCOLHER NÍVEL</ThemedText>
             </TouchableOpacity>
           </View>

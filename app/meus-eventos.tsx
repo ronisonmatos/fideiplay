@@ -65,14 +65,15 @@ export default function MeusEventosScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />}>
 
           <TouchableOpacity style={s.novoBtn} onPress={() => router.push('/evento-patrocinado')} activeOpacity={0.85}>
-            <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>🎪 Divulgar novo evento</ThemedText>
+            <Image source={require('@/assets/images/icone_evento.png')} style={{ width: 18, height: 18 }} resizeMode="contain" />
+            <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>Divulgar novo evento</ThemedText>
           </TouchableOpacity>
 
           {loading ? (
             <ActivityIndicator color={C.purple} style={{ paddingVertical: 32 }} />
           ) : eventos.length === 0 ? (
             <View style={s.emptyWrap}>
-              <ThemedText style={{ fontSize: 40, lineHeight: 52 }}>🎪</ThemedText>
+              <Image source={require('@/assets/images/icone_evento.png')} style={{ width: 56, height: 56 }} resizeMode="contain" />
               <ThemedText themeColor="textSecondary" style={s.center}>
                 Você ainda não divulgou nenhum evento.
               </ThemedText>
@@ -146,7 +147,10 @@ const s = StyleSheet.create({
   center: { textAlign: 'center' },
   emptyWrap: { alignItems: 'center', gap: Spacing.two, paddingTop: 60, paddingHorizontal: Spacing.four },
 
-  novoBtn: { backgroundColor: C.purple, paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center' },
+  novoBtn: {
+    backgroundColor: C.purple, paddingVertical: 14, borderRadius: C.radius.pill,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two,
+  },
 
   card: { borderRadius: C.radius.lg, padding: Spacing.three, gap: 6, borderWidth: 1, borderColor: C.border },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },

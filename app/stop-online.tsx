@@ -30,6 +30,7 @@ import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { recordScoreEvent } from '@/lib/score-events';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 import { isContestable, submitContest } from '@/lib/stop-contests';
+import { playClickSound } from '@/lib/click-sound';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
@@ -1175,6 +1176,7 @@ export default function StopOnlineScreen() {
   // ── Create realtime room ──────────────────────────────────────────────────
   const createRealtimeRoom = useCallback(async (visibility: 'public' | 'private', nPlayers = 2) => {
     if (!playerIdRef.current) return;
+    playClickSound();
     const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('realtime'); gameModeRef.current = 'realtime';
@@ -1330,6 +1332,7 @@ export default function StopOnlineScreen() {
   // P2 só entra em partidas que P1 já terminou (p1_elapsed_seconds definido)
   const handleVamosJogar = useCallback(async () => {
     if (!playerIdRef.current) return;
+    playClickSound();
     const cats = slotsRef.current.map(k => allCategoriesRef.current.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     setGameCategories(cats); gameCatsRef.current = cats;
     setGameMode('async'); gameModeRef.current = 'async';

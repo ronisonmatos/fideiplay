@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeQuizQuestions } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
 import { GameRewardBanner } from '@/components/game-reward-banner';
+import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'quiz-santos';
 
@@ -63,6 +64,7 @@ export default function QuizSantosScreen() {
   }, [phase, score, questions.length, reportResult, user, refreshProfile, difficulty, markLevelComplete]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
+    playClickSound();
     setCoinsEarned(null);
     const filtered = allQuestions.filter(q => q.difficulty === diff);
     setDifficulty(diff);
@@ -114,7 +116,7 @@ export default function QuizSantosScreen() {
             <ThemedText themeColor="textSecondary" style={[styles.textCenter, styles.desc]}>
               {allQuestions.length} perguntas sobre doutrina, santos e história da Igreja.{'\n'}Escolha seu nível e teste o seu conhecimento!
             </ThemedText>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => setPhase('difficulty')} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => { playClickSound(); setPhase('difficulty'); }} activeOpacity={0.8}>
               <ThemedText style={styles.primaryBtnText}>ESCOLHER NÍVEL</ThemedText>
             </TouchableOpacity>
           </View>

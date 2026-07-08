@@ -38,6 +38,7 @@ import {
 import { broadcastNotification, sendNotificationToUser, triggerDispatchNow } from '@/lib/admin-notifications';
 import { suggestBannerDescription } from '@/lib/banner-ads';
 import { ALCANCE_LABELS } from '@/constants/eventos-precos';
+import { CATEGORIAS_EVENTO, CORES_CATEGORIA, type CategoriaEvento } from '@/constants/banner-config';
 import { notificarUsuario, type EventoPatrocinado } from '@/lib/eventos-patrocinados';
 
 const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
@@ -212,6 +213,7 @@ interface BannerAdRow {
   alcance: 'nacional' | 'estado' | 'cidade';
   estados: string[];
   cidades: string[];
+  categoria: CategoriaEvento;
   ativo: boolean;
   impressoes: number;
   cliques: number;
@@ -344,6 +346,7 @@ export default function AdminTab() {
   const [bPickingImagem, setBPickingImagem] = useState(false);
   const [bSuggestingDesc, setBSuggestingDesc] = useState(false);
   const [bTipo,          setBTipo]          = useState<'comercial' | 'evento'>('comercial');
+  const [bCategoria,     setBCategoria]     = useState<CategoriaEvento>('outro');
   const [bDataEvento,    setBDataEvento]    = useState<string | null>(null);
   const [bLocalEvento,   setBLocalEvento]   = useState('');
   const [bAlcance, setBAlcance] = useState<'nacional' | 'estado' | 'cidade'>('nacional');
@@ -958,7 +961,7 @@ export default function AdminTab() {
     setBAnunciante(''); setBTitulo(''); setBDescricao(''); setBLink(''); setBImagemUrl('');
     setBImagemPendingAsset(null);
     setBAtivo(true);
-    setBTipo('comercial'); setBDataEvento(null); setBLocalEvento('');
+    setBTipo('comercial'); setBCategoria('outro'); setBDataEvento(null); setBLocalEvento('');
     setBPeriodoInicio(todayISO()); setBPeriodoFim(null);
     setBAlcance('nacional'); setBEstados(''); setBCidades('');
     setBannerModalVisible(true);
@@ -974,6 +977,7 @@ export default function AdminTab() {
     setBImagemPendingAsset(null);
     setBAtivo(b.ativo);
     setBTipo(b.tipo ?? 'comercial');
+    setBCategoria(b.categoria ?? 'outro');
     setBDataEvento(b.data_evento ?? null);
     setBLocalEvento(b.local_evento ?? '');
     setBPeriodoInicio(b.periodo_inicio ?? null);
@@ -1032,6 +1036,7 @@ export default function AdminTab() {
       imagem_url:     imagemUrl,
       ativo:          bAtivo,
       tipo:           bTipo,
+      categoria:      bTipo === 'evento' ? bCategoria : 'outro',
       data_evento:    bTipo === 'evento' ? bDataEvento : null,
       local_evento:   bTipo === 'evento' ? bLocalEvento.trim() : null,
       periodo_inicio: bPeriodoInicio,
@@ -1052,7 +1057,7 @@ export default function AdminTab() {
     }
     setBannerModalVisible(false);
     fetchBanners(true);
-  }, [bAnunciante, bTitulo, bDescricao, bLink, bImagemUrl, bImagemPendingAsset, bAtivo, bTipo, bDataEvento, bLocalEvento, bPeriodoInicio, bPeriodoFim, bAlcance, bEstados, bCidades, bannerEditingId, fetchBanners]);
+  }, [bAnunciante, bTitulo, bDescricao, bLink, bImagemUrl, bImagemPendingAsset, bAtivo, bTipo, bCategoria, bDataEvento, bLocalEvento, bPeriodoInicio, bPeriodoFim, bAlcance, bEstados, bCidades, bannerEditingId, fetchBanners]);
 
   const handleToggleBannerActive = useCallback(async (b: BannerAdRow) => {
     setBannerToggling(b.id);
@@ -1591,6 +1596,29 @@ export default function AdminTab() {
 
                   {bTipo === 'evento' && (
                     <>
+                      <ThemedText style={{ fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginTop: 4 }}>
+                        CATEGORIA
+                      </ThemedText>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
+                        {CATEGORIAS_EVENTO.map(cat => {
+                          const cores = CORES_CATEGORIA[cat.value];
+                          const ativa = bCategoria === cat.value;
+                          return (
+                            <TouchableOpacity
+                              key={cat.value}
+                              style={[
+                                s.modeBtn,
+                                { borderColor: ativa ? cores.label : C.border, backgroundColor: ativa ? cores.fundo : 'transparent' },
+                              ]}
+                              onPress={() => setBCategoria(cat.value)}
+                              activeOpacity={0.8}>
+                              <ThemedText style={[s.modeBtnText, { color: ativa ? cores.label : theme.textSecondary }]}>
+                                {cat.label}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
                       <DateField label="Data do evento" value={bDataEvento} onChange={setBDataEvento} />
                       <TextInput
                         style={[s.searchInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
@@ -2509,7 +2537,14 @@ export default function AdminTab() {
                           </View>
                         )}
                         <View style={{ flex: 1 }}>
-                          <ThemedText type="smallBold" numberOfLines={1}>{evento.titulo}</ThemedText>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <ThemedText type="smallBold" numberOfLines={1} style={{ flexShrink: 1 }}>{evento.titulo}</ThemedText>
+                            <View style={[s.categoriaBadge, { backgroundColor: CORES_CATEGORIA[evento.categoria ?? 'outro'].fundo, borderColor: CORES_CATEGORIA[evento.categoria ?? 'outro'].borda }]}>
+                              <ThemedText style={{ fontSize: 10, fontWeight: '700', color: CORES_CATEGORIA[evento.categoria ?? 'outro'].label }}>
+                                {CATEGORIAS_EVENTO.find(c => c.value === (evento.categoria ?? 'outro'))?.label ?? 'Outro'}
+                              </ThemedText>
+                            </View>
+                          </View>
                           <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>
                             {ALCANCE_LABELS[evento.alcance]} · {evento.periodo} dias · R$ {(evento.valor_pago ?? 0).toFixed(2).replace('.', ',')}
                           </ThemedText>
@@ -2664,6 +2699,7 @@ const s = StyleSheet.create({
   card:        { borderRadius: C.radius.lg, padding: Spacing.three, gap: Spacing.two, borderWidth: 1, borderColor: C.border },
   playerRow:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: C.radius.pill },
+  categoriaBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: C.radius.pill, borderWidth: 1 },
   statusTxt:   { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 
   // Contestações

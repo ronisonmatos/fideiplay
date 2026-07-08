@@ -22,7 +22,16 @@ import { DateField } from '@/components/date-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
-import { ALCANCE_LABELS, PERIODOS, PRECOS_EVENTOS, type AlcanceEvento, type PeriodoEvento } from '@/constants/eventos-precos';
+import {
+  ALCANCE_LABELS,
+  calcularValorEvento,
+  descontoPorPeriodo,
+  PERIODO_MAX,
+  PERIODO_MIN,
+  type AlcanceEvento,
+  type PeriodoEvento,
+} from '@/constants/eventos-precos';
+import { CATEGORIAS_EVENTO, CORES_CATEGORIA, type CategoriaEvento } from '@/constants/banner-config';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
@@ -36,6 +45,13 @@ function formatBR(iso: string | null): string {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+
+// Estimativa de data final considerando aprovação hoje — a data real depende de quando o admin aprovar
+function dataFimEstimada(dias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // Evita o shift de timezone de `new Date('AAAA-MM-DD')` (interpretado como UTC)
@@ -70,6 +86,7 @@ export default function EventoPatrocinadoScreen() {
   // ── Etapa 1 ────────────────────────────────────────────────────────────────
   const [etapa, setEtapa] = useState<Etapa>(1);
   const [titulo, setTitulo] = useState('');
+  const [categoria, setCategoria] = useState<CategoriaEvento | null>(null);
   const [descricao, setDescricao] = useState('');
   const [dataInicio, setDataInicio] = useState<string | null>(null);
   const [dataFim, setDataFim] = useState<string | null>(null);
@@ -82,9 +99,15 @@ export default function EventoPatrocinadoScreen() {
   const [alcance, setAlcance] = useState<AlcanceEvento>('cidade');
   const [cidade, setCidade] = useState(profile?.cidade ?? '');
   const [estado, setEstado] = useState(profile?.estado ?? '');
-  const [periodo, setPeriodo] = useState<PeriodoEvento>(7);
+  const [periodo, setPeriodo] = useState<PeriodoEvento>(PERIODO_MIN);
 
-  const valor = PRECOS_EVENTOS[alcance][periodo];
+  const valor = calcularValorEvento(alcance, periodo);
+  const desconto = descontoPorPeriodo(periodo);
+  const valorPorDia = valor / periodo;
+
+  function ajustarPeriodo(delta: number) {
+    setPeriodo(p => Math.min(PERIODO_MAX, Math.max(PERIODO_MIN, p + delta)));
+  }
 
   // ── Etapa 3 — pagamento (mesmo padrão de app/pagamento.tsx, sem aba moedas) ──
   const [eventoId, setEventoId] = useState<string | null>(null);
@@ -125,6 +148,10 @@ export default function EventoPatrocinadoScreen() {
       Alert.alert('Preencha tudo', 'Título e descrição são obrigatórios.');
       return;
     }
+    if (!categoria) {
+      Alert.alert('Escolha a categoria', 'Selecione a categoria que melhor descreve o evento.');
+      return;
+    }
     if (!dataInicio || !dataFim) {
       Alert.alert('Preencha as datas', 'Informe o início e o fim do evento.');
       return;
@@ -155,6 +182,7 @@ export default function EventoPatrocinadoScreen() {
     const { id, error } = await criarEvento({
       usuarioId:   user.id,
       titulo:      titulo.trim(),
+      categoria:   categoria ?? 'outro',
       descricao:   descricao.trim(),
       imagemUrl:   imagemUrl || null,
       linkExterno: linkExterno.trim() || null,
@@ -338,6 +366,41 @@ export default function EventoPatrocinadoScreen() {
                   placeholderTextColor={theme.textSecondary}
                   maxLength={50}
                 />
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
+                  {CATEGORIAS_EVENTO.map(cat => {
+                    const cores = CORES_CATEGORIA[cat.value];
+                    const ativa = categoria === cat.value;
+                    return (
+                      <TouchableOpacity
+                        key={cat.value}
+                        style={[
+                          s.categoriaChip,
+                          { borderColor: ativa ? cores.label : C.border, backgroundColor: ativa ? cores.fundo : theme.backgroundElement },
+                        ]}
+                        onPress={() => setCategoria(cat.value)}
+                        activeOpacity={0.85}>
+                        <ThemedText style={{ fontSize: 12, fontWeight: '700', color: ativa ? cores.label : theme.textSecondary }}>
+                          {cat.label}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {categoria && (
+                  <View style={[s.categoriaPreview, { borderColor: CORES_CATEGORIA[categoria].borda, backgroundColor: CORES_CATEGORIA[categoria].fundo }]}>
+                    <ThemedText style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.5, color: CORES_CATEGORIA[categoria].label }}>
+                      EVENTO
+                    </ThemedText>
+                    <ThemedText style={{ fontSize: 11, fontWeight: '700', color: theme.text }} numberOfLines={1}>
+                      {titulo.trim() || 'Prévia do título do seu evento'}
+                    </ThemedText>
+                  </View>
+                )}
+                <ThemedText style={{ color: theme.textSecondary, fontSize: 11 }}>
+                  A categoria define a cor do seu banner no app
+                </ThemedText>
+
                 <TextInput
                   style={[s.textarea, { color: theme.text, borderColor: C.border, backgroundColor: theme.backgroundElement }]}
                   value={descricao}
@@ -430,26 +493,63 @@ export default function EventoPatrocinadoScreen() {
                 )}
 
                 <ThemedText style={s.sectionLabel}>PERÍODO</ThemedText>
-                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
-                  {PERIODOS.map(p => (
-                    <TouchableOpacity
-                      key={p}
-                      style={[s.periodoBtn, periodo === p && { backgroundColor: C.purple, borderColor: C.purple }]}
-                      onPress={() => setPeriodo(p)}
-                      activeOpacity={0.85}>
-                      <ThemedText style={{ fontWeight: '800', color: periodo === p ? '#fff' : theme.text }}>{p} dias</ThemedText>
-                    </TouchableOpacity>
-                  ))}
+                <View style={[s.stepperRow, { borderColor: C.border, backgroundColor: theme.backgroundElement }]}>
+                  <TouchableOpacity
+                    style={[s.stepperBtn, { opacity: periodo <= PERIODO_MIN ? 0.4 : 1 }]}
+                    onPress={() => ajustarPeriodo(-1)}
+                    disabled={periodo <= PERIODO_MIN}
+                    activeOpacity={0.7}>
+                    <ThemedText style={s.stepperBtnText}>−</ThemedText>
+                  </TouchableOpacity>
+                  <View style={s.stepperValue}>
+                    <ThemedText style={{ fontSize: 22, fontWeight: '900', color: theme.text }}>{periodo}</ThemedText>
+                    <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>dias</ThemedText>
+                  </View>
+                  <TouchableOpacity
+                    style={[s.stepperBtn, { opacity: periodo >= PERIODO_MAX ? 0.4 : 1 }]}
+                    onPress={() => ajustarPeriodo(1)}
+                    disabled={periodo >= PERIODO_MAX}
+                    activeOpacity={0.7}>
+                    <ThemedText style={s.stepperBtnText}>+</ThemedText>
+                  </TouchableOpacity>
                 </View>
+                <ThemedText style={{ color: theme.textSecondary, fontSize: 12, textAlign: 'center' }}>
+                  Mínimo de {PERIODO_MIN} dias · quanto mais dias, menor o valor por dia
+                </ThemedText>
+                <ThemedText style={{ color: theme.text, fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
+                  Se aprovado hoje, ficaria no ar até {formatBR(dataFimEstimada(periodo))}
+                </ThemedText>
 
                 <View style={[s.valorBox, { borderColor: C.gold + '55', backgroundColor: C.gold + '15' }]}>
                   <ThemedText style={{ color: theme.textSecondary, fontSize: 12 }}>Valor do anúncio</ThemedText>
                   <ThemedText style={{ color: C.gold, fontSize: 28, lineHeight: 34, fontWeight: '900' }}>
                     R$ {valor.toFixed(2).replace('.', ',')}
                   </ThemedText>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <ThemedText style={{ color: theme.textSecondary, fontSize: 12 }}>
+                      R$ {valorPorDia.toFixed(2).replace('.', ',')}/dia
+                    </ThemedText>
+                    {desconto > 0 && (
+                      <View style={[s.descontoBadge, { backgroundColor: C.green + '22', borderColor: C.green + '55' }]}>
+                        <ThemedText style={{ color: C.green, fontSize: 12, fontWeight: '800' }}>
+                          ✓ {(desconto * 100).toFixed(0)}% de desconto aplicado
+                        </ThemedText>
+                      </View>
+                    )}
+                  </View>
                   <ThemedText style={{ color: theme.textSecondary, fontSize: 12 }}>
                     O banner fica no ar por {periodo} dias a partir da aprovação
                   </ThemedText>
+                  {periodo < 15 && (
+                    <ThemedText style={{ color: C.purple, fontSize: 12, fontWeight: '700' }}>
+                      A partir de 15 dias, ganhe 10% de desconto por dia
+                    </ThemedText>
+                  )}
+                  {periodo >= 15 && periodo < 30 && (
+                    <ThemedText style={{ color: C.purple, fontSize: 12, fontWeight: '700' }}>
+                      A partir de 30 dias, ganhe 20% de desconto por dia
+                    </ThemedText>
+                  )}
                 </View>
 
                 <TouchableOpacity style={s.btnPrincipal} onPress={irParaEtapa3} activeOpacity={0.8}>
@@ -615,14 +715,27 @@ const s = StyleSheet.create({
   imagemPreview: { width: '100%', height: 140, borderRadius: C.radius.md },
   galleryBtn: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: C.radius.pill, borderWidth: 1.5, borderColor: C.purple + '88' },
 
+  categoriaChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: C.radius.pill, borderWidth: 1.5 },
+  categoriaPreview: { borderRadius: C.radius.md, borderWidth: 1.5, padding: Spacing.two, gap: 2 },
+
   alcanceCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
     padding: Spacing.three, borderRadius: C.radius.lg, borderWidth: 1.5,
   },
   alcanceCardActive: { backgroundColor: C.purple + '12' },
 
-  periodoBtn: { flex: 1, paddingVertical: 12, borderRadius: C.radius.pill, alignItems: 'center', borderWidth: 1.5, borderColor: C.border },
+  stepperRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: C.radius.pill, borderWidth: 1.5, padding: 6,
+  },
+  stepperBtn: {
+    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.purple,
+  },
+  stepperBtnText: { color: '#fff', fontSize: 22, fontWeight: '900', lineHeight: 24 },
+  stepperValue: { flex: 1, alignItems: 'center' },
   valorBox: { borderRadius: C.radius.lg, borderWidth: 1.5, padding: Spacing.three, gap: 4, alignItems: 'center' },
+  descontoBadge: { borderRadius: 99, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
 
   resumoCard: { borderRadius: C.radius.lg, padding: Spacing.three, gap: 4 },
   divider: { height: 1, marginVertical: 4 },

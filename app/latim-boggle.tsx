@@ -29,6 +29,7 @@ import { useGamePacks, mergeLatimLevels } from '@/hooks/use-game-packs';
 import { useTheme } from '@/hooks/use-theme';
 import { placeWordsAsRows } from '@/lib/word-grid';
 import { supabase } from '@/lib/supabase';
+import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'latim-boggle';
 
@@ -357,6 +358,7 @@ export default function LatimBoggleScreen() {
   }, [user, profile, revealsUsed, revealedPositions, refreshProfile]);
 
   const startWithDifficulty = useCallback((diff: LatimBoggleDifficulty) => {
+    playClickSound();
     const filtered = allLevels.filter(l => l.difficulty === diff);
     const resumeIndex = filtered.findIndex(l => !isLevelComplete(GAME_ID, l.id));
     setDifficulty(diff);
@@ -502,7 +504,7 @@ export default function LatimBoggleScreen() {
               Arraste o dedo por letras vizinhas (inclusive na diagonal) para formar
               palavras em latim usadas na liturgia.{'\n'}Escolha seu nível e comece!
             </ThemedText>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => setPhase('difficulty')} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => { playClickSound(); setPhase('difficulty'); }} activeOpacity={0.8}>
               <ThemedText style={styles.primaryBtnText}>ESCOLHER NÍVEL</ThemedText>
             </TouchableOpacity>
           </View>

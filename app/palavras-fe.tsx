@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergePuzzleThemes } from '@/hooks/use-game-packs';
 import { placeWords } from '@/lib/word-grid';
 import { supabase } from '@/lib/supabase';
+import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'palavras-fe';
 
@@ -119,6 +120,7 @@ export default function PalavrasFeScreen() {
   const reported = useRef(false);
 
   function startDifficulty(diff: Difficulty) {
+    playClickSound();
     const allThemes = mergePuzzleThemes(PUZZLE_THEMES, packs);
     const themes = allThemes.filter(t => t.difficulty === diff);
     const shuffled = [...themes].sort(() => Math.random() - 0.5);

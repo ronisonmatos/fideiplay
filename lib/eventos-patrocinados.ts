@@ -1,11 +1,13 @@
 import { supabase } from '@/lib/supabase';
 import { triggerDispatchNow } from '@/lib/admin-notifications';
 import type { AlcanceEvento, PeriodoEvento } from '@/constants/eventos-precos';
+import type { CategoriaEvento } from '@/constants/banner-config';
 
 export interface EventoPatrocinado {
   id:                       string;
   usuario_id:               string;
   titulo:                   string;
+  categoria:                CategoriaEvento;
   descricao:                string;
   imagem_url:               string | null;
   link_externo:             string | null;
@@ -33,6 +35,7 @@ export interface EventoPatrocinado {
 export interface NovoEventoInput {
   usuarioId:     string;
   titulo:        string;
+  categoria:     CategoriaEvento;
   descricao:     string;
   imagemUrl:     string | null;
   linkExterno:   string | null;
@@ -68,6 +71,7 @@ export async function criarEvento(input: NovoEventoInput): Promise<{ id: string 
     .insert({
       usuario_id:   input.usuarioId,
       titulo:       input.titulo,
+      categoria:    input.categoria,
       descricao:    input.descricao,
       imagem_url:   input.imagemUrl,
       link_externo: input.linkExterno,

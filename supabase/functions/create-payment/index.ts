@@ -7,6 +7,22 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+// Mesma fórmula de constants/eventos-precos.ts — duplicada aqui pois a function roda em Deno isolado.
+const PRECO_POR_DIA: Record<'cidade' | 'estado' | 'nacional', number> = {
+  cidade: 2.90,
+  estado: 5.90,
+  nacional: 11.90,
+};
+const FAIXAS_DESCONTO = [
+  { min: 30, desconto: 0.20 },
+  { min: 15, desconto: 0.10 },
+  { min: 7, desconto: 0 },
+];
+function calcularValorEvento(alcance: 'cidade' | 'estado' | 'nacional', dias: number): number {
+  const desconto = FAIXAS_DESCONTO.find(f => dias >= f.min)?.desconto ?? 0;
+  return Math.round(PRECO_POR_DIA[alcance] * dias * (1 - desconto) * 100) / 100;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -20,7 +36,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token ?? '');
     if (authError || !user) return json({ error: 'Não autorizado' }, 401);
 
-    const { trilha_id, method, trilha_titulo, preco, tipo = 'trilha', evento_id, evento_titulo } = await req.json() as {
+    const { trilha_id, method, trilha_titulo, preco: precoCliente, tipo = 'trilha', evento_id, evento_titulo } = await req.json() as {
       trilha_id?: number;
       method: 'pix' | 'card';
       trilha_titulo?: string;
@@ -29,6 +45,19 @@ Deno.serve(async (req: Request) => {
       evento_id?: string;
       evento_titulo?: string;
     };
+
+    let preco = precoCliente;
+    if (tipo === 'evento') {
+      if (!evento_id) return json({ error: 'evento_id é obrigatório' }, 400);
+      const { data: evento, error: eventoError } = await supabase
+        .from('eventos_patrocinados')
+        .select('alcance, periodo, usuario_id')
+        .eq('id', evento_id)
+        .single();
+      if (eventoError || !evento) return json({ error: 'Evento não encontrado' }, 404);
+      if (evento.usuario_id !== user.id) return json({ error: 'Não autorizado' }, 403);
+      preco = calcularValorEvento(evento.alcance, evento.periodo);
+    }
 
     const descricaoItem = tipo === 'evento' ? `Evento: ${evento_titulo}` : `Trilha: ${trilha_titulo}`;
     const paymentRow = tipo === 'evento'

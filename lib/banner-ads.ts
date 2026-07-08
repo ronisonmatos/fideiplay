@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import type { CategoriaEvento } from '@/constants/banner-config';
 
 export interface BannerAd {
   id:             string;
@@ -15,6 +16,7 @@ export interface BannerAd {
   alcance:        'nacional' | 'estado' | 'cidade';
   estados:        string[];
   cidades:        string[];
+  categoria:      CategoriaEvento;
   // De onde veio o registro — decide qual RPC de impressão/clique chamar.
   origem:         'banner_ads' | 'evento_patrocinado';
 }
@@ -39,7 +41,7 @@ async function fetchActiveEventosPatrocinados(localizacao?: LocalizacaoFiltro): 
   const hoje = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('eventos_patrocinados')
-    .select('id, titulo, descricao, imagem_url, link_externo, local_evento, data_inicio, exibicao_inicio, exibicao_fim, alcance, estados, cidades')
+    .select('id, titulo, descricao, imagem_url, link_externo, local_evento, data_inicio, exibicao_inicio, exibicao_fim, alcance, estados, cidades, categoria')
     .in('status', ['aprovado', 'ativo'])
     .lte('exibicao_inicio', hoje)
     .gte('exibicao_fim', hoje);
@@ -62,6 +64,7 @@ async function fetchActiveEventosPatrocinados(localizacao?: LocalizacaoFiltro): 
       alcance:        evento.alcance,
       estados:        evento.estados ?? [],
       cidades:        evento.cidades ?? [],
+      categoria:      (evento.categoria ?? 'outro') as CategoriaEvento,
       origem:         'evento_patrocinado' as const,
     }));
 }
@@ -71,7 +74,7 @@ export async function fetchActiveBannerAds(localizacao?: LocalizacaoFiltro): Pro
     const [{ data, error }, eventos] = await Promise.all([
       supabase
         .from('banner_ads')
-        .select('id, anunciante, titulo, descricao, link, imagem_url, tipo, data_evento, local_evento, periodo_inicio, periodo_fim, alcance, estados, cidades')
+        .select('id, anunciante, titulo, descricao, link, imagem_url, tipo, data_evento, local_evento, periodo_inicio, periodo_fim, alcance, estados, cidades, categoria')
         .eq('ativo', true)
         .order('created_at', { ascending: true }),
       fetchActiveEventosPatrocinados(localizacao),

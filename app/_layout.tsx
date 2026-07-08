@@ -185,8 +185,8 @@ function AuthGate() {
 
   useEffect(() => {
     if (loading) return;
-    setupNotificationChannel();
-    scheduleDailyReminder();
+    setupNotificationChannel().catch(() => {});
+    scheduleDailyReminder().catch(() => {});
     // Pede localização logo em seguida da permissão de notificação — mesmo
     // momento de onboarding, evita ter que ir em Configurações pedir depois.
     solicitarLocalizacaoRef.current().catch(() => {});

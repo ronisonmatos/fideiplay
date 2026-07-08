@@ -30,6 +30,8 @@ import { scheduleCoinBonusReminder } from '@/lib/notifications';
 import { ECONOMY } from '@/constants/economy';
 import { CoinsAnimation } from '@/components/coins-animation';
 import { fetchEventosPatrocinadosAtivo } from '@/lib/eventos-patrocinados';
+import { NIVEIS } from '@/constants/teste-conhecimento';
+import { fetchUltimoResultado, type TesteConhecimentoRow } from '@/lib/teste-conhecimento';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -213,12 +215,14 @@ export default function ContaScreen() {
   }, [user, hydrate]);
 
   const [eventosAtivo, setEventosAtivo] = useState(false);
+  const [testeResultado, setTesteResultado] = useState<TesteConhecimentoRow | null>(null);
 
   useFocusEffect(useCallback(() => {
     loadRanking();
     refreshProgress();
     fetchEventosPatrocinadosAtivo().then(setEventosAtivo);
-  }, [loadRanking, refreshProgress]));
+    if (user?.id) fetchUltimoResultado(user.id).then(setTesteResultado);
+  }, [loadRanking, refreshProgress, user?.id]));
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -343,6 +347,27 @@ export default function ContaScreen() {
               <ThemedText themeColor="textSecondary" style={styles.emptyScore}>Jogue para acumular pontos! 🙏</ThemedText>
             )}
 
+            {/* Nível de conhecimento */}
+            <ThemedText style={styles.sectionLabel}>NÍVEL DE CONHECIMENTO</ThemedText>
+            <TouchableOpacity
+              style={[styles.nivelCard, { backgroundColor: '#26215C' }]}
+              onPress={() => router.push('/teste-conhecimento')}
+              activeOpacity={0.85}>
+              <ThemedText style={{ fontSize: 22 }}>🎯</ThemedText>
+              <View style={{ flex: 1 }}>
+                {testeResultado ? (
+                  <ThemedText style={styles.nivelCardTitle}>
+                    {NIVEIS.find(n => n.id === testeResultado.nivel_geral)?.label ?? '—'}
+                  </ThemedText>
+                ) : (
+                  <ThemedText style={styles.nivelCardTitle}>Ainda não fez o teste</ThemedText>
+                )}
+              </View>
+              <ThemedText style={{ color: C.purple, fontSize: 12, fontWeight: '700' }}>
+                {testeResultado ? 'Refazer' : 'Fazer o teste'} →
+              </ThemedText>
+            </TouchableOpacity>
+
             {/* Weekly ranking */}
             <ThemedText style={styles.sectionLabel}>RANKING SEMANAL STOP</ThemedText>
             <ThemedView type="backgroundElement" style={styles.rankCard}>
@@ -407,7 +432,7 @@ export default function ContaScreen() {
                   style={[styles.comunidadeBtn, { backgroundColor: '#26215C' }]}
                   onPress={() => router.push('/evento-patrocinado')}
                   activeOpacity={0.85}>
-                  <ThemedText style={{ fontSize: 18 }}>🎪</ThemedText>
+                  <Image source={require('@/assets/images/icone_evento.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
                   <ThemedText style={styles.comunidadeBtnText}>Divulgar meu evento</ThemedText>
                   <ThemedText style={{ color: C.purple, fontSize: 16 }}>›</ThemedText>
                 </TouchableOpacity>
@@ -512,6 +537,13 @@ const styles = StyleSheet.create({
   scoreValue: { fontSize: 28 },
   scoreSmall: { fontSize: 12, textAlign: 'center' },
   emptyScore: { fontSize: 13, textAlign: 'center', marginTop: -Spacing.one },
+
+  // Nível de conhecimento
+  nivelCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
+    padding: Spacing.three, borderRadius: C.radius.lg,
+  },
+  nivelCardTitle: { color: '#E8E6FF', fontWeight: '800', fontSize: 14 },
 
   // Achievements
   achievementGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },

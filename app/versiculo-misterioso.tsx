@@ -15,6 +15,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeVersiculo } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
 import { GameRewardBanner } from '@/components/game-reward-banner';
+import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'versiculo';
 
@@ -119,6 +120,7 @@ export default function VersiculoMisteriosoScreen() {
   }, [phase, score, correctCount, frases.length, reportResult, user, refreshProfile, difficulty, markLevelComplete]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
+    playClickSound();
     const allF = mergeVersiculo(ALL_FRASES, packs);
     const filtered = shuffle(allF.filter(f => f.difficulty === diff))
       .map(f => ({ ...f, options: shuffle(f.options) }));
@@ -227,7 +229,7 @@ export default function VersiculoMisteriosoScreen() {
               <ThemedText themeColor="textSecondary" style={s.ruleItem}>📘 Revelação moderada → 3 pontos</ThemedText>
               <ThemedText themeColor="textSecondary" style={s.ruleItem}>📚 Muitas palavras reveladas → 1 ponto</ThemedText>
             </ThemedView>
-            <TouchableOpacity style={s.primaryBtn} onPress={() => setPhase('difficulty')} activeOpacity={0.8}>
+            <TouchableOpacity style={s.primaryBtn} onPress={() => { playClickSound(); setPhase('difficulty'); }} activeOpacity={0.8}>
               <ThemedText style={s.primaryBtnText}>ESCOLHER NÍVEL</ThemedText>
             </TouchableOpacity>
           </View>

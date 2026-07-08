@@ -101,7 +101,6 @@ export async function scheduleDailyReminder() {
       title: '📖 Hora de estudar!',
       body: 'Que tal aprofundar sua fé hoje? Uma lição por dia forma um católico sólido.',
       sound: 'church_bell.wav',
-      android: { largeIcon: require('../assets/images/logo_SantosPlay.png'), channelId: NOTIF_CHANNEL },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -135,7 +134,6 @@ export async function scheduleCoinBonusReminder() {
       title: '🪙 Seu bônus está disponível!',
       body: 'Já faz 2 horas — volte ao SantosPlay para resgatar suas moedas.',
       sound: 'church_bell.wav',
-      android: { largeIcon: require('../assets/images/logo_SantosPlay.png'), channelId: NOTIF_CHANNEL },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,

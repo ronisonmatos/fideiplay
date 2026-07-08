@@ -32,6 +32,7 @@ import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { supabase } from '@/lib/supabase';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 import { isContestable, submitContest } from '@/lib/stop-contests';
+import { playClickSound } from '@/lib/click-sound';
 
 const BRAND          = '#EF9F27';
 const TIMER_DURATION = 90;
@@ -317,6 +318,7 @@ export default function StopCatolicoScreen() {
   }, [clearSpinTimeouts, scaleAnim]);
 
   const handleVamosJogar = useCallback(() => {
+    playClickSound();
     const cats = slots.map(k => allCategories.find(c => c.key === k)).filter(Boolean) as StopCategory[];
     startGame(cats);
   }, [slots, allCategories, startGame]);
@@ -353,7 +355,7 @@ export default function StopCatolicoScreen() {
             <View style={s.modeRow}>
               <TouchableOpacity
                 style={[s.modeCard, { backgroundColor: BRAND }]}
-                onPress={() => setPhase('selecting')}
+                onPress={() => { playClickSound(); setPhase('selecting'); }}
                 activeOpacity={0.8}>
                 <ThemedText style={s.modeEmoji}>🎲</ThemedText>
                 <ThemedText style={s.modeTitle}>Jogar Solo</ThemedText>
@@ -361,7 +363,7 @@ export default function StopCatolicoScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.modeCard, { backgroundColor: C.purple }]}
-                onPress={() => router.push('/stop-online')}
+                onPress={() => { playClickSound(); router.push('/stop-online'); }}
                 activeOpacity={0.8}>
                 <ThemedText style={s.modeEmoji}>🌐</ThemedText>
                 <ThemedText style={s.modeTitle}>Jogar Online</ThemedText>
@@ -637,7 +639,7 @@ export default function StopCatolicoScreen() {
             <GameRewardBanner xp={(bankValidCount ?? 0) * ECONOMY.XP_MEDIO} coins={coinsEarned} />
             <TouchableOpacity
               style={[s.primaryBtn, { backgroundColor: BRAND }]}
-              onPress={() => setPhase('selecting')}
+              onPress={() => { playClickSound(); setPhase('selecting'); }}
               activeOpacity={0.8}>
               <ThemedText style={s.btnText}>🎲  NOVA LETRA</ThemedText>
             </TouchableOpacity>

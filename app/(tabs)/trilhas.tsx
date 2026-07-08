@@ -10,11 +10,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
+import { NIVEIS } from '@/constants/teste-conhecimento';
 import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { pullProgress } from '@/lib/progress-sync';
-import { fetchEventosPatrocinadosAtivo } from '@/lib/eventos-patrocinados';
+import { fetchUltimoResultado, type TesteConhecimentoRow } from '@/lib/teste-conhecimento';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
 
@@ -37,10 +38,9 @@ export default function TrilhasScreen() {
   const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [trilhaConfigs, setTrilhaConfigs] = useState<Record<number, TrilhaConfig>>({});
-  const [eventosAtivo, setEventosAtivo] = useState(false);
+  const [testeResultado, setTesteResultado] = useState<TesteConhecimentoRow | null>(null);
 
   const loadData = useCallback(async () => {
-    fetchEventosPatrocinadosAtivo().then(setEventosAtivo);
     if (user?.id) {
       const remote = await pullProgress(user.id).catch(() => null);
       if (remote) {
@@ -49,6 +49,9 @@ export default function TrilhasScreen() {
           xpTotal:          remote.trilhasXp,
         })).catch(() => {});
       }
+      fetchUltimoResultado(user.id).then(setTesteResultado);
+    } else {
+      setTesteResultado(null);
     }
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw) setProgresso(JSON.parse(raw));
@@ -108,17 +111,6 @@ export default function TrilhasScreen() {
             )}
           </View>
 
-          {eventosAtivo && (
-            <TouchableOpacity
-              style={[styles.eventoCard, { backgroundColor: '#26215C' }]}
-              onPress={() => router.push('/evento-patrocinado')}
-              activeOpacity={0.85}>
-              <ThemedText style={{ fontSize: 20 }}>🎪</ThemedText>
-              <ThemedText style={styles.eventoCardText}>Divulgar meu evento</ThemedText>
-              <ThemedText style={{ color: C.purple, fontSize: 16 }}>›</ThemedText>
-            </TouchableOpacity>
-          )}
-
           {/* Progresso geral */}
           <View style={[styles.progressCard, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
             <View style={styles.progressTop}>
@@ -131,6 +123,29 @@ export default function TrilhasScreen() {
               <View style={[styles.barFill, { width: `${progressoGeral * 100}%`, backgroundColor: C.purple }]} />
             </View>
           </View>
+
+          {/* Teste de Conhecimento Católico */}
+          <TouchableOpacity
+            style={[styles.testeCard, { backgroundColor: '#26215C', borderColor: C.purple + '55' }]}
+            onPress={() => router.push('/teste-conhecimento')}
+            activeOpacity={0.85}>
+            <ThemedText style={{ fontSize: 22 }}>🎯</ThemedText>
+            <View style={{ flex: 1, gap: 2 }}>
+              <ThemedText style={styles.testeCardTitle}>Teste seu nível de católico</ThemedText>
+              {testeResultado ? (
+                <ThemedText style={styles.testeCardSub}>
+                  Seu nível: {NIVEIS.find(n => n.id === testeResultado.nivel_geral)?.label ?? '—'}
+                </ThemedText>
+              ) : (
+                <ThemedText style={styles.testeCardSub}>
+                  Descubra seus pontos fortes e onde você pode crescer na fé.
+                </ThemedText>
+              )}
+            </View>
+            <ThemedText style={{ color: C.purple, fontSize: 12, fontWeight: '700' }}>
+              {testeResultado ? 'Refazer' : 'Fazer o teste'} →
+            </ThemedText>
+          </TouchableOpacity>
 
           {/* Trilhas disponíveis (gratuitas) */}
           <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>DISPONÍVEIS</ThemedText>
@@ -269,11 +284,12 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3 },
   title: { fontSize: 26, fontWeight: '800', letterSpacing: 0.2, marginTop: 2 },
 
-  eventoCard: {
+  testeCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
-    padding: Spacing.three, borderRadius: C.radius.lg,
+    padding: Spacing.three, borderRadius: 16, borderWidth: 1.5,
   },
-  eventoCardText: { flex: 1, color: '#E8E6FF', fontWeight: '700', fontSize: 14 },
+  testeCardTitle: { color: '#E8E6FF', fontWeight: '800', fontSize: 14 },
+  testeCardSub: { color: '#9B97D4', fontSize: 12 },
   xpBadge: {
     borderRadius: 99,
     borderWidth: 1,

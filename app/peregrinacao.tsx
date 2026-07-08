@@ -15,6 +15,7 @@ import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeSanctuaries } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
+import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'peregrinacao';
 
@@ -103,6 +104,7 @@ export default function PeregrinacaoScreen() {
   }, [screen, correct, activeSanctuary, unlocked, allSanctuaries.length, user, refreshProfile]);
 
   const enterSanctuary = (idx: number) => {
+    playClickSound();
     setActiveSanctuary(idx);
     setShuffledQuestions(allSanctuaries[idx].questions.map(shuffleQuestion));
     setQIndex(0);
