@@ -70,6 +70,7 @@ interface HistoryMessage {
   content:    string | null;
   sent_at:    string;
   deleted_at: string | null;
+  deleted_by_name: string | null;
 }
 
 // Troca com a IA católica (/ia) — nunca gravada no banco/chat público, mas
@@ -112,10 +113,12 @@ const DateSeparator = memo(function DateSeparator({ label }: { label: string }) 
 const MessageBubble = memo(function MessageBubble({
   msg,
   isOwn,
+  isAdmin,
   onDelete,
 }: {
   msg: MensagemChat;
   isOwn: boolean;
+  isAdmin: boolean;
   onDelete: (id: string) => void;
 }) {
   const theme = useTheme();
@@ -125,11 +128,14 @@ const MessageBubble = memo(function MessageBubble({
   const borderCol = isOwn ? 'transparent' : uColor;
   const textColor = isOwn ? '#fff' : theme.text;
   const timeColor = isOwn ? 'rgba(255,255,255,0.55)' : theme.textSecondary;
+  const canDelete = isOwn || isAdmin;
 
   function confirmDelete() {
     Alert.alert(
-      'Excluir mensagem?',
-      'Ela some do chat para todo mundo agora.',
+      isOwn ? 'Excluir mensagem?' : `Excluir mensagem de ${msg.user_name}?`,
+      isOwn
+        ? 'Ela some do chat para todo mundo agora.'
+        : 'Ação de admin: ela some do chat para todo mundo agora e fica registrado que você excluiu.',
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Excluir', style: 'destructive', onPress: () => onDelete(msg.id) },
@@ -143,8 +149,8 @@ const MessageBubble = memo(function MessageBubble({
         <AvatarImage value={msg.avatar_emoji || '🙏'} size={28} borderColor={uColor} />
       )}
       <TouchableOpacity
-        activeOpacity={isOwn ? 0.85 : 1}
-        onLongPress={isOwn ? confirmDelete : undefined}
+        activeOpacity={canDelete ? 0.85 : 1}
+        onLongPress={canDelete ? confirmDelete : undefined}
         style={[
           s.bubble,
           { backgroundColor: bubbleBg, borderLeftColor: borderCol },
@@ -346,16 +352,22 @@ export default function ChatScreen() {
     return () => { isFocused.current = false; };
   }, [markAllRead]));
 
-  // Exclusão manual (long-press na própria bolha) — soft delete: marca
-  // deleted_at em vez de apagar a linha, mensagens ficam guardadas indefinidamente.
+  // Exclusão manual (long-press na própria bolha, ou em qualquer bolha se
+  // admin) — soft delete: marca deleted_at em vez de apagar a linha,
+  // mensagens ficam guardadas indefinidamente. deleted_by/deleted_by_name
+  // registram quem excluiu, útil quando é um admin excluindo msg de outro.
   const handleDeleteMessage = useCallback((id: string) => {
     removerMensagem(id);
     channelRef.current?.send({ type: 'broadcast', event: 'message_deleted', payload: { id } });
     supabase.from('community_messages')
-      .update({ deleted_at: new Date().toISOString() })
+      .update({
+        deleted_at:      new Date().toISOString(),
+        deleted_by:      user?.id ?? null,
+        deleted_by_name: profile?.name ?? null,
+      })
       .eq('id', id)
       .then(() => {});
-  }, [removerMensagem]);
+  }, [removerMensagem, user, profile]);
 
   // ── Histórico admin ───────────────────────────────────────────────────────
   // Consulta community_messages direto (não é apagada fisicamente, só soft
@@ -368,7 +380,7 @@ export default function ChatScreen() {
     const since = new Date(Date.now() - HISTORY_24H).toISOString();
     const { data } = await supabase
       .from('community_messages')
-      .select('id, user_id, user_name, content, sent_at:created_at, deleted_at')
+      .select('id, user_id, user_name, content, sent_at:created_at, deleted_at, deleted_by_name')
       .gte('created_at', since)
       .order('created_at', { ascending: true });
     setHistoryMessages((data ?? []) as HistoryMessage[]);
@@ -578,7 +590,9 @@ export default function ChatScreen() {
                           {msg.user_name ?? 'Jogador'}
                         </ThemedText>
                         {msg.deleted_at && (
-                          <ThemedText style={{ fontSize: 9, fontWeight: '700', color: C.red }}>EXCLUÍDA</ThemedText>
+                          <ThemedText style={{ fontSize: 9, fontWeight: '700', color: C.red }}>
+                            EXCLUÍDA{msg.deleted_by_name ? ` · por ${msg.deleted_by_name}` : ''}
+                          </ThemedText>
                         )}
                       </View>
                       <ThemedText style={[s.histContent, { color: theme.text }]}>
@@ -635,6 +649,7 @@ export default function ChatScreen() {
               <MessageBubble
                 msg={item.msg}
                 isOwn={item.msg.user_id === user.id}
+                isAdmin={!!profile?.is_admin}
                 onDelete={handleDeleteMessage}
               />
             ) : item.kind === 'ai' ? (
