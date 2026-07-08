@@ -37,6 +37,8 @@ import {
 } from '@/lib/admin-trilhas';
 import { broadcastNotification, sendNotificationToUser, triggerDispatchNow } from '@/lib/admin-notifications';
 import { suggestBannerDescription } from '@/lib/banner-ads';
+import { ALCANCE_LABELS } from '@/constants/eventos-precos';
+import { notificarUsuario, type EventoPatrocinado } from '@/lib/eventos-patrocinados';
 
 const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 
@@ -142,9 +144,10 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'config';
+type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
+type EventosSub      = 'pendentes' | 'historico';
 type FilterStatus   = 'pending' | 'approved' | 'rejected';
 type SupportFilter  = 'unread' | 'all';
 
@@ -349,10 +352,25 @@ export default function AdminTab() {
   const [bPeriodoInicio, setBPeriodoInicio] = useState<string | null>(null);
   const [bPeriodoFim,    setBPeriodoFim]    = useState<string | null>(null);
 
-  // ── Estado: Configurações do app (banner ligado/desligado) ────────────────
+  // ── Estado: Eventos patrocinados (fila de aprovação) ──────────────────────
+  const [eventosSub,         setEventosSub]         = useState<EventosSub>('pendentes');
+  const [eventosPendentes,   setEventosPendentes]   = useState<EventoPatrocinado[]>([]);
+  const [eventosHistorico,   setEventosHistorico]   = useState<EventoPatrocinado[]>([]);
+  const [eventosLoading,     setEventosLoading]     = useState(false);
+  const [eventosRefresh,     setEventosRefresh]     = useState(false);
+  const [eventosError,       setEventosError]       = useState<string | null>(null);
+  const [eventoActing,       setEventoActing]       = useState<string | null>(null);
+  const [rejeitarModalVisible, setRejeitarModalVisible] = useState(false);
+  const [rejeitarAlvo,       setRejeitarAlvo]       = useState<EventoPatrocinado | null>(null);
+  const [motivoRejeicao,     setMotivoRejeicao]     = useState('');
+  const [rejeitando,         setRejeitando]         = useState(false);
+
+  // ── Estado: Configurações do app (banner/eventos ligado/desligado) ────────
   const [configBannerAtivo, setConfigBannerAtivo] = useState(true);
+  const [configEventosAtivo, setConfigEventosAtivo] = useState(true);
   const [configLoading,     setConfigLoading]     = useState(false);
   const [configSaving,      setConfigSaving]      = useState(false);
+  const [configEventosSaving, setConfigEventosSaving] = useState(false);
 
   // ── Fetch: Contestações ───────────────────────────────────────────────────
   const fetchContests = useCallback(async (silent = false) => {
@@ -425,10 +443,41 @@ export default function AdminTab() {
   const fetchConfig = useCallback(async () => {
     if (!profile?.is_admin) return;
     setConfigLoading(true);
-    const { data } = await supabase.from('app_config').select('value').eq('key', 'banner_ativo').maybeSingle();
-    setConfigBannerAtivo(data?.value !== 'false');
+    const [{ data: banner }, { data: eventos }] = await Promise.all([
+      supabase.from('app_config').select('value').eq('key', 'banner_ativo').maybeSingle(),
+      supabase.from('app_config').select('value').eq('key', 'eventos_patrocinados_ativo').maybeSingle(),
+    ]);
+    setConfigBannerAtivo(banner?.value !== 'false');
+    setConfigEventosAtivo(eventos?.value !== 'false');
     setConfigLoading(false);
   }, [profile?.is_admin]);
+
+  // ── Fetch: Eventos patrocinados ───────────────────────────────────────────
+  const fetchEventos = useCallback(async (silent = false) => {
+    if (!profile?.is_admin) return;
+    if (!silent) setEventosLoading(true);
+    setEventosError(null);
+    if (eventosSub === 'pendentes') {
+      const { data, error } = await supabase
+        .from('eventos_patrocinados')
+        .select('*')
+        .eq('status', 'aguardando_aprovacao')
+        .order('criado_em', { ascending: true });
+      if (error) setEventosError(error.message);
+      else setEventosPendentes((data ?? []) as EventoPatrocinado[]);
+    } else {
+      const { data, error } = await supabase
+        .from('eventos_patrocinados')
+        .select('*')
+        .in('status', ['aprovado', 'ativo', 'rejeitado', 'encerrado'])
+        .order('criado_em', { ascending: false })
+        .limit(100);
+      if (error) setEventosError(error.message);
+      else setEventosHistorico((data ?? []) as EventoPatrocinado[]);
+    }
+    setEventosLoading(false);
+    setEventosRefresh(false);
+  }, [eventosSub, profile?.is_admin]);
 
   // Recarrega ao focar a aba
   useFocusEffect(useCallback(() => {
@@ -436,8 +485,9 @@ export default function AdminTab() {
     else if (section === 'support') fetchSupport();
     else if (section === 'ads') fetchAds();
     else if (section === 'banners') fetchBanners();
+    else if (section === 'eventos') fetchEventos();
     else if (section === 'config') fetchConfig();
-  }, [section, fetchContests, fetchSupport, fetchAds, fetchBanners, fetchConfig]));
+  }, [section, fetchContests, fetchSupport, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {
@@ -1035,6 +1085,69 @@ export default function AdminTab() {
     );
   }, []);
 
+  // ── Ações: Eventos patrocinados ───────────────────────────────────────────
+  const handleAprovarEvento = useCallback((evento: EventoPatrocinado) => {
+    Alert.alert(
+      'Aprovar evento?',
+      `"${evento.titulo}" entra no ar por ${evento.periodo} dias.`,
+      [{ text: 'Cancelar', style: 'cancel' }, {
+        text: 'Aprovar',
+        onPress: async () => {
+          setEventoActing(evento.id);
+          const inicio = todayISO();
+          const fimDate = new Date();
+          fimDate.setDate(fimDate.getDate() + evento.periodo);
+          const fim = `${fimDate.getFullYear()}-${String(fimDate.getMonth() + 1).padStart(2, '0')}-${String(fimDate.getDate()).padStart(2, '0')}`;
+
+          const { error } = await supabase.from('eventos_patrocinados').update({
+            status:          'aprovado',
+            aprovado_por:    user!.id,
+            aprovado_em:     new Date().toISOString(),
+            exibicao_inicio: inicio,
+            exibicao_fim:    fim,
+          }).eq('id', evento.id);
+
+          if (!error) {
+            notificarUsuario(
+              evento.usuario_id,
+              '🎉 Evento aprovado!',
+              `Seu evento "${evento.titulo}" foi aprovado e já está no ar!`,
+            ).catch(() => {});
+            setEventosPendentes(prev => prev.filter(e => e.id !== evento.id));
+          } else {
+            Alert.alert('Erro', 'Não foi possível aprovar. Tente novamente.');
+          }
+          setEventoActing(null);
+        },
+      }],
+    );
+  }, [user]);
+
+  const handleAbrirRejeitar = useCallback((evento: EventoPatrocinado) => {
+    setRejeitarAlvo(evento);
+    setMotivoRejeicao('');
+    setRejeitarModalVisible(true);
+  }, []);
+
+  const handleConfirmarRejeitar = useCallback(async () => {
+    const motivo = motivoRejeicao.trim();
+    if (!motivo || !rejeitarAlvo) {
+      Alert.alert('Informe o motivo', 'O motivo da rejeição é obrigatório.');
+      return;
+    }
+    setRejeitando(true);
+    const { data, error } = await supabase.functions.invoke('reembolsar-evento', {
+      body: { evento_id: rejeitarAlvo.id, motivo },
+    });
+    setRejeitando(false);
+    if (error || data?.error) {
+      Alert.alert('Erro', 'Não foi possível rejeitar/reembolsar o evento. Tente novamente.');
+      return;
+    }
+    setEventosPendentes(prev => prev.filter(e => e.id !== rejeitarAlvo.id));
+    setRejeitarModalVisible(false);
+  }, [motivoRejeicao, rejeitarAlvo]);
+
   // ── Ações: Configurações ──────────────────────────────────────────────────
   const handleToggleConfigBannerAtivo = useCallback(async (value: boolean) => {
     setConfigSaving(true);
@@ -1048,6 +1161,20 @@ export default function AdminTab() {
       Alert.alert('Erro', 'Não foi possível atualizar a configuração.');
     }
     setConfigSaving(false);
+  }, []);
+
+  const handleToggleConfigEventosAtivo = useCallback(async (value: boolean) => {
+    setConfigEventosSaving(true);
+    setConfigEventosAtivo(value);
+    const { error } = await supabase
+      .from('app_config')
+      .update({ value: value ? 'true' : 'false', updated_at: new Date().toISOString() })
+      .eq('key', 'eventos_patrocinados_ativo');
+    if (error) {
+      setConfigEventosAtivo(!value);
+      Alert.alert('Erro', 'Não foi possível atualizar a configuração.');
+    }
+    setConfigEventosSaving(false);
   }, []);
 
   function getAdStatus(ad: AdRow): { label: string; color: string } {
@@ -1578,6 +1705,7 @@ export default function AdminTab() {
             { key: 'notifications', label: 'Notificar',     icon: '🔔' },
             { key: 'ads',           label: 'Anúncios',      icon: '📢' },
             { key: 'banners',       label: 'Banners',       icon: '🪧' },
+            { key: 'eventos',       label: 'Eventos',       icon: '🎪' },
             { key: 'config',        label: 'Config',        icon: '⚙️' },
           ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
             const active = section === key;
@@ -2283,6 +2411,149 @@ export default function AdminTab() {
           </>
         )}
 
+        {/* ══ SEÇÃO: EVENTOS PATROCINADOS ══ */}
+        {section === 'eventos' && (
+          <>
+            <Modal
+              visible={rejeitarModalVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setRejeitarModalVisible(false)}>
+              <View style={s.motivoOverlay}>
+                <View style={[s.motivoBox, { backgroundColor: theme.backgroundElement }]}>
+                  <ThemedText type="smallBold">Motivo da rejeição</ThemedText>
+                  <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                    O usuário verá esse motivo e o valor será reembolsado automaticamente.
+                  </ThemedText>
+                  <TextInput
+                    style={[s.replyInput, { color: theme.text, backgroundColor: theme.background, borderColor: C.border }]}
+                    value={motivoRejeicao}
+                    onChangeText={setMotivoRejeicao}
+                    placeholder="Ex.: Conteúdo não relacionado à fé católica"
+                    placeholderTextColor={theme.textSecondary}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                  <View style={s.replyActions}>
+                    <TouchableOpacity
+                      style={s.cancelReplyBtn}
+                      onPress={() => setRejeitarModalVisible(false)}
+                      disabled={rejeitando}
+                      activeOpacity={0.7}>
+                      <ThemedText style={{ fontSize: 13 }}>Cancelar</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[s.sendReplyBtn, { backgroundColor: C.red }, rejeitando && { opacity: 0.6 }]}
+                      onPress={handleConfirmarRejeitar}
+                      disabled={rejeitando}
+                      activeOpacity={0.8}>
+                      {rejeitando
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <ThemedText style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Rejeitar e reembolsar</ThemedText>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+
+            <View style={[s.filterRow, { borderBottomColor: C.border }]}>
+              {(['pendentes', 'historico'] as EventosSub[]).map(f => {
+                const active = eventosSub === f;
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    style={[s.filterBtn, active && { borderBottomWidth: 2, borderBottomColor: C.purple }]}
+                    onPress={() => setEventosSub(f)}
+                    activeOpacity={0.7}>
+                    <ThemedText style={{ fontSize: 16, lineHeight: 20 }}>{f === 'pendentes' ? '⏳' : '📜'}</ThemedText>
+                    <ThemedText style={[s.filterTxt, { color: active ? C.purple : theme.textSecondary }]}>
+                      {f === 'pendentes' ? 'Pendentes' : 'Histórico'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {eventosLoading ? (
+              <View style={s.centerFlex}><ActivityIndicator color={C.purple} /></View>
+            ) : eventosError ? (
+              <ErrorState message={eventosError} onRetry={() => fetchEventos()} />
+            ) : (
+              <ScrollView
+                contentContainerStyle={s.scroll}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={eventosRefresh}
+                    onRefresh={() => { setEventosRefresh(true); fetchEventos(true); }}
+                    tintColor={C.purple}
+                  />
+                }>
+                {(eventosSub === 'pendentes' ? eventosPendentes : eventosHistorico).length === 0 ? (
+                  <EmptyState icon="🎪" color={C.purple}
+                    title={eventosSub === 'pendentes' ? 'Nenhum pendente' : 'Nenhum registro'}
+                    subtitle={eventosSub === 'pendentes' ? 'Todos os eventos já foram revisados.' : 'Nenhum evento encontrado neste histórico.'} />
+                ) : (eventosSub === 'pendentes' ? eventosPendentes : eventosHistorico).map(evento => {
+                  const isActing = eventoActing === evento.id;
+                  const statusColor = evento.status === 'rejeitado' ? C.red
+                    : evento.status === 'encerrado' ? theme.textSecondary
+                    : C.green;
+                  return (
+                    <ThemedView key={evento.id} type="backgroundElement" style={s.card}>
+                      <View style={s.playerRow}>
+                        {evento.imagem_url ? (
+                          <Image source={{ uri: evento.imagem_url }} style={s.adThumb} />
+                        ) : (
+                          <View style={[s.adThumb, s.adThumbPlaceholder]}>
+                            <ThemedText style={{ fontSize: 20 }}>🎪</ThemedText>
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="smallBold" numberOfLines={1}>{evento.titulo}</ThemedText>
+                          <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }} numberOfLines={1}>
+                            {ALCANCE_LABELS[evento.alcance]} · {evento.periodo} dias · R$ {(evento.valor_pago ?? 0).toFixed(2).replace('.', ',')}
+                          </ThemedText>
+                        </View>
+                        {eventosSub === 'historico' && (
+                          <View style={[s.statusBadge, { backgroundColor: statusColor + '22' }]}>
+                            <ThemedText style={[s.statusTxt, { color: statusColor }]}>
+                              {evento.status === 'rejeitado' ? '❌ Rejeitado' : evento.status === 'encerrado' ? '⚫ Encerrado' : '✅ No ar'}
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+
+                      <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }} numberOfLines={3}>
+                        {evento.descricao}
+                      </ThemedText>
+                      {evento.local_evento ? (
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>📍 {evento.local_evento}</ThemedText>
+                      ) : null}
+                      {evento.link_externo ? (
+                        <ThemedText style={{ fontSize: 11, color: C.purple }} numberOfLines={1}>🔗 {evento.link_externo}</ThemedText>
+                      ) : null}
+                      {evento.motivo_rejeicao ? (
+                        <ThemedText style={{ fontSize: 11, color: C.red }}>Motivo: {evento.motivo_rejeicao}</ThemedText>
+                      ) : null}
+
+                      {eventosSub === 'pendentes' && (
+                        <View style={s.actionRow}>
+                          <TouchableOpacity style={[s.rejectBtn, isActing && { opacity: 0.5 }]} disabled={isActing} activeOpacity={0.8} onPress={() => handleAbrirRejeitar(evento)}>
+                            <ThemedText style={s.rejectTxt}>❌  Rejeitar</ThemedText>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[s.approveBtn, isActing && { opacity: 0.5 }]} disabled={isActing} activeOpacity={0.8} onPress={() => handleAprovarEvento(evento)}>
+                            {isActing ? <ActivityIndicator size="small" color="#fff" /> : <ThemedText style={s.approveTxt}>✅  Aprovar</ThemedText>}
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </ThemedView>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </>
+        )}
+
         {/* ══ SEÇÃO: CONFIGURAÇÕES ══ */}
         {section === 'config' && (
           <ScrollView contentContainerStyle={s.scroll}>
@@ -2300,6 +2571,26 @@ export default function AdminTab() {
                   value={configBannerAtivo}
                   onValueChange={handleToggleConfigBannerAtivo}
                   disabled={configSaving}
+                  trackColor={{ false: '#3a3a5c', true: C.purple }}
+                  thumbColor="#ffffff"
+                />
+              )}
+            </ThemedView>
+
+            <ThemedView type="backgroundElement" style={[s.card, s.playerRow, { justifyContent: 'space-between' }]}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="smallBold">🎪 Eventos patrocinados</ThemedText>
+                <ThemedText themeColor="textSecondary" style={s.fieldHint}>
+                  Permite que usuários criem e paguem para divulgar eventos no banner.
+                </ThemedText>
+              </View>
+              {configLoading ? (
+                <ActivityIndicator size="small" color={C.purple} />
+              ) : (
+                <Switch
+                  value={configEventosAtivo}
+                  onValueChange={handleToggleConfigEventosAtivo}
+                  disabled={configEventosSaving}
                   trackColor={{ false: '#3a3a5c', true: C.purple }}
                   thumbColor="#ffffff"
                 />
@@ -2426,4 +2717,8 @@ const s = StyleSheet.create({
   galleryBtn:        { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: C.radius.pill, borderWidth: 1.5, borderColor: C.purple + '88' },
   galleryBtnText:    { fontSize: 12, fontWeight: '700', color: C.purple },
   fieldHint:         { fontSize: 11, lineHeight: 15 },
+
+  // Eventos patrocinados — modal de motivo de rejeição
+  motivoOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: Spacing.four },
+  motivoBox:     { width: '100%', maxWidth: 380, borderRadius: C.radius.lg, padding: Spacing.three, gap: Spacing.two },
 });

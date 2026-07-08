@@ -20,9 +20,11 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token ?? '');
     if (authError || !user) return json({ error: 'Não autorizado' }, 401);
 
-    const { payment_id, trilha_id } = await req.json() as {
+    const { payment_id, trilha_id, tipo = 'trilha', evento_id } = await req.json() as {
       payment_id: number;
-      trilha_id: number;
+      trilha_id?: number;
+      tipo?: 'trilha' | 'evento';
+      evento_id?: string;
     };
 
     const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${payment_id}`, {
@@ -33,13 +35,45 @@ Deno.serve(async (req: Request) => {
     const status: string = mpData.status ?? 'pending';
 
     if (status === 'approved') {
-      await supabase.from('user_trilhas').upsert(
-        { user_id: user.id, trilha_id, origem: 'compra' },
-        { onConflict: 'user_id,trilha_id' },
-      );
       await supabase.from('payments')
         .update({ status: 'approved' })
         .eq('mp_id', payment_id);
+
+      if (tipo === 'evento' && evento_id) {
+        const { data: evento } = await supabase
+          .from('eventos_patrocinados')
+          .select('titulo')
+          .eq('id', evento_id)
+          .single();
+
+        await supabase.from('eventos_patrocinados').update({
+          status:     'aguardando_aprovacao',
+          valor_pago: mpData.transaction_amount ?? null,
+          payment_id: String(payment_id),
+        }).eq('id', evento_id);
+
+        const { data: admins } = await supabase.from('profiles').select('id').eq('is_admin', true);
+        if (admins?.length) {
+          const now = new Date().toISOString();
+          await supabase.from('notifications').insert(
+            admins.map((a: { id: string }) => ({
+              user_id:      a.id,
+              title:        '🎪 Novo evento aguardando aprovação',
+              body:         `"${evento?.titulo ?? 'Evento'}" está na fila de aprovação.`,
+              scheduled_at: now,
+            })),
+          );
+          fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/dispatch-notifications`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+          }).catch(() => {});
+        }
+      } else if (trilha_id) {
+        await supabase.from('user_trilhas').upsert(
+          { user_id: user.id, trilha_id, origem: 'compra' },
+          { onConflict: 'user_id,trilha_id' },
+        );
+      }
     }
 
     return json({ status });

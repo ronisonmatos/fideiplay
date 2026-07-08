@@ -14,6 +14,7 @@ import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { pullProgress } from '@/lib/progress-sync';
+import { fetchEventosPatrocinadosAtivo } from '@/lib/eventos-patrocinados';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
 
@@ -36,8 +37,10 @@ export default function TrilhasScreen() {
   const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [trilhaConfigs, setTrilhaConfigs] = useState<Record<number, TrilhaConfig>>({});
+  const [eventosAtivo, setEventosAtivo] = useState(false);
 
   const loadData = useCallback(async () => {
+    fetchEventosPatrocinadosAtivo().then(setEventosAtivo);
     if (user?.id) {
       const remote = await pullProgress(user.id).catch(() => null);
       if (remote) {
@@ -104,6 +107,17 @@ export default function TrilhasScreen() {
               </View>
             )}
           </View>
+
+          {eventosAtivo && (
+            <TouchableOpacity
+              style={[styles.eventoCard, { backgroundColor: '#26215C' }]}
+              onPress={() => router.push('/evento-patrocinado')}
+              activeOpacity={0.85}>
+              <ThemedText style={{ fontSize: 20 }}>🎪</ThemedText>
+              <ThemedText style={styles.eventoCardText}>Divulgar meu evento</ThemedText>
+              <ThemedText style={{ color: C.purple, fontSize: 16 }}>›</ThemedText>
+            </TouchableOpacity>
+          )}
 
           {/* Progresso geral */}
           <View style={[styles.progressCard, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
@@ -254,6 +268,12 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.3 },
   title: { fontSize: 26, fontWeight: '800', letterSpacing: 0.2, marginTop: 2 },
+
+  eventoCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
+    padding: Spacing.three, borderRadius: C.radius.lg,
+  },
+  eventoCardText: { flex: 1, color: '#E8E6FF', fontWeight: '700', fontSize: 14 },
   xpBadge: {
     borderRadius: 99,
     borderWidth: 1,

@@ -29,6 +29,7 @@ import { getWeeklyRanking, RankingEntry } from '@/lib/score-events';
 import { scheduleCoinBonusReminder } from '@/lib/notifications';
 import { ECONOMY } from '@/constants/economy';
 import { CoinsAnimation } from '@/components/coins-animation';
+import { fetchEventosPatrocinadosAtivo } from '@/lib/eventos-patrocinados';
 
 const ACHIEVEMENTS = [
   { id: 'primeiroPasso', emoji: '🎯', title: 'Primeiro Passo', desc: 'Complete qualquer jogo' },
@@ -211,9 +212,12 @@ export default function ContaScreen() {
     });
   }, [user, hydrate]);
 
+  const [eventosAtivo, setEventosAtivo] = useState(false);
+
   useFocusEffect(useCallback(() => {
     loadRanking();
     refreshProgress();
+    fetchEventosPatrocinadosAtivo().then(setEventosAtivo);
   }, [loadRanking, refreshProgress]));
 
   const [refreshing, setRefreshing] = useState(false);
@@ -395,6 +399,29 @@ export default function ContaScreen() {
               })}
             </View>
 
+            {/* Minha comunidade */}
+            <ThemedText style={styles.sectionLabel}>MINHA COMUNIDADE</ThemedText>
+            <View style={{ gap: Spacing.two }}>
+              {eventosAtivo && (
+                <TouchableOpacity
+                  style={[styles.comunidadeBtn, { backgroundColor: '#26215C' }]}
+                  onPress={() => router.push('/evento-patrocinado')}
+                  activeOpacity={0.85}>
+                  <ThemedText style={{ fontSize: 18 }}>🎪</ThemedText>
+                  <ThemedText style={styles.comunidadeBtnText}>Divulgar meu evento</ThemedText>
+                  <ThemedText style={{ color: C.purple, fontSize: 16 }}>›</ThemedText>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.comunidadeBtn, { backgroundColor: '#26215C' }]}
+                onPress={() => router.push('/meus-eventos')}
+                activeOpacity={0.85}>
+                <ThemedText style={{ fontSize: 18 }}>📋</ThemedText>
+                <ThemedText style={styles.comunidadeBtnText}>Meus eventos</ThemedText>
+                <ThemedText style={{ color: C.purple, fontSize: 16 }}>›</ThemedText>
+              </TouchableOpacity>
+            </View>
+
             {profile.is_admin && (
               <TouchableOpacity
                 style={styles.adminBtn}
@@ -497,6 +524,13 @@ const styles = StyleSheet.create({
   achievementDesc:  { fontSize: 11, lineHeight: 15 },
   lockIcon:         { fontSize: 14, position: 'absolute', top: 8, right: 8 },
   locked:           { opacity: 0.35 },
+
+  // Minha comunidade
+  comunidadeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
+    padding: Spacing.three, borderRadius: C.radius.lg,
+  },
+  comunidadeBtnText: { flex: 1, color: '#E8E6FF', fontWeight: '700', fontSize: 14 },
 
   // Admin
   adminBtn: { alignItems: 'center', paddingVertical: 6 },

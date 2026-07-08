@@ -18,7 +18,7 @@ export function BannerAd() {
   useEffect(() => {
     if (!ad || impressedIdRef.current === ad.id) return;
     impressedIdRef.current = ad.id;
-    registerBannerImpressao(ad.id);
+    registerBannerImpressao(ad.id, ad.origem);
   }, [ad]);
 
   if (!ad) return null;
@@ -26,7 +26,7 @@ export function BannerAd() {
   const isEvento = ad.tipo === 'evento';
 
   const handlePress = () => {
-    registerBannerClique(ad.id);
+    registerBannerClique(ad.id, ad.origem);
     if (ad.link) Linking.openURL(ad.link).catch(() => {});
   };
 

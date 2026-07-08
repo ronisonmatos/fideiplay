@@ -20,12 +20,20 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token ?? '');
     if (authError || !user) return json({ error: 'Não autorizado' }, 401);
 
-    const { trilha_id, method, trilha_titulo, preco } = await req.json() as {
-      trilha_id: number;
+    const { trilha_id, method, trilha_titulo, preco, tipo = 'trilha', evento_id, evento_titulo } = await req.json() as {
+      trilha_id?: number;
       method: 'pix' | 'card';
-      trilha_titulo: string;
+      trilha_titulo?: string;
       preco: number;
+      tipo?: 'trilha' | 'evento';
+      evento_id?: string;
+      evento_titulo?: string;
     };
+
+    const descricaoItem = tipo === 'evento' ? `Evento: ${evento_titulo}` : `Trilha: ${trilha_titulo}`;
+    const paymentRow = tipo === 'evento'
+      ? { trilha_id: null, tipo: 'evento', evento_id }
+      : { trilha_id, tipo: 'trilha' };
 
     const MP_TOKEN = Deno.env.get('MP_ACCESS_TOKEN')!;
     const idempotencyKey = crypto.randomUUID();
@@ -40,7 +48,7 @@ Deno.serve(async (req: Request) => {
         },
         body: JSON.stringify({
           transaction_amount: preco,
-          description: `SantosPlay — Trilha: ${trilha_titulo}`,
+          description: `SantosPlay — ${descricaoItem}`,
           payment_method_id: 'pix',
           payer: { email: user.email },
         }),
@@ -51,7 +59,7 @@ Deno.serve(async (req: Request) => {
 
       await supabase.from('payments').insert({
         user_id: user.id,
-        trilha_id,
+        ...paymentRow,
         mp_id: mpData.id,
         status: 'pending',
         method: 'pix',
@@ -74,13 +82,13 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         items: [{
-          title: `SantosPlay — Trilha: ${trilha_titulo}`,
+          title: `SantosPlay — ${descricaoItem}`,
           quantity: 1,
           currency_id: 'BRL',
           unit_price: preco,
         }],
         payer: { email: user.email },
-        external_reference: `${user.id}|${trilha_id}`,
+        external_reference: `${user.id}|${tipo === 'evento' ? evento_id : trilha_id}`,
         back_urls: {
           success: 'santosplay://payment-success',
           failure: 'santosplay://payment-failure',
@@ -95,7 +103,7 @@ Deno.serve(async (req: Request) => {
 
     await supabase.from('payments').insert({
       user_id: user.id,
-      trilha_id,
+      ...paymentRow,
       status: 'pending',
       method: 'credit_card',
       amount: preco,
