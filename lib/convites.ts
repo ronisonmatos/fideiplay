@@ -12,9 +12,11 @@ function gerarCodigo(userId: string): string {
   return hash.toString(36).toUpperCase().padStart(8, '0').slice(0, 8);
 }
 
+export type ConviteGerado = { codigo: string; link: string };
+
 // Cria um convite novo pro usuário (respeita o limite de ECONOMY.LIMITE_CONVITES)
-// e devolve o link pronto pra compartilhar. null = limite atingido ou erro.
-export async function criarConvite(userId: string): Promise<string | null> {
+// e devolve o código + link pronto pra compartilhar. null = limite atingido ou erro.
+export async function criarConvite(userId: string): Promise<ConviteGerado | null> {
   try {
     const { count, error: countError } = await supabase
       .from('convites')
@@ -27,10 +29,12 @@ export async function criarConvite(userId: string): Promise<string | null> {
     const { error } = await supabase.from('convites').insert({ codigo, convidante_id: userId });
     if (error) throw error;
 
-    // Esquema customizado do app (ver app.json) — só abre o app se ele já
-    // estiver instalado. Um link https:// não funcionaria sem Universal Links
-    // configurados num domínio real, que este projeto não tem.
-    return `santosplay://convite/${codigo}`;
+    // Link https:// (em vez do esquema santosplay://) porque apps de mensagem
+    // (WhatsApp etc.) não transformam esquemas customizados em texto clicável.
+    // A página em public/convite.html tenta abrir o app e cai pra loja se não
+    // conseguir. O código puro (Form 2) fica como fallback manual dentro do app
+    // — ver aplicarConvite, usado pela tela "Tenho um código de convite".
+    return { codigo, link: `https://santosplay.vercel.app/convite/${codigo}` };
   } catch {
     return null;
   }

@@ -27,6 +27,7 @@ import { useNotifications } from '@/context/notifications-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useConvite } from '@/hooks/use-convite';
 import { useTheme } from '@/hooks/use-theme';
+import { aplicarConvite } from '@/lib/convites';
 import { supabase } from '@/lib/supabase';
 import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
 
@@ -45,6 +46,8 @@ export default function ConfiguracoesScreen() {
 
   const { muteChat, setMuteChat } = useNotifications();
   const { convidarAmigo, gerando: gerandoConvite } = useConvite();
+  const [codigoConvite, setCodigoConvite] = useState('');
+  const [aplicandoConvite, setAplicandoConvite] = useState(false);
   const [message,       setMessage]       = useState('');
   const [sending,       setSending]       = useState(false);
   const [avatarModal,   setAvatarModal]   = useState(false);
@@ -67,6 +70,21 @@ export default function ConfiguracoesScreen() {
       await refreshProfile();
       setAvatarModal(false);
       setPickedAvatar(null);
+    }
+  }
+
+  async function handleAplicarCodigoConvite() {
+    const codigo = codigoConvite.trim().toUpperCase();
+    if (!codigo || !user) return;
+    setAplicandoConvite(true);
+    const ok = await aplicarConvite(codigo, user.id);
+    setAplicandoConvite(false);
+    if (ok) {
+      await refreshProfile();
+      setCodigoConvite('');
+      Alert.alert('Convite aplicado! 🎉', 'Você e quem te convidou ganharam moedas.');
+    } else {
+      Alert.alert('Código inválido', 'Esse código já foi usado, não existe ou é seu próprio convite.');
     }
   }
 
@@ -214,7 +232,7 @@ export default function ConfiguracoesScreen() {
                 </View>
                 <ThemedText themeColor="textSecondary" style={{ fontSize: 11, marginTop: Spacing.two, lineHeight: 16 }}>
                   1️⃣ Seu amigo baixa o app SantosPlay{'\n'}
-                  2️⃣ Depois, abre o link que você mandou pra confirmar o convite
+                  2️⃣ Depois, abre o link que você mandou (ou digita o código aqui embaixo) pra confirmar o convite
                 </ThemedText>
                 <TouchableOpacity
                   style={[s.sendBtn, { marginTop: Spacing.two, opacity: gerandoConvite ? 0.6 : 1 }]}
@@ -225,6 +243,31 @@ export default function ConfiguracoesScreen() {
                     {gerandoConvite ? 'GERANDO LINK...' : 'CONVIDAR AMIGO'}
                   </ThemedText>
                 </TouchableOpacity>
+              </ThemedView>
+
+              <ThemedView type="backgroundElement" style={[s.card, { marginTop: Spacing.two }]}>
+                <ThemedText type="smallBold">Tenho um código de convite</ThemedText>
+                <ThemedText themeColor="textSecondary" style={{ fontSize: 12, marginTop: 2, marginBottom: Spacing.two }}>
+                  Recebeu um código de um amigo? Digite abaixo pra resgatar seu bônus.
+                </ThemedText>
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <TextInput
+                    style={[s.codigoInput, { color: theme.text, borderColor: C.border }]}
+                    placeholder="CÓDIGO"
+                    placeholderTextColor={theme.textSecondary}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    value={codigoConvite}
+                    onChangeText={setCodigoConvite}
+                  />
+                  <TouchableOpacity
+                    style={[s.sendBtn, { flex: 0, paddingHorizontal: Spacing.three, opacity: aplicandoConvite || !codigoConvite.trim() ? 0.6 : 1 }]}
+                    onPress={handleAplicarCodigoConvite}
+                    disabled={aplicandoConvite || !codigoConvite.trim()}
+                    activeOpacity={0.8}>
+                    <ThemedText style={s.sendBtnText}>{aplicandoConvite ? '...' : 'APLICAR'}</ThemedText>
+                  </TouchableOpacity>
+                </View>
               </ThemedView>
             </>
           )}
@@ -374,6 +417,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   sendBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+  codigoInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: C.radius.md,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
   versionTxt:  { fontSize: 11, color: '#9B97D4', textAlign: 'center', marginTop: Spacing.two, opacity: 0.55 },
 
   // Modal de avatar

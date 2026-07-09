@@ -17,11 +17,16 @@ import { useLocalizacao } from '@/hooks/use-location';
 import { processarConvitePendente } from '@/lib/convites';
 import { scheduleDailyReminder, setupNotificationChannel, syncServerNotifications, registerAndSavePushToken } from '@/lib/notifications';
 import { pullProgress, pushProgress } from '@/lib/progress-sync';
+import { preloadClickSound } from '@/lib/click-sound';
 
 // Aplica o tema salvo (padrão: escuro)
 AsyncStorage.getItem('@santosplay:theme').then(saved => {
   Appearance.setColorScheme(saved === 'light' ? 'light' : 'dark');
 });
+
+// Carrega o áudio do clique com antecedência pra evitar atraso perceptível
+// no primeiro toque em botão dentro dos jogos.
+preloadClickSound();
 
 // ── Sincronização de progresso (somente quando logado) ───────────────────────
 function ProgressSyncBridge() {

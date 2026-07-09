@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GuestBanner } from '@/components/guest-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TrilhaIcon } from '@/components/trilha-icon';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { NIVEIS } from '@/constants/teste-conhecimento';
@@ -129,7 +130,7 @@ export default function TrilhasScreen() {
             style={[styles.testeCard, { backgroundColor: '#26215C', borderColor: C.purple + '55' }]}
             onPress={() => router.push('/teste-conhecimento')}
             activeOpacity={0.85}>
-            <ThemedText style={{ fontSize: 22 }}>🎯</ThemedText>
+            <Image source={require('@/assets/images/teste-conhecimento.png')} style={styles.testeIcon} resizeMode="contain" />
             <View style={{ flex: 1, gap: 2 }}>
               <ThemedText style={styles.testeCardTitle}>Teste seu nível de católico</ThemedText>
               {testeResultado ? (
@@ -159,7 +160,7 @@ export default function TrilhasScreen() {
                 activeOpacity={0.82}
                 style={[styles.trilhaCard, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
                 <View style={styles.trilhaTop}>
-                  <ThemedText style={styles.trilhaIcon}>{trilha.icone}</ThemedText>
+                  <TrilhaIcon icone={trilha.icone} size={64} />
                   <View style={styles.trilhaInfo}>
                     <View style={styles.trilhaTitleRow}>
                       <ThemedText style={[styles.trilhaTitulo, { color: theme.text }]}>{trilha.titulo}</ThemedText>
@@ -195,7 +196,7 @@ export default function TrilhasScreen() {
                   activeOpacity={0.82}
                   style={[styles.trilhaCard, { backgroundColor: theme.backgroundElement, borderColor: C.green + '55' }]}>
                   <View style={styles.trilhaTop}>
-                    <ThemedText style={styles.trilhaIcon}>{trilha.icone}</ThemedText>
+                    <TrilhaIcon icone={trilha.icone} size={64} />
                     <View style={styles.trilhaInfo}>
                       <View style={styles.trilhaTitleRow}>
                         <ThemedText style={[styles.trilhaTitulo, { color: theme.text }]}>{trilha.titulo}</ThemedText>
@@ -228,7 +229,7 @@ export default function TrilhasScreen() {
                 activeOpacity={0.75}
                 style={[styles.trilhaCard, styles.trilhaLocked, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
                 <View style={styles.trilhaTop}>
-                  <ThemedText style={[styles.trilhaIcon, styles.lockedOpacity]}>{trilha.icone}</ThemedText>
+                  <TrilhaIcon icone={trilha.icone} size={64} opacity={0.5} />
                   <View style={styles.trilhaInfo}>
                     <View style={styles.trilhaTitleRow}>
                       <ThemedText style={[styles.trilhaTitulo, { color: theme.text }, styles.lockedOpacity]}>{trilha.titulo}</ThemedText>
@@ -288,6 +289,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
     padding: Spacing.three, borderRadius: 16, borderWidth: 1.5,
   },
+  testeIcon: { width: 22, height: 22 },
   testeCardTitle: { color: '#E8E6FF', fontWeight: '800', fontSize: 14 },
   testeCardSub: { color: '#9B97D4', fontSize: 12 },
   xpBadge: {
@@ -320,8 +322,7 @@ const styles = StyleSheet.create({
   },
   trilhaLocked: { opacity: 0.7 },
   lockedOpacity: { opacity: 0.5 },
-  trilhaTop: { flexDirection: 'row', gap: Spacing.two },
-  trilhaIcon: { fontSize: 36, lineHeight: 44 },
+  trilhaTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   trilhaInfo: { flex: 1, gap: 3 },
   trilhaTitleRow: {
     flexDirection: 'row',

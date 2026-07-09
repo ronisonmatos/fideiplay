@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
+import Constants from 'expo-constants';
+
+// react-native-share só existe em dev build/produção. No Expo Go, o simples
+// require() do módulo (mesmo dinâmico) já loga um Invariant Violation, porque
+// NativeRNShare.ts chama TurboModuleRegistry.getEnforcing no topo do arquivo
+// — então nem tentamos carregar o módulo lá, vamos direto pro fallback de texto.
+const isExpoGo = Constants.appOwnership === 'expo';
 
 import { RadarChart } from '@/components/radar-chart';
 import { ThemedText } from '@/components/themed-text';
@@ -76,6 +84,10 @@ export default function TesteConhecimentoScreen() {
 
 // ── Início ───────────────────────────────────────────────────────────────────
 
+function mesmoDiaLocal(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
 function TesteInicio({
   carregando, ultimoResultado, onIniciar,
 }: {
@@ -85,6 +97,10 @@ function TesteInicio({
 }) {
   const theme = useTheme();
   const nivelAnterior = ultimoResultado ? NIVEIS.find(n => n.id === ultimoResultado.nivel_geral) : null;
+  // Limite de 1 teste pontuado por dia (evita "farmar" o percentil refazendo
+  // até sair um resultado melhor) — só afeta refazer, o primeiro teste do dia
+  // (ultimoResultado null) nunca é bloqueado.
+  const jaFezHoje = ultimoResultado ? mesmoDiaLocal(new Date(ultimoResultado.concluido_em), new Date()) : false;
 
   return (
     <ThemedView style={s.fill}>
@@ -98,7 +114,7 @@ function TesteInicio({
         </View>
 
         <ScrollView contentContainerStyle={[s.introScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
-          <ThemedText style={{ fontSize: 48, lineHeight: 56, textAlign: 'center' }}>🎯</ThemedText>
+          <Image source={require('@/assets/images/teste-conhecimento.png')} style={{ width: 64, height: 64, alignSelf: 'center' }} resizeMode="contain" />
           <ThemedText type="subtitle" style={s.center}>Teste seu nível de católico</ThemedText>
           <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 14, lineHeight: 20 }]}>
             30 perguntas sobre 6 temas fundamentais da fé católica. Descubra seu perfil.
@@ -114,7 +130,7 @@ function TesteInicio({
           </View>
 
           <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12 }]}>
-            {TOTAL_QUESTOES} questões · ~10 minutos · sem limite de tentativas
+            {TOTAL_QUESTOES} questões · ~10 minutos · 1 tentativa pontuada por dia
           </ThemedText>
 
           {carregando ? (
@@ -125,9 +141,15 @@ function TesteInicio({
                 SEU ÚLTIMO RESULTADO
               </ThemedText>
               <ThemedText style={{ color: nivelAnterior.cor, fontSize: 18, fontWeight: '900' }}>{nivelAnterior.label}</ThemedText>
-              <TouchableOpacity style={[s.btnSecundario, { borderColor: nivelAnterior.cor }]} onPress={onIniciar} activeOpacity={0.85}>
-                <ThemedText style={{ color: nivelAnterior.cor, fontWeight: '800', fontSize: 13 }}>REFAZER O TESTE</ThemedText>
-              </TouchableOpacity>
+              {jaFezHoje ? (
+                <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 12, marginTop: 4 }]}>
+                  Você já fez o teste hoje — volte amanhã pra tentar de novo!
+                </ThemedText>
+              ) : (
+                <TouchableOpacity style={[s.btnSecundario, { borderColor: nivelAnterior.cor }]} onPress={onIniciar} activeOpacity={0.85}>
+                  <ThemedText style={{ color: nivelAnterior.cor, fontWeight: '800', fontSize: 13 }}>REFAZER O TESTE</ThemedText>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <TouchableOpacity style={s.btnPrincipal} onPress={onIniciar} activeOpacity={0.85}>
@@ -256,10 +278,24 @@ function TesteResultado({ resultado }: { resultado: ResultadoTeste }) {
   const trilhaSugeridaId = temaFraco ? TRILHA_SUGERIDA_POR_TEMA[temaFraco.tema] : null;
   const labelTemaFraco = temaFraco ? TEMAS.find(t => t.id === temaFraco.tema)?.label : null;
 
-  function compartilhar() {
-    Share.share({
-      message: `Fiz o Teste de Conhecimento Católico no SantosPlay e sou um ${nivelGeral.label}! ✝️ Teste você também: santosplay.app`,
-    }).catch(() => {});
+  const shareCardRef = useRef<View>(null);
+
+  const mensagemTexto = `Fiz o Teste de Conhecimento Católico no SantosPlay e sou um ${nivelGeral.label}! ✝️ Teste você também: santosplay.app`;
+
+  // Captura o cartão com marca (bloco de nível + radar) como imagem e manda
+  // texto + imagem juntos pelo share nativo. Nem o Share do React Native nem
+  // o expo-sharing suportam isso no Android (o primeiro força text/plain e
+  // ignora arquivo; o segundo manda só o arquivo, sem texto) — react-native-share
+  // monta o Intent.ACTION_SEND com EXTRA_STREAM + EXTRA_TEXT nos dois, daí a lib à parte.
+  async function compartilhar() {
+    try {
+      if (isExpoGo) throw new Error('react-native-share indisponível no Expo Go');
+      const uri = await captureRef(shareCardRef, { format: 'png', quality: 1, result: 'data-uri' });
+      const { default: RNShare } = await import('react-native-share');
+      await RNShare.open({ url: uri, message: mensagemTexto, type: 'image/png', failOnCancel: false });
+    } catch {
+      Share.share({ message: mensagemTexto }).catch(() => {});
+    }
   }
 
   return (
@@ -272,19 +308,27 @@ function TesteResultado({ resultado }: { resultado: ResultadoTeste }) {
         </View>
 
         <ScrollView contentContainerStyle={[s.resultadoScroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
-          {/* Bloco 1 — nível geral */}
-          <View style={[s.nivelCard, { backgroundColor: '#26215C' }]}>
-            <ThemedText style={{ color: '#9B97D4', fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>SEU NÍVEL</ThemedText>
-            <ThemedText style={{ color: nivelGeral.cor, fontSize: 26, fontWeight: '900' }}>{nivelGeral.label}</ThemedText>
-            {percentil !== null && (
-              <ThemedText style={{ color: '#9B97D4', fontSize: 12 }}>
-                Melhor que {percentil}% dos usuários
-              </ThemedText>
-            )}
-          </View>
+          {/* Bloco 1+2 — cartão com marca, capturado como imagem no compartilhamento */}
+          <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
+            <View style={s.shareCardBrand}>
+              <Image source={require('@/assets/images/logo_SantosPlay.png')} style={s.shareCardLogo} resizeMode="contain" />
+              <ThemedText style={s.shareCardBrandText}>SantosPlay</ThemedText>
+            </View>
 
-          {/* Bloco 2 — radar */}
-          <RadarChart temas={TEMAS} valores={TEMAS.map(t => porTema.find(p => p.tema === t.id)?.pct ?? 0)} />
+            <View style={[s.nivelCard, { backgroundColor: '#26215C' }]}>
+              <ThemedText style={{ color: '#9B97D4', fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>SEU NÍVEL</ThemedText>
+              <ThemedText style={{ color: nivelGeral.cor, fontSize: 26, fontWeight: '900' }}>{nivelGeral.label}</ThemedText>
+              {percentil !== null && (
+                <ThemedText style={{ color: '#9B97D4', fontSize: 12 }}>
+                  Melhor que {percentil}% dos usuários
+                </ThemedText>
+              )}
+            </View>
+
+            <RadarChart temas={TEMAS} valores={TEMAS.map(t => porTema.find(p => p.tema === t.id)?.pct ?? 0)} />
+
+            <ThemedText style={s.shareCardFooter}>Teste seu conhecimento católico grátis — SantosPlay</ThemedText>
+          </View>
 
           {/* Bloco 3 — melhores/piores */}
           <View style={{ gap: Spacing.three }}>
@@ -382,7 +426,12 @@ const s = StyleSheet.create({
   explicacaoBox: { borderRadius: C.radius.md, padding: Spacing.three },
 
   resultadoScroll: { padding: Spacing.four, gap: Spacing.four },
-  nivelCard: { borderRadius: C.radius.lg, padding: Spacing.four, alignItems: 'center', gap: 4 },
+  shareCard: { backgroundColor: '#15123A', borderRadius: C.radius.lg, padding: Spacing.four, gap: Spacing.three, alignItems: 'center' },
+  shareCardBrand: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  shareCardLogo: { width: 28, height: 28 },
+  shareCardBrandText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
+  shareCardFooter: { color: '#9B97D4', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  nivelCard: { borderRadius: C.radius.lg, padding: Spacing.four, alignItems: 'center', gap: 4, alignSelf: 'stretch' },
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: '#9B97D4', textTransform: 'uppercase' },
   barraBg: { height: 8, borderRadius: 4, overflow: 'hidden' },
   barraFill: { height: 8, borderRadius: 4 },
