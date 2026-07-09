@@ -10,15 +10,16 @@ export function useAdminBadge(isAdmin: boolean | undefined): number {
     let cancelled = false;
 
     const fetch = async () => {
-      const [{ count: c1 }, { count: c2 }] = await Promise.all([
+      const [{ count: c1 }, { count: c2 }, { count: c3 }] = await Promise.all([
         supabase.from('stop_contests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('support_messages').select('*', { count: 'exact', head: true }).eq('read', false),
+        supabase.from('message_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       ]);
-      if (!cancelled) setCount((c1 ?? 0) + (c2 ?? 0));
+      if (!cancelled) setCount((c1 ?? 0) + (c2 ?? 0) + (c3 ?? 0));
     };
 
-    fetch();
-    const id = setInterval(fetch, 60_000);
+    fetch().catch(() => {});
+    const id = setInterval(() => fetch().catch(() => {}), 60_000);
     return () => { cancelled = true; clearInterval(id); };
   }, [isAdmin]);
 

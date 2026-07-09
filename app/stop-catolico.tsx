@@ -175,10 +175,16 @@ export default function StopCatolicoScreen() {
   useEffect(() => {
     if (phase !== 'playing') return;
 
+    // Se o efeito for cancelado (fase mudou/desmontou) antes da Promise
+    // resolver, `cancelled` garante que o Sound recém-criado seja descarregado
+    // em vez de virar uma instância nativa órfã (stopTimerSound só descarrega
+    // o que já está em timerSoundRef, e nesse ponto ainda estaria null).
+    let cancelled = false;
     Audio.Sound.createAsync(
       require('@/assets/audio/som_relogio_stop.mp3'),
       { shouldPlay: true, volume: 0.7 },
     ).then(({ sound }) => {
+      if (cancelled) { sound.unloadAsync().catch(() => {}); return; }
       timerSoundRef.current = sound;
     }).catch(() => {});
 
@@ -188,7 +194,7 @@ export default function StopCatolicoScreen() {
         return t - 1;
       });
     }, 1000);
-    return stopTimer;
+    return () => { cancelled = true; stopTimer(); };
   }, [phase, stopTimer]);
 
   useEffect(() => () => clearSpinTimeouts(), [clearSpinTimeouts]);

@@ -146,12 +146,13 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
+type AdminSection   = 'contests' | 'support' | 'moderacao' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type EventosSub      = 'pendentes' | 'historico';
 type FilterStatus   = 'pending' | 'approved' | 'rejected';
 type SupportFilter  = 'unread' | 'all';
+type ModeracaoFilter = 'pending' | 'all';
 
 interface Contest {
   id: string;
@@ -177,6 +178,19 @@ interface SupportMsg {
   read: boolean;
   reply: string | null;
   replied_at: string | null;
+}
+
+interface MessageReport {
+  id:                  string;
+  message_id:          string | null;
+  reported_content:    string;
+  reporter_id:         string;
+  reporter_name:       string;
+  reported_user_id:    string;
+  reported_user_name:  string;
+  status:              'pending' | 'reviewed' | 'dismissed';
+  created_at:          string;
+  reviewed_at:         string | null;
 }
 
 interface AdRow {
@@ -266,6 +280,13 @@ export default function AdminTab() {
   const [expanded,   setExpanded]   = useState<string | null>(null);
   const [replyText,  setReplyText]  = useState('');
   const [sending,    setSending]    = useState<string | null>(null);
+
+  // ── Estado: Moderação (denúncias do chat) ─────────────────────────────────
+  const [mfilt,     setMfilt]     = useState<ModeracaoFilter>('pending');
+  const [reports,   setReports]   = useState<MessageReport[]>([]);
+  const [mLoading,  setMLoading]  = useState(false);
+  const [mRefresh,  setMRefresh]  = useState(false);
+  const [mError,    setMError]    = useState<string | null>(null);
 
   // ── Estado: Trilhas (busca de usuário + liberação manual) ────────────────
   const [uQuery,       setUQuery]       = useState('');
@@ -411,6 +432,24 @@ export default function AdminTab() {
     setSRefresh(false);
   }, [sfilt, profile?.is_admin]);
 
+  // ── Fetch: Moderação (denúncias) ──────────────────────────────────────────
+  const fetchReports = useCallback(async (silent = false) => {
+    if (!profile?.is_admin) return;
+    if (!silent) setMLoading(true);
+    setMError(null);
+    let q = supabase
+      .from('message_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(80);
+    if (mfilt === 'pending') q = q.eq('status', 'pending');
+    const { data, error } = await q;
+    if (error) setMError(error.message);
+    else setReports((data ?? []) as MessageReport[]);
+    setMLoading(false);
+    setMRefresh(false);
+  }, [mfilt, profile?.is_admin]);
+
   // ── Fetch: Anúncios ───────────────────────────────────────────────────────
   const fetchAds = useCallback(async (silent = false) => {
     if (!profile?.is_admin) return;
@@ -487,11 +526,12 @@ export default function AdminTab() {
   useFocusEffect(useCallback(() => {
     if (section === 'contests') fetchContests();
     else if (section === 'support') fetchSupport();
+    else if (section === 'moderacao') fetchReports();
     else if (section === 'ads') fetchAds();
     else if (section === 'banners') fetchBanners();
     else if (section === 'eventos') fetchEventos();
     else if (section === 'config') fetchConfig();
-  }, [section, fetchContests, fetchSupport, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
+  }, [section, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {
@@ -620,6 +660,43 @@ export default function AdminTab() {
       ],
     );
   }, []);
+
+  // ── Ações: Moderação ──────────────────────────────────────────────────────
+  const handleDeleteReportedMessage = useCallback((report: MessageReport) => {
+    if (!report.message_id) {
+      Alert.alert('Mensagem já excluída', 'O autor já apagou essa mensagem antes.');
+      return;
+    }
+    Alert.alert(
+      'Excluir mensagem denunciada?',
+      'Ela some do chat para todo mundo agora.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('community_messages').update({
+              deleted_at:      new Date().toISOString(),
+              deleted_by:      user?.id ?? null,
+              deleted_by_name: profile?.name ?? null,
+            }).eq('id', report.message_id as string);
+            if (error) Alert.alert('Erro', 'Não foi possível excluir a mensagem.');
+          },
+        },
+      ],
+    );
+  }, [user, profile]);
+
+  const handleArchiveReport = useCallback(async (id: string) => {
+    const { error } = await supabase.from('message_reports').update({
+      status:      'reviewed',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user?.id ?? null,
+    }).eq('id', id);
+    if (error) { Alert.alert('Erro', 'Não foi possível arquivar a denúncia.'); return; }
+    setReports(prev => mfilt === 'pending' ? prev.filter(r => r.id !== id) : prev.map(r => r.id === id ? { ...r, status: 'reviewed' } : r));
+  }, [user, mfilt]);
 
   // ── Ações: Trilhas ────────────────────────────────────────────────────────
   const handleSearchUsers = useCallback(async () => {
@@ -1730,6 +1807,7 @@ export default function AdminTab() {
           {([
             { key: 'contests',      label: 'Contestações', icon: '✋' },
             { key: 'support',       label: 'Suporte',       icon: '💬' },
+            { key: 'moderacao',     label: 'Denúncias',     icon: '🚩' },
             { key: 'trilhas',       label: 'Trilhas',       icon: '🔓' },
             { key: 'notifications', label: 'Notificar',     icon: '🔔' },
             { key: 'ads',           label: 'Anúncios',      icon: '📢' },
@@ -2011,6 +2089,89 @@ export default function AdminTab() {
                     </ThemedView>
                   );
                 })}
+              </ScrollView>
+            )}
+          </>
+        )}
+
+        {/* ══ SEÇÃO: MODERAÇÃO (denúncias do chat) ══ */}
+        {section === 'moderacao' && (
+          <>
+            {/* Sub-filtros */}
+            <View style={[s.filterRow, { borderBottomColor: C.border }]}>
+              {([
+                { key: 'pending', label: 'Pendentes', icon: '🔴' },
+                { key: 'all',     label: 'Todas',      icon: '📋' },
+              ] as { key: ModeracaoFilter; label: string; icon: string }[]).map(({ key, label, icon }) => {
+                const active = mfilt === key;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[s.filterBtn, active && { borderBottomWidth: 2, borderBottomColor: C.purple }]}
+                    onPress={() => setMfilt(key)}
+                    activeOpacity={0.7}>
+                    <ThemedText style={{ fontSize: 16, lineHeight: 20 }}>{icon}</ThemedText>
+                    <ThemedText style={[s.filterTxt, { color: active ? C.purple : theme.textSecondary }]}>{label}</ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {mLoading ? (
+              <View style={s.centerFlex}><ActivityIndicator color={C.purple} /></View>
+            ) : mError ? (
+              <ErrorState message={mError} onRetry={() => fetchReports()} />
+            ) : (
+              <ScrollView
+                contentContainerStyle={s.scroll}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={mRefresh}
+                    onRefresh={() => { setMRefresh(true); fetchReports(true); }}
+                    tintColor={C.purple}
+                  />
+                }>
+                {reports.length === 0 ? (
+                  <EmptyState icon="✅" color={C.green}
+                    title={mfilt === 'pending' ? 'Nenhuma denúncia pendente' : 'Nenhuma denúncia encontrada'}
+                    subtitle="Puxe para baixo para atualizar." />
+                ) : reports.map(report => (
+                  <ThemedView key={report.id} type="backgroundElement" style={s.card}>
+                    <View style={s.playerRow}>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold" numberOfLines={1}>
+                          {report.reporter_name} denunciou {report.reported_user_name}
+                        </ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
+                          {new Date(report.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </ThemedText>
+                      </View>
+                      {report.status !== 'pending' && (
+                        <View style={[s.statusBadge, { backgroundColor: C.green + '22' }]}>
+                          <ThemedText style={[s.statusTxt, { color: C.green }]}>✅ Revisada</ThemedText>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={[s.msgBox, { backgroundColor: theme.background }]}>
+                      <ThemedText style={{ fontSize: 14, lineHeight: 20, color: theme.text }}>
+                        {report.reported_content}
+                      </ThemedText>
+                    </View>
+
+                    {report.status === 'pending' && (
+                      <View style={s.msgFooter}>
+                        <TouchableOpacity onPress={() => handleDeleteReportedMessage(report)} activeOpacity={0.7} hitSlop={8}>
+                          <ThemedText style={{ fontSize: 11, color: C.red, fontWeight: '600' }}>🗑 Excluir mensagem</ThemedText>
+                        </TouchableOpacity>
+                        <View style={{ flex: 1 }} />
+                        <TouchableOpacity onPress={() => handleArchiveReport(report.id)} activeOpacity={0.7} hitSlop={8}>
+                          <ThemedText style={{ fontSize: 11, color: theme.textSecondary, fontWeight: '600' }}>Arquivar</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </ThemedView>
+                ))}
               </ScrollView>
             )}
           </>

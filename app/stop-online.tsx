@@ -275,10 +275,19 @@ export default function StopOnlineScreen() {
       : require('@/assets/audio/freesound_community-negative_beeps-6008.mp3');
 
     if (!file) return;
+    // cancelled evita instância nativa órfã de Audio.Sound se o efeito for
+    // cancelado antes da Promise resolver (mesmo padrão do efeito do timer
+    // logo abaixo) — sem isso, o cleanup roda com `sound` ainda null e o
+    // Sound criado depois nunca é descarregado.
+    let cancelled = false;
     let sound: Audio.Sound | null = null;
     Audio.Sound.createAsync(file, { shouldPlay: true, volume: 0.9 })
-      .then(({ sound: s }) => { sound = s; }).catch(() => {});
+      .then(({ sound: s }) => {
+        if (cancelled) { s.unloadAsync().catch(() => {}); return; }
+        sound = s;
+      }).catch(() => {});
     return () => {
+      cancelled = true;
       sound?.stopAsync().catch(() => {});
       sound?.unloadAsync().catch(() => {});
     };
@@ -360,10 +369,15 @@ export default function StopOnlineScreen() {
     if (phase !== 'playing') return;
     setTimeLeft(TIMER);
 
+    // cancelled evita instância nativa órfã de Audio.Sound se o efeito for
+    // cancelado antes da Promise resolver (stopTimerSound só descarrega o
+    // que já está em timerSoundRef, e nesse ponto ainda estaria null).
+    let cancelled = false;
     Audio.Sound.createAsync(
       require('@/assets/audio/som_relogio_stop.mp3'),
       { shouldPlay: true, volume: 0.7 },
     ).then(({ sound }) => {
+      if (cancelled) { sound.unloadAsync().catch(() => {}); return; }
       timerSoundRef.current = sound;
     }).catch(() => {});
 
@@ -380,7 +394,7 @@ export default function StopOnlineScreen() {
         return next;
       });
     }, 1000);
-    return stopTimer;
+    return () => { cancelled = true; stopTimer(); };
   }, [phase, stopTimer]);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
@@ -991,15 +1005,17 @@ export default function StopOnlineScreen() {
     // Limpa broadcast anterior antes de entrar na fase de validação
     oppValidationBroadcastRef.current = null;
 
-    const run = async () => {
-      const validationStartMs = Date.now();
-      const MIN_VALIDATION_MS = 7000;
-      const goToResult = () => {
-        const elapsed   = Date.now() - validationStartMs;
-        const remaining = Math.max(0, MIN_VALIDATION_MS - elapsed);
-        setTimeout(() => setPhase('result'), remaining);
-      };
+    const validationStartMs = Date.now();
+    const MIN_VALIDATION_MS = 7000;
+    // Precisa ficar fora de `run` — o `.catch()` encadeado em `run()` roda
+    // fora do escopo do corpo da função e também chama goToResult() no erro.
+    const goToResult = () => {
+      const elapsed   = Date.now() - validationStartMs;
+      const remaining = Math.max(0, MIN_VALIDATION_MS - elapsed);
+      setTimeout(() => setPhase('result'), remaining);
+    };
 
+    const run = async () => {
       setAiLoading(false);
       setWaitingOpp(false);
       setValidatingStep(0);

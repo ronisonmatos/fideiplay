@@ -2,11 +2,12 @@
   "expo": {
     "name": "SantosPlay",
     "slug": "fideiplay",
-    "version": "1.0.18",
+    "version": "1.0.19",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "santosplay",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
     "android": {
       "package": "com.ronison.santosplay",
       "googleServicesFile": "./google-services.json",
@@ -26,8 +27,8 @@
       "bundleIdentifier": "com.ronison.santosplay",
       "supportsTablet": false,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "O app usa o microfone para gravar áudio.",
         "NSPhotoLibraryUsageDescription": "O app acessa suas fotos para você escolher a imagem/vídeo do anúncio.",
+        "NSPhotoLibraryAddUsageDescription": "O app salva a imagem do seu resultado do Teste de Conhecimento na galeria quando você escolhe compartilhar.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -51,6 +52,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#26215C",
+          "image": "./assets/images/logo_SantosPlay.png",
+          "imageWidth": 200,
           "android": {
             "image": "./assets/images/logo_SantosPlay.png",
             "imageWidth": 200
@@ -60,7 +63,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "O app acessa suas fotos para você escolher a imagem/vídeo do anúncio."
+          "photosPermission": "O app acessa suas fotos para você escolher a imagem/vídeo do anúncio.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "@react-native-community/datetimepicker",
@@ -69,7 +74,8 @@
         {
           "locationWhenInUsePermission": "O SantosPlay usa sua localização para mostrar anúncios e eventos católicos da sua região."
         }
-      ]
+      ],
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true
