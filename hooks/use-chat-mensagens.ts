@@ -27,10 +27,25 @@ export function useChatMensagens() {
   const [mensagens,      setMensagens]      = useState<MensagemChat[]>([]);
   const [carregandoMais, setCarregandoMais] = useState(false);
   const [temMais,        setTemMais]        = useState(true);
+  const [blockedIds,     setBlockedIds]     = useState<Set<string>>(new Set());
 
   const mensagensRef   = useRef<MensagemChat[]>([]);
   mensagensRef.current = mensagens;
   const carregandoRef  = useRef(false);
+  const blockedRef     = useRef<Set<string>>(new Set());
+
+  // Carrega quem o usuário atual bloqueou — chamado uma vez junto com
+  // carregarInicial() no mount da tela de chat.
+  const carregarBloqueios = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('blocked_users')
+      .select('blocked_id')
+      .eq('blocker_id', userId);
+    if (error || !data) return;
+    const ids = new Set(data.map(b => b.blocked_id));
+    blockedRef.current = ids;
+    setBlockedIds(ids);
+  }, []);
 
   const carregarInicial = useCallback(async () => {
     try {
@@ -42,7 +57,7 @@ export function useChatMensagens() {
         .order('created_at', { ascending: false })
         .limit(PAGE_SIZE);
       if (error || !data) return;
-      setMensagens([...data].reverse());
+      setMensagens([...data].reverse().filter(m => !blockedRef.current.has(m.user_id)));
       setTemMais(data.length === PAGE_SIZE);
     } catch { /* mantém lista vazia — usuário pode tentar de novo ao focar a tela */ }
   }, []);
@@ -66,7 +81,8 @@ export function useChatMensagens() {
       if (error || !data) { setTemMais(false); return; }
       setTemMais(data.length === PAGE_SIZE);
       if (data.length > 0) {
-        setMensagens(prev => [...[...data].reverse(), ...prev]);
+        const filtradas = [...data].reverse().filter(m => !blockedRef.current.has(m.user_id));
+        setMensagens(prev => [...filtradas, ...prev]);
       }
     } catch {
       setTemMais(false);
@@ -78,6 +94,7 @@ export function useChatMensagens() {
 
   // Nova mensagem chegada em tempo real — adiciona no final sem recarregar tudo
   const novaMensagem = useCallback((msg: MensagemChat) => {
+    if (blockedRef.current.has(msg.user_id)) return;
     setMensagens(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
   }, []);
 
@@ -85,5 +102,34 @@ export function useChatMensagens() {
     setMensagens(prev => prev.filter(m => m.id !== id));
   }, []);
 
-  return { mensagens, carregandoMais, temMais, carregarInicial, carregarMais, novaMensagem, removerMensagem };
+  const bloquearUsuario = useCallback(async (blockerId: string, blockedId: string) => {
+    const { error } = await supabase
+      .from('blocked_users')
+      .upsert({ blocker_id: blockerId, blocked_id: blockedId }, { onConflict: 'blocker_id,blocked_id' });
+    if (error) return false;
+    blockedRef.current = new Set(blockedRef.current).add(blockedId);
+    setBlockedIds(new Set(blockedRef.current));
+    setMensagens(prev => prev.filter(m => m.user_id !== blockedId));
+    return true;
+  }, []);
+
+  const desbloquearUsuario = useCallback(async (blockerId: string, blockedId: string) => {
+    const { error } = await supabase
+      .from('blocked_users')
+      .delete()
+      .eq('blocker_id', blockerId)
+      .eq('blocked_id', blockedId);
+    if (error) return false;
+    const novo = new Set(blockedRef.current);
+    novo.delete(blockedId);
+    blockedRef.current = novo;
+    setBlockedIds(novo);
+    return true;
+  }, []);
+
+  return {
+    mensagens, carregandoMais, temMais, blockedIds,
+    carregarInicial, carregarMais, novaMensagem, removerMensagem,
+    carregarBloqueios, bloquearUsuario, desbloquearUsuario,
+  };
 }

@@ -6,6 +6,7 @@ import {
   Animated,
   Image,
   Modal,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -22,8 +23,17 @@ import { useAuth } from '@/context/auth-context';
 import { TRILHAS } from '@/data/trilhas';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/use-theme';
+import {
+  buscarProdutoIAP,
+  comprarProdutoIAP,
+  encerrarConexaoIAP,
+  finalizarCompraIAP,
+  iniciarConexaoIAP,
+  ouvirCompras,
+} from '@/lib/iap';
+import { productIdDaTrilha } from '@/lib/iap-products';
 
-type Aba = 'pix' | 'card' | 'moedas';
+type Aba = 'pix' | 'card' | 'moedas' | 'apple';
 type Fase = 'idle' | 'loading' | 'pix_aguardando' | 'card_aguardando' | 'sucesso' | 'erro';
 
 export default function PagamentoScreen() {
@@ -39,17 +49,42 @@ export default function PagamentoScreen() {
   const { refreshTrilhas, profile, refreshProfile } = useAuth();
   const theme = useTheme();
 
-  const [aba, setAba] = useState<Aba>(coinsPrice > 0 ? 'moedas' : 'pix');
+  const productId = productIdDaTrilha(Number(trilhaId));
+
+  // No iOS, trilha paga só pode ser vendida via Apple IAP (Guideline 3.1.1)
+  // — PIX/Cartão (Mercado Pago) somem da lista de abas nessa plataforma.
+  // Moedas continua disponível nas duas (não é venda com dinheiro real).
+  const abasVisiveis: Aba[] = Platform.OS === 'ios'
+    ? (coinsPrice > 0 ? ['apple', 'moedas'] : ['apple'])
+    : (coinsPrice > 0 ? ['moedas', 'pix', 'card'] : ['pix', 'card']);
+
+  const [aba, setAba] = useState<Aba>(abasVisiveis[0]);
   const [showCoinsModal, setShowCoinsModal] = useState(false);
   const [fase, setFase] = useState<Fase>('idle');
   const [pixCode, setPixCode] = useState('');
   const [pixBase64, setPixBase64] = useState('');
   const [paymentId, setPaymentId] = useState<number | null>(null);
   const [erroMsg, setErroMsg] = useState('');
+  const [applePrice, setApplePrice] = useState<string | null>(null);
   const xpAnim = useRef(new Animated.Value(0)).current;
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const compraListenerRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => () => pararPolling(), []);
+  useEffect(() => () => { pararPolling(); compraListenerRef.current?.(); }, []);
+
+  // Conexão com a StoreKit — só no iOS, só enquanto esta tela está aberta.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    iniciarConexaoIAP().catch(() => {});
+    return () => { encerrarConexaoIAP().catch(() => {}); };
+  }, []);
+
+  // Preço real localizado da Apple — mais fiel que o "R$ preco" fixo vindo
+  // da query string, e é o que a StoreKit sheet vai de fato cobrar.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !productId) return;
+    buscarProdutoIAP(productId).then(p => { if (p?.displayPrice) setApplePrice(p.displayPrice); }).catch(() => {});
+  }, [productId]);
 
   function pararPolling() {
     if (pollingRef.current) clearInterval(pollingRef.current);
@@ -167,6 +202,54 @@ export default function PagamentoScreen() {
     }
   }
 
+  // O resultado da compra chega pelo listener (ouvirCompras), não pelo
+  // retorno de comprarProdutoIAP — é uma API orientada a evento do StoreKit.
+  async function comprarComAppleIAP() {
+    if (!productId) {
+      setErroMsg('Esta trilha não está disponível para compra no momento.');
+      setFase('erro');
+      return;
+    }
+    setFase('loading');
+
+    const pararDeOuvir = ouvirCompras(
+      async (purchase) => {
+        compraListenerRef.current = null;
+        try {
+          const { data, error } = await supabase.functions.invoke('verify-apple-iap', {
+            body: { transactionId: purchase.transactionId, productId, trilhaId: Number(trilhaId) },
+          });
+          if (error || data?.status !== 'approved') throw new Error(error?.message ?? 'Compra não aprovada');
+          await finalizarCompraIAP(purchase);
+          await refreshTrilhas();
+          animarXP();
+          setFase('sucesso');
+        } catch (e: unknown) {
+          setErroMsg(String(e));
+          setFase('erro');
+        } finally {
+          pararDeOuvir();
+        }
+      },
+      (err) => {
+        compraListenerRef.current = null;
+        pararDeOuvir();
+        setErroMsg(err?.message ?? 'Não foi possível completar a compra.');
+        setFase('erro');
+      },
+    );
+    compraListenerRef.current = pararDeOuvir;
+
+    try {
+      await comprarProdutoIAP(productId);
+    } catch (e: unknown) {
+      compraListenerRef.current = null;
+      pararDeOuvir();
+      setErroMsg(String(e));
+      setFase('erro');
+    }
+  }
+
   const falta = coinsPrice - (profile?.coins ?? 0);
 
   return (
@@ -228,10 +311,7 @@ export default function PagamentoScreen() {
           {(fase === 'idle' || fase === 'loading') && (
             <>
               <View style={[s.tabs, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
-                {(coinsPrice > 0
-                  ? ['moedas', 'pix', 'card'] as Aba[]
-                  : ['pix', 'card'] as Aba[]
-                ).map(a => (
+                {abasVisiveis.map(a => (
                   <TouchableOpacity
                     key={a}
                     onPress={() => setAba(a)}
@@ -243,7 +323,7 @@ export default function PagamentoScreen() {
                       </View>
                     ) : (
                       <ThemedText style={[s.tabText, { color: aba === a ? '#fff' : theme.textSecondary }]}>
-                        {a === 'pix' ? '📱 PIX' : '💳 Cartão'}
+                        {a === 'pix' ? '📱 PIX' : a === 'card' ? '💳 Cartão' : '🍎 Apple'}
                       </ThemedText>
                     )}
                   </TouchableOpacity>
@@ -311,6 +391,28 @@ export default function PagamentoScreen() {
                     {fase === 'loading'
                       ? <ActivityIndicator color="#fff" />
                       : <ThemedText style={s.btnText}>GERAR QR CODE PIX</ThemedText>}
+                  </TouchableOpacity>
+                </View>
+              ) : aba === 'apple' ? (
+                <View style={s.abaContent}>
+                  <ThemedText style={[s.abaTitle, { color: theme.text }]}>Comprar</ThemedText>
+                  <ThemedText style={[s.abaDesc, { color: theme.textSecondary }]}>
+                    {applePrice ?? `R$ ${preco.toFixed(2).replace('.', ',')}`} · pagamento processado pela Apple
+                  </ThemedText>
+                  <View style={[s.infoRow, { backgroundColor: C.green + '12', borderColor: C.green + '33' }]}>
+                    <ThemedText style={{ fontSize: 18 }}>⚡</ThemedText>
+                    <ThemedText style={{ color: C.green, fontSize: 13, flex: 1 }}>
+                      Trilha liberada em segundos após o pagamento
+                    </ThemedText>
+                  </View>
+                  <TouchableOpacity
+                    style={[s.btnPrincipal, { backgroundColor: C.purple }, fase === 'loading' && { opacity: 0.6 }]}
+                    onPress={comprarComAppleIAP}
+                    disabled={fase === 'loading'}
+                    activeOpacity={0.8}>
+                    {fase === 'loading'
+                      ? <ActivityIndicator color="#fff" />
+                      : <ThemedText style={s.btnText}>COMPRAR COM APPLE</ThemedText>}
                   </TouchableOpacity>
                 </View>
               ) : (

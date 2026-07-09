@@ -28,6 +28,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useConvite } from '@/hooks/use-convite';
 import { useTheme } from '@/hooks/use-theme';
 import { aplicarConvite } from '@/lib/convites';
+import { restaurarComprasApple } from '@/lib/iap';
+import { trilhaIdDoProduct } from '@/lib/iap-products';
 import { supabase } from '@/lib/supabase';
 import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
 
@@ -41,7 +43,7 @@ const APP_BUILD   = isExpoGo ? null : Application.nativeBuildVersion;
 export default function ConfiguracoesScreen() {
   const theme       = useTheme();
   const colorScheme = useColorScheme();
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, refreshTrilhas } = useAuth();
   const isDark      = colorScheme === 'dark';
 
   const { muteChat, setMuteChat } = useNotifications();
@@ -53,7 +55,37 @@ export default function ConfiguracoesScreen() {
   const [avatarModal,   setAvatarModal]   = useState(false);
   const [savingAvatar,  setSavingAvatar]  = useState(false);
   const [pickedAvatar,  setPickedAvatar]  = useState<string | null>(null);
+  const [restaurando,   setRestaurando]   = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Exigência da Apple para non-consumables — usuário precisa conseguir
+  // recuperar uma trilha comprada antes (reinstall, troca de aparelho).
+  async function handleRestaurarCompras() {
+    setRestaurando(true);
+    try {
+      const purchases = await restaurarComprasApple();
+      let liberadas = 0;
+      for (const purchase of purchases) {
+        const trilhaId = trilhaIdDoProduct(purchase.productId);
+        if (!trilhaId) continue;
+        const { data } = await supabase.functions.invoke('verify-apple-iap', {
+          body: { transactionId: purchase.transactionId, productId: purchase.productId, trilhaId },
+        });
+        if (data?.status === 'approved') liberadas++;
+      }
+      await refreshTrilhas();
+      Alert.alert(
+        liberadas > 0 ? 'Compras restauradas' : 'Nenhuma compra encontrada',
+        liberadas > 0
+          ? `${liberadas} trilha${liberadas > 1 ? 's' : ''} restaurada${liberadas > 1 ? 's' : ''} com sucesso.`
+          : 'Não encontramos nenhuma compra anterior associada a esta conta Apple.',
+      );
+    } catch {
+      Alert.alert('Erro', 'Não foi possível restaurar suas compras. Tente novamente.');
+    } finally {
+      setRestaurando(false);
+    }
+  }
 
   async function handleSaveAvatar() {
     const chosen = pickedAvatar ?? profile?.avatar_emoji;
@@ -315,6 +347,33 @@ export default function ConfiguracoesScreen() {
               />
             </View>
           </ThemedView>
+
+          {/* Compras (iOS) */}
+          {Platform.OS === 'ios' && user && (
+            <>
+              <ThemedText style={s.sectionLabel}>COMPRAS</ThemedText>
+              <ThemedView type="backgroundElement" style={s.card}>
+                <View style={s.rowLeft}>
+                  <ThemedText style={{ fontSize: 22 }}>🔄</ThemedText>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText type="smallBold">Restaurar compras</ThemedText>
+                    <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
+                      Já comprou uma trilha antes? Recupere aqui após reinstalar o app ou trocar de aparelho.
+                    </ThemedText>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[s.sendBtn, { marginTop: Spacing.two, opacity: restaurando ? 0.6 : 1 }]}
+                  onPress={handleRestaurarCompras}
+                  disabled={restaurando}
+                  activeOpacity={0.8}>
+                  <ThemedText style={s.sendBtnText}>
+                    {restaurando ? 'RESTAURANDO...' : 'RESTAURAR COMPRAS'}
+                  </ThemedText>
+                </TouchableOpacity>
+              </ThemedView>
+            </>
+          )}
 
           {/* Suporte */}
           <ThemedText style={s.sectionLabel}>SUPORTE</ThemedText>

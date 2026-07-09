@@ -232,7 +232,10 @@ function TesteJogo({
               let borderColor: string = C.border;
               let textColor: string = theme.text;
 
-              if (respondida) {
+              // Só revela as cores se o usuário de fato escolheu uma opção —
+              // se o tempo esgotou sem seleção (selecionado === null), não
+              // mostra a resposta correta em verde de graça.
+              if (respondida && selecionado !== null) {
                 if (isCorrect)       { bg = C.green; borderColor = C.green; textColor = '#fff'; }
                 else if (isSelected) { bg = C.red;   borderColor = C.red;   textColor = '#fff'; }
               }
@@ -279,22 +282,39 @@ function TesteResultado({ resultado }: { resultado: ResultadoTeste }) {
   const labelTemaFraco = temaFraco ? TEMAS.find(t => t.id === temaFraco.tema)?.label : null;
 
   const shareCardRef = useRef<View>(null);
+  const isMountedRef = useRef(true);
+  const compartilhandoRef = useRef(false);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   const mensagemTexto = `Fiz o Teste de Conhecimento Católico no SantosPlay e sou um ${nivelGeral.label}! ✝️ Teste você também: santosplay.app`;
 
   // Captura o cartão com marca (bloco de nível + radar) como imagem e manda
-  // texto + imagem juntos pelo share nativo. Nem o Share do React Native nem
-  // o expo-sharing suportam isso no Android (o primeiro força text/plain e
-  // ignora arquivo; o segundo manda só o arquivo, sem texto) — react-native-share
-  // monta o Intent.ACTION_SEND com EXTRA_STREAM + EXTRA_TEXT nos dois, daí a lib à parte.
+  // só a imagem pelo share nativo (react-native-share) — mais simples e mais
+  // confiável entre apps do que tentar mandar texto + imagem juntos. No Expo
+  // Go, tanto captureRef quanto react-native-share são módulos nativos
+  // indisponíveis, então cai no fallback de texto (lib/chat-sound.ts, mesmo
+  // padrão) — isso é uma limitação da plataforma, não do código: só dá pra
+  // testar o compartilhamento de imagem de verdade num dev build/produção.
+  // result: 'tmpfile' (em vez de 'data-uri') evita materializar a imagem como
+  // uma string base64 gigante em memória JS — isso sobrecarregava o GC
+  // concorrente do Hermes (Hades) e derrubava o app com SIGSEGV em produção.
+  // isMountedRef/compartilhandoRef evitam chamar captureRef/RNShare.open sobre
+  // uma view já desmontada (ex.: usuário navega enquanto a captura roda) e
+  // evitam disparar duas capturas concorrentes com duplo-toque.
   async function compartilhar() {
+    if (compartilhandoRef.current) return;
+    compartilhandoRef.current = true;
     try {
       if (isExpoGo) throw new Error('react-native-share indisponível no Expo Go');
-      const uri = await captureRef(shareCardRef, { format: 'png', quality: 1, result: 'data-uri' });
+      const uri = await captureRef(shareCardRef, { format: 'png', quality: 1, result: 'tmpfile' });
+      if (!isMountedRef.current) return;
       const { default: RNShare } = await import('react-native-share');
-      await RNShare.open({ url: uri, message: mensagemTexto, type: 'image/png', failOnCancel: false });
+      if (!isMountedRef.current) return;
+      await RNShare.open({ url: uri, type: 'image/png', failOnCancel: false });
     } catch {
-      Share.share({ message: mensagemTexto }).catch(() => {});
+      if (isMountedRef.current) Share.share({ message: mensagemTexto }).catch(() => {});
+    } finally {
+      compartilhandoRef.current = false;
     }
   }
 
@@ -311,7 +331,7 @@ function TesteResultado({ resultado }: { resultado: ResultadoTeste }) {
           {/* Bloco 1+2 — cartão com marca, capturado como imagem no compartilhamento */}
           <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
             <View style={s.shareCardBrand}>
-              <Image source={require('@/assets/images/logo_SantosPlay.png')} style={s.shareCardLogo} resizeMode="contain" />
+              <Image source={require('@/assets/images/icon.png')} style={s.shareCardLogo} resizeMode="contain" />
               <ThemedText style={s.shareCardBrandText}>SantosPlay</ThemedText>
             </View>
 
@@ -427,9 +447,9 @@ const s = StyleSheet.create({
 
   resultadoScroll: { padding: Spacing.four, gap: Spacing.four },
   shareCard: { backgroundColor: '#15123A', borderRadius: C.radius.lg, padding: Spacing.four, gap: Spacing.three, alignItems: 'center' },
-  shareCardBrand: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
-  shareCardLogo: { width: 28, height: 28 },
-  shareCardBrandText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
+  shareCardBrand: { alignItems: 'center', gap: Spacing.one },
+  shareCardLogo: { width: 72, height: 72, borderRadius: 16 },
+  shareCardBrandText: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
   shareCardFooter: { color: '#9B97D4', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   nivelCard: { borderRadius: C.radius.lg, padding: Spacing.four, alignItems: 'center', gap: 4, alignSelf: 'stretch' },
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: '#9B97D4', textTransform: 'uppercase' },

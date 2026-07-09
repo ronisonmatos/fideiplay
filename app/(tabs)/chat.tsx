@@ -29,6 +29,7 @@ import { useNotifications } from '@/context/notifications-context';
 import { useChatMensagens, type MensagemChat } from '@/hooks/use-chat-mensagens';
 import { useTheme } from '@/hooks/use-theme';
 import { askChatAI } from '@/lib/chat-ai';
+import { contemPalavraProibida } from '@/lib/chat-filtro';
 import { playChatSound } from '@/lib/chat-sound';
 import { sendChatOSNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
@@ -115,11 +116,15 @@ const MessageBubble = memo(function MessageBubble({
   isOwn,
   isAdmin,
   onDelete,
+  onReport,
+  onBlock,
 }: {
   msg: MensagemChat;
   isOwn: boolean;
   isAdmin: boolean;
   onDelete: (id: string) => void;
+  onReport: (msg: MensagemChat) => void;
+  onBlock: (userId: string, userName: string) => void;
 }) {
   const theme = useTheme();
 
@@ -143,14 +148,28 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
 
+  // Mensagem de terceiro (sem ser admin): não tem opção de excluir, mas
+  // ganha denúncia/bloqueio — obrigatório pela política de UGC da Apple.
+  function openThirdPartyMenu() {
+    Alert.alert(
+      msg.user_name,
+      'O que você deseja fazer?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Denunciar', onPress: () => onReport(msg) },
+        { text: 'Bloquear usuário', style: 'destructive', onPress: () => onBlock(msg.user_id, msg.user_name) },
+      ],
+    );
+  }
+
   return (
     <View style={[s.bubbleWrap, isOwn ? s.bubbleRight : s.bubbleLeft, s.bubbleRow]}>
       {!isOwn && (
         <AvatarImage value={msg.avatar_emoji || '🙏'} size={28} borderColor={uColor} />
       )}
       <TouchableOpacity
-        activeOpacity={canDelete ? 0.85 : 1}
-        onLongPress={canDelete ? confirmDelete : undefined}
+        activeOpacity={0.85}
+        onLongPress={canDelete ? confirmDelete : openThirdPartyMenu}
         style={[
           s.bubble,
           { backgroundColor: bubbleBg, borderLeftColor: borderCol },
@@ -265,6 +284,7 @@ export default function ChatScreen() {
   const {
     mensagens, carregandoMais, temMais,
     carregarInicial, carregarMais, novaMensagem, removerMensagem,
+    carregarBloqueios, bloquearUsuario,
   } = useChatMensagens();
   const [inputText,       setInputText]       = useState('');
   const [sending,         setSending]         = useState(false);
@@ -305,7 +325,7 @@ export default function ChatScreen() {
   // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-    carregarInicial();
+    carregarBloqueios(user.id).then(carregarInicial);
 
     const channel = supabase
       .channel('community_chat')
@@ -343,7 +363,7 @@ export default function ChatScreen() {
     channelRef.current = channel;
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, carregarInicial, novaMensagem, removerMensagem]);
+  }, [user, carregarBloqueios, carregarInicial, novaMensagem, removerMensagem]);
 
   // Ao focar: marca notificações do chat como lidas
   useFocusEffect(useCallback(() => {
@@ -369,6 +389,54 @@ export default function ChatScreen() {
       .then(() => {});
   }, [removerMensagem, user, profile]);
 
+  // ── Denúncia e bloqueio (exigência Apple Guideline 1.2 — UGC) ────────────────
+  const handleReportMessage = useCallback((msg: MensagemChat) => {
+    if (!user || !profile) return;
+    Alert.alert(
+      `Denunciar mensagem de ${msg.user_name}?`,
+      'Um admin vai revisar essa mensagem.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Denunciar',
+          style: 'destructive',
+          onPress: () => {
+            supabase.from('message_reports').insert({
+              message_id:         msg.id,
+              reported_content:   msg.content,
+              reporter_id:        user.id,
+              reporter_name:      profile.name ?? 'Jogador',
+              reported_user_id:   msg.user_id,
+              reported_user_name: msg.user_name,
+            }).then(({ error }) => {
+              if (error) Alert.alert('Erro', 'Não foi possível enviar a denúncia. Tente novamente.');
+              else Alert.alert('Denúncia enviada', 'Obrigado, um admin vai revisar.');
+            });
+          },
+        },
+      ],
+    );
+  }, [user, profile]);
+
+  const handleBlockUser = useCallback((userId: string, userName: string) => {
+    if (!user) return;
+    Alert.alert(
+      `Bloquear ${userName}?`,
+      'Você não vai mais ver mensagens dessa pessoa no chat.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Bloquear',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await bloquearUsuario(user.id, userId);
+            if (!ok) Alert.alert('Erro', 'Não foi possível bloquear. Tente novamente.');
+          },
+        },
+      ],
+    );
+  }, [user, bloquearUsuario]);
+
   // ── Histórico admin ───────────────────────────────────────────────────────
   // Consulta community_messages direto (não é apagada fisicamente, só soft
   // delete) — inclui mensagens já excluídas pra fins de moderação, via a
@@ -392,6 +460,15 @@ export default function ChatScreen() {
   // poder pedir confirmação antes, sem duplicar a lógica de envio).
   const sendPlainMessage = useCallback(async (text: string) => {
     if (!user || !profile) return;
+
+    // Filtro client-side — só feedback imediato; o trigger no banco
+    // (check_chat_banned_words) é a fonte de verdade e barra mesmo que este
+    // filtro seja contornado.
+    if (contemPalavraProibida(text)) {
+      Alert.alert('Mensagem não permitida', 'Essa mensagem contém um termo não permitido no chat da comunidade.');
+      return;
+    }
+
     setSending(true);
     setInputText('');
 
@@ -403,7 +480,12 @@ export default function ChatScreen() {
     });
 
     if (error) {
-      Alert.alert('Erro', 'Não foi possível enviar a mensagem. Tente novamente.');
+      Alert.alert(
+        error.code === 'P0001' ? 'Mensagem não permitida' : 'Erro',
+        error.code === 'P0001'
+          ? 'Essa mensagem contém um termo não permitido no chat da comunidade.'
+          : 'Não foi possível enviar a mensagem. Tente novamente.',
+      );
       setInputText(text);
     } else {
       // Log de auditoria só com metadado (quem + quando) — sem conteúdo, por
@@ -651,6 +733,8 @@ export default function ChatScreen() {
                 isOwn={item.msg.user_id === user.id}
                 isAdmin={!!profile?.is_admin}
                 onDelete={handleDeleteMessage}
+                onReport={handleReportMessage}
+                onBlock={handleBlockUser}
               />
             ) : item.kind === 'ai' ? (
               <AiBubble item={item.item} onDelete={handleDeleteAiItem} />

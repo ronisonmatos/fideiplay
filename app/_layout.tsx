@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useRef } from 'react';
-import { AppState, Appearance, Platform } from 'react-native';
+import { Component, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { AppState, Appearance, Platform, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, router, useSegments } from 'expo-router';
 import * as ExpoNotifications from 'expo-notifications';
@@ -22,7 +22,7 @@ import { preloadClickSound } from '@/lib/click-sound';
 // Aplica o tema salvo (padrão: escuro)
 AsyncStorage.getItem('@santosplay:theme').then(saved => {
   Appearance.setColorScheme(saved === 'light' ? 'light' : 'dark');
-});
+}).catch(() => {});
 
 // Carrega o áudio do clique com antecedência pra evitar atraso perceptível
 // no primeiro toque em botão dentro dos jogos.
@@ -207,22 +207,61 @@ function AuthGate() {
   return null;
 }
 
+// Rede de segurança contra erro de render não tratado em qualquer tela — sem
+// isso, uma exceção qualquer derruba o app inteiro em produção sem chance de
+// recuperação (não existia nenhuma Error Boundary no projeto antes).
+interface ErrorBoundaryState { hasError: boolean }
+
+class RootErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
+    console.error('[RootErrorBoundary]', error, info?.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errS.fill}>
+          <Text style={errS.emoji}>😕</Text>
+          <Text style={errS.title}>Algo deu errado</Text>
+          <Text style={errS.subtitle}>Feche e abra o SantosPlay novamente.</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errS = StyleSheet.create({
+  fill: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#15123A', padding: 24 },
+  emoji: { fontSize: 48 },
+  title: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  subtitle: { color: '#9B97D4', fontSize: 13, textAlign: 'center' },
+});
+
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <GameStoreProvider>
-          <GameLevelsProvider>
-            <NotificationsProvider>
-              <ProgressSyncBridge />
-              <NotificationBridge />
-              <AnimatedSplashOverlay />
-              <AuthGate />
-              <Stack screenOptions={{ headerShown: false }} />
-            </NotificationsProvider>
-          </GameLevelsProvider>
-        </GameStoreProvider>
-      </AuthProvider>
-    </GestureHandlerRootView>
+    <RootErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <AuthProvider>
+          <GameStoreProvider>
+            <GameLevelsProvider>
+              <NotificationsProvider>
+                <ProgressSyncBridge />
+                <NotificationBridge />
+                <AnimatedSplashOverlay />
+                <AuthGate />
+                <Stack screenOptions={{ headerShown: false }} />
+              </NotificationsProvider>
+            </GameLevelsProvider>
+          </GameStoreProvider>
+        </AuthProvider>
+      </GestureHandlerRootView>
+    </RootErrorBoundary>
   );
 }
