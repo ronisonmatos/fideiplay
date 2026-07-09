@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Convite — SantosPlay</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0e1a;
+      color: #e0dff5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    main {
+      width: 100%;
+      max-width: 420px;
+      background: linear-gradient(135deg, #3b2f8f, #5b3fa8);
+      border-radius: 20px;
+      padding: 36px 28px;
+      text-align: center;
+    }
+
+    .logo  { font-size: 48px; margin-bottom: 8px; }
+    h1     { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+    p      { font-size: 14px; color: rgba(255,255,255,0.75); margin-bottom: 20px; line-height: 1.6; }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 12px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary { background: #fff; color: #3b2f8f; }
+    .btn-secondary { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3); }
+
+    .codigo-box {
+      margin-top: 8px;
+      padding: 14px;
+      background: rgba(0,0,0,0.25);
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,0.3);
+    }
+
+    .codigo-label { font-size: 11px; color: rgba(255,255,255,0.6); letter-spacing: 1px; margin-bottom: 6px; }
+    .codigo-valor { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 2px; font-family: monospace; }
+    .codigo-hint  { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 8px; margin-bottom: 0; }
+
+    .copiado { color: #a3f0b8; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="logo">✝️</div>
+    <h1>Você foi convidado pro SantosPlay!</h1>
+    <p id="status">Abrindo o app...</p>
+
+    <a class="btn btn-primary" id="abrirApp" href="#">📱 Abrir no app</a>
+    <a class="btn btn-secondary" id="baixarApp" href="https://play.google.com/store/apps/details?id=com.ronison.santosplay">⬇️ Baixar o SantosPlay</a>
+
+    <div class="codigo-box">
+      <div class="codigo-label">OU DIGITE ESTE CÓDIGO NO APP</div>
+      <div class="codigo-valor" id="codigoValor">--------</div>
+      <p class="codigo-hint" id="codigoHint">Dentro do SantosPlay, vá em Configurações → "Tenho um código de convite"</p>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var partes = location.pathname.split('/').filter(Boolean);
+      var codigo = (partes[partes.length - 1] || '').toUpperCase();
+      var deepLink = codigo ? 'santosplay://convite/' + codigo : 'santosplay://';
+
+      document.getElementById('codigoValor').textContent = codigo || '--------';
+      document.getElementById('abrirApp').href = deepLink;
+
+      var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isIOS) {
+        // Ainda não temos o app publicado na App Store — some com o botão de loja.
+        document.getElementById('baixarApp').style.display = 'none';
+      }
+
+      document.getElementById('codigoValor').addEventListener('click', function () {
+        if (!codigo || !navigator.clipboard) return;
+        navigator.clipboard.writeText(codigo).then(function () {
+          var hint = document.getElementById('codigoHint');
+          hint.textContent = 'Código copiado!';
+          hint.classList.add('copiado');
+        });
+      });
+
+      // Tenta abrir o app automaticamente. Se ele já estiver instalado, o
+      // navegador assume a partir daqui; se não, os botões continuam visíveis.
+      if (codigo) {
+        setTimeout(function () {
+          location.href = deepLink;
+        }, 300);
+        setTimeout(function () {
+          document.getElementById('status').textContent =
+            'Se o app não abriu, baixe pela loja ou digite o código abaixo.';
+        }, 1500);
+      } else {
+        document.getElementById('status').textContent = 'Link de convite inválido.';
+      }
+    })();
+  </script>
+</body>
+</html>

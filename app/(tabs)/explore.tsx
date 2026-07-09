@@ -353,7 +353,7 @@ export default function ContaScreen() {
               style={[styles.nivelCard, { backgroundColor: '#26215C' }]}
               onPress={() => router.push('/teste-conhecimento')}
               activeOpacity={0.85}>
-              <ThemedText style={{ fontSize: 22 }}>🎯</ThemedText>
+              <Image source={require('@/assets/images/teste-conhecimento.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
               <View style={{ flex: 1 }}>
                 {testeResultado ? (
                   <ThemedText style={styles.nivelCardTitle}>

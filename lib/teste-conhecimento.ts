@@ -54,13 +54,38 @@ export async function fetchQuestoesTeste(): Promise<QuestaoTeste[]> {
   return (data ?? []) as QuestaoTeste[];
 }
 
-// Monta uma prova de TEMAS.length * QUESTOES_POR_TEMA questões: sorteia
-// QUESTOES_POR_TEMA por tema, embaralha a ordem dos temas (em blocos) e as
-// alternativas de cada questão — nunca sai a mesma sequência duas vezes.
+// Quantas questões de cada dificuldade compõem o bloco de um tema (soma = QUESTOES_POR_TEMA).
+const MIX_DIFICULDADE: Record<string, number> = { facil: 2, medio: 2, dificil: 1 };
+
+// Sorteia o bloco de um tema respeitando a mistura de dificuldade acima. Se o
+// banco não tiver questões suficientes de algum nível (banco pequeno demais),
+// completa com o que sobrar de qualquer dificuldade até fechar QUESTOES_POR_TEMA.
+function selecionarComMix(doTema: QuestaoTeste[]): QuestaoTeste[] {
+  const porNivel: Record<string, QuestaoTeste[]> = { facil: [], medio: [], dificil: [] };
+  for (const q of doTema) (porNivel[q.dificuldade] ?? porNivel.medio).push(q);
+
+  const escolhidas: QuestaoTeste[] = [];
+  const usadas = new Set<string>();
+  for (const [nivel, qtd] of Object.entries(MIX_DIFICULDADE)) {
+    for (const q of shuffle(porNivel[nivel] ?? []).slice(0, qtd)) {
+      escolhidas.push(q);
+      usadas.add(q.id);
+    }
+  }
+  if (escolhidas.length < QUESTOES_POR_TEMA) {
+    const restantes = shuffle(doTema.filter(q => !usadas.has(q.id)));
+    escolhidas.push(...restantes.slice(0, QUESTOES_POR_TEMA - escolhidas.length));
+  }
+  return shuffle(escolhidas);
+}
+
+// Monta uma prova de TEMAS.length * QUESTOES_POR_TEMA questões: sorteia o
+// bloco de cada tema com mistura de dificuldade, embaralha a ordem dos temas
+// (em blocos) e as alternativas de cada questão — nunca sai a mesma sequência duas vezes.
 export function montarProvaAleatoria(banco: QuestaoTeste[]): QuestaoTeste[] {
   const blocos = shuffle(TEMAS).map(tema => {
     const doTema = banco.filter(q => q.tema === tema.id);
-    return shuffle(doTema).slice(0, QUESTOES_POR_TEMA).map(embaralharOpcoes);
+    return selecionarComMix(doTema).slice(0, QUESTOES_POR_TEMA).map(embaralharOpcoes);
   });
   return blocos.flat();
 }

@@ -1,3 +1,5 @@
+import type { ImageSourcePropType } from 'react-native';
+
 export type BlocoTipo = 'texto' | 'versiculo' | 'destaque' | 'curiosidade';
 
 export interface Bloco {
@@ -26,7 +28,7 @@ export interface Trilha {
   id: number;
   titulo: string;
   descricao: string;
-  icone: string;
+  icone: string | ImageSourcePropType;
   nivel: string;
   totalLicoes: number;
   xpTotal: number;
@@ -40,7 +42,7 @@ export const TRILHAS: Trilha[] = [
     id: 1,
     titulo: 'Catequese',
     descricao: 'Fundamentos da fé católica',
-    icone: '✝️',
+    icone: require('@/assets/images/catequese.png'),
     nivel: 'Iniciante',
     totalLicoes: 8,
     xpTotal: 240,
@@ -532,7 +534,7 @@ export const TRILHAS: Trilha[] = [
     id: 2,
     titulo: 'A Santa Missa',
     descricao: 'Conheça cada parte da celebração eucarística',
-    icone: '🕊️',
+    icone: require('@/assets/images/missa.png'),
     nivel: 'Iniciante',
     totalLicoes: 8,
     xpTotal: 240,
@@ -1024,7 +1026,7 @@ export const TRILHAS: Trilha[] = [
     id: 3,
     titulo: 'Orações e Devoções',
     descricao: 'Orações tradicionais e devoções marianas',
-    icone: '🙏',
+    icone: require('@/assets/images/oracao.png'),
     nivel: 'Iniciante',
     totalLicoes: 8,
     xpTotal: 240,
@@ -1516,7 +1518,7 @@ export const TRILHAS: Trilha[] = [
     id: 4,
     titulo: 'Liturgia Avançada',
     descricao: 'Aprofunde-se nos ritos e tempos litúrgicos',
-    icone: '📿',
+    icone: require('@/assets/images/liturgia_avancada.png'),
     nivel: 'Intermediário',
     totalLicoes: 8,
     xpTotal: 240,
@@ -1889,7 +1891,7 @@ export const TRILHAS: Trilha[] = [
     id: 5,
     titulo: 'Teologia Moral',
     descricao: 'Os princípios da moral cristã e sua aplicação à vida',
-    icone: '⚖️',
+    icone: require('@/assets/images/liturgia-moral.png'),
     nivel: 'Intermediário',
     totalLicoes: 8,
     xpTotal: 240,
@@ -2262,7 +2264,7 @@ export const TRILHAS: Trilha[] = [
     id: 6,
     titulo: 'Catequese Avançada',
     descricao: 'Sacramentos, graça e vida sacramental aprofundada',
-    icone: '📜',
+    icone: require('@/assets/images/catequese-avancada.png'),
     nivel: 'Avançado',
     totalLicoes: 8,
     xpTotal: 240,
@@ -2754,7 +2756,7 @@ export const TRILHAS: Trilha[] = [
     id: 7,
     titulo: 'História da Igreja: Primeiros Séculos',
     descricao: 'Das origens apostólicas ao Cisma do Oriente',
-    icone: '🏛️',
+    icone: require('@/assets/images/historia_igreja.png'),
     nivel: 'Intermediário',
     totalLicoes: 8,
     xpTotal: 240,
@@ -3246,7 +3248,7 @@ export const TRILHAS: Trilha[] = [
     id: 8,
     titulo: 'As Sete Moradas: Módulo 1',
     descricao: 'O Castelo Interior de Santa Teresa d\'Ávila — introdução à vida contemplativa',
-    icone: '🏰',
+    icone: require('@/assets/images/castelo.png'),
     nivel: 'Avançado',
     totalLicoes: 8,
     xpTotal: 240,

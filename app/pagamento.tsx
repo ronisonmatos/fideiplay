@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TrilhaIcon } from '@/components/trilha-icon';
 import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { TRILHAS } from '@/data/trilhas';
@@ -212,7 +213,7 @@ export default function PagamentoScreen() {
 
         <ScrollView contentContainerStyle={s.scroll}>
           <View style={[s.trilhaCard, { backgroundColor: theme.backgroundElement, borderColor: C.purple + '55' }]}>
-            <ThemedText style={s.trilhaIcone}>{trilha?.icone ?? '📿'}</ThemedText>
+            <TrilhaIcon icone={trilha?.icone ?? '📿'} size={48} />
             <View style={{ flex: 1 }}>
               <ThemedText style={[s.trilhaTitulo, { color: theme.text }]}>{titulo}</ThemedText>
               <ThemedText style={{ color: theme.textSecondary, fontSize: 12 }}>
@@ -471,7 +472,6 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
     padding: Spacing.three, borderRadius: 16, borderWidth: 1,
   },
-  trilhaIcone: { fontSize: 36, lineHeight: 44 },
   trilhaTitulo: { fontSize: 16, fontWeight: '800' },
   preco: { fontSize: 20, fontWeight: '900' },
   tabs: { flexDirection: 'row', borderRadius: 12, padding: 4, borderWidth: 1 },

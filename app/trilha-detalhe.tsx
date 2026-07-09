@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TrilhaIcon } from '@/components/trilha-icon';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
@@ -78,7 +79,7 @@ export default function TrilhaDetalheScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
               <ThemedText style={styles.backText}>←</ThemedText>
             </TouchableOpacity>
-            <ThemedText style={styles.headerIcon}>{trilha.icone}</ThemedText>
+            <TrilhaIcon icone={trilha.icone} size={72} />
             <ThemedText style={[styles.headerTitulo, { color: theme.text }]}>{trilha.titulo}</ThemedText>
             <ThemedText style={[styles.headerDesc, { color: theme.textSecondary }]}>{trilha.descricao}</ThemedText>
 
@@ -200,7 +201,6 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     alignItems: 'center',
   },
-  headerIcon: { fontSize: 48, lineHeight: 60 },
   headerTitulo: { fontSize: 24, fontWeight: '900', textAlign: 'center' },
   headerDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   statsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, marginTop: 4 },

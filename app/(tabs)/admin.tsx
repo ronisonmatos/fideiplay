@@ -23,6 +23,7 @@ import { AvatarImage } from '@/components/avatar-image';
 import { DateField } from '@/components/date-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TrilhaIcon } from '@/components/trilha-icon';
 import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
@@ -2092,7 +2093,7 @@ export default function AdminTab() {
                   const isToggling = toggling === trilha.id;
                   return (
                     <ThemedView key={trilha.id} type="backgroundElement" style={[s.card, s.playerRow]}>
-                      <ThemedText style={{ fontSize: 22 }}>{trilha.icone}</ThemedText>
+                      <TrilhaIcon icone={trilha.icone} size={22} />
                       <View style={{ flex: 1 }}>
                         <ThemedText type="smallBold">{trilha.titulo}</ThemedText>
                         <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
