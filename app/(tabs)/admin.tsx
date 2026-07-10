@@ -2981,7 +2981,7 @@ const s = StyleSheet.create({
     backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
   navBadgeSm: { top: -4, right: -8 },
-  navBadgeTxt: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  navBadgeTxt: { color: '#fff', fontSize: 9, lineHeight: 11, fontWeight: '800' },
 
   // Sub-filtros
   filterRow: { flexDirection: 'row', borderBottomWidth: 1 },
