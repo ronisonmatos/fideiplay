@@ -147,6 +147,7 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type AdminSection   = 'contests' | 'support' | 'moderacao' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
+type AdminCategory  = 'denuncias' | 'mod' | 'conteudo' | 'ads' | 'comunicacao' | 'sistema';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type EventosSub      = 'pendentes' | 'historico';
@@ -255,13 +256,92 @@ const STATUS_ICON: Record<string, string> = {
   pending: '⏳', approved: '✅', rejected: '❌',
 };
 
+// Navegação em 2 níveis: categoria (linha 1, sempre visível) → seção dentro
+// dela (linha 2, só aparece quando a categoria tem mais de uma seção). Evita
+// espremer as 9 seções numa única fileira de abas.
+const ADMIN_CATEGORIES: {
+  key: AdminCategory;
+  label: string;
+  icon: string;
+  sections: { key: AdminSection; label: string; icon: string }[];
+}[] = [
+  {
+    key: 'denuncias', label: 'Denúncias', icon: '🚨',
+    sections: [
+      { key: 'moderacao', label: 'Denúncias', icon: '🚨' },
+    ],
+  },
+  {
+    key: 'mod', label: 'Modera', icon: '✋',
+    sections: [
+      { key: 'contests', label: 'Contestações', icon: '✋' },
+    ],
+  },
+  {
+    key: 'conteudo', label: 'Conteúdo', icon: '📚',
+    sections: [
+      { key: 'trilhas', label: 'Trilhas', icon: '🔓' },
+    ],
+  },
+  {
+    key: 'ads', label: 'ADS', icon: '📢',
+    sections: [
+      { key: 'ads',     label: 'Anúncios', icon: '📢' },
+      { key: 'banners', label: 'Banners',  icon: '🪧' },
+      { key: 'eventos', label: 'Eventos',  icon: '🎪' },
+    ],
+  },
+  {
+    key: 'comunicacao', label: 'Comuni', icon: '💬',
+    sections: [
+      { key: 'support',       label: 'Suporte',   icon: '💬' },
+      { key: 'notifications', label: 'Notificar', icon: '🔔' },
+    ],
+  },
+  {
+    key: 'sistema', label: 'Sistema', icon: '⚙️',
+    sections: [
+      { key: 'config', label: 'Config', icon: '⚙️' },
+    ],
+  },
+];
+
+function categoryOf(section: AdminSection): AdminCategory {
+  return ADMIN_CATEGORIES.find(c => c.sections.some(s => s.key === section))!.key;
+}
+
 // ─── Tela principal ───────────────────────────────────────────────────────────
 
 export default function AdminTab() {
   const theme = useTheme();
   const { user, profile } = useAuth();
 
-  const [section, setSection] = useState<AdminSection>('contests');
+  const [section, setSection]   = useState<AdminSection>('contests');
+  const [category, setCategory] = useState<AdminCategory>(categoryOf('contests'));
+
+  // Contadores de pendência por módulo, usados nos badges do menu.
+  const [badgeCounts, setBadgeCounts] = useState({ contests: 0, moderacao: 0, eventos: 0, support: 0 });
+
+  // Troca de categoria já seleciona a primeira seção dela, pra nunca ficar
+  // com a categoria ativa e o conteúdo de uma seção de outra categoria.
+  const handleSelectCategory = useCallback((cat: AdminCategory) => {
+    setCategory(cat);
+    setSection(ADMIN_CATEGORIES.find(c => c.key === cat)!.sections[0].key);
+  }, []);
+
+  // Só Contestações, Denúncias, Eventos e Suporte têm um conceito de
+  // "pendente"; as demais seções nunca mostram badge.
+  const sectionBadge = useCallback((key: AdminSection): number => {
+    if (key === 'contests')  return badgeCounts.contests;
+    if (key === 'moderacao') return badgeCounts.moderacao;
+    if (key === 'eventos')   return badgeCounts.eventos;
+    if (key === 'support')   return badgeCounts.support;
+    return 0;
+  }, [badgeCounts]);
+
+  const categoryBadge = useCallback((key: AdminCategory): number => (
+    ADMIN_CATEGORIES.find(c => c.key === key)!.sections.reduce((sum, sec) => sum + sectionBadge(sec.key), 0)
+  ), [sectionBadge]);
 
   // ── Estado: Contestações ──────────────────────────────────────────────────
   const [filter,     setFilter]     = useState<FilterStatus>('pending');
@@ -522,8 +602,28 @@ export default function AdminTab() {
     setEventosRefresh(false);
   }, [eventosSub, profile?.is_admin]);
 
+  // ── Contadores de pendência (badges do menu) ──────────────────────────────
+  // Independente da seção ativa — só assim o menu mostra "há algo pra ver"
+  // em módulos que o admin ainda nem abriu nessa sessão.
+  const fetchBadgeCounts = useCallback(async () => {
+    if (!profile?.is_admin) return;
+    const [c, m, e, s] = await Promise.all([
+      supabase.from('stop_contests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('message_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('eventos_patrocinados').select('id', { count: 'exact', head: true }).eq('status', 'aguardando_aprovacao'),
+      supabase.from('support_messages').select('id', { count: 'exact', head: true }).eq('read', false),
+    ]);
+    setBadgeCounts({
+      contests:  c.count ?? 0,
+      moderacao: m.count ?? 0,
+      eventos:   e.count ?? 0,
+      support:   s.count ?? 0,
+    });
+  }, [profile?.is_admin]);
+
   // Recarrega ao focar a aba
   useFocusEffect(useCallback(() => {
+    fetchBadgeCounts();
     if (section === 'contests') fetchContests();
     else if (section === 'support') fetchSupport();
     else if (section === 'moderacao') fetchReports();
@@ -531,7 +631,7 @@ export default function AdminTab() {
     else if (section === 'banners') fetchBanners();
     else if (section === 'eventos') fetchEventos();
     else if (section === 'config') fetchConfig();
-  }, [section, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
+  }, [section, fetchBadgeCounts, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {
@@ -564,12 +664,13 @@ export default function AdminTab() {
               });
             } catch { /* best-effort */ }
             setContests(prev => prev.filter(x => x.id !== c.id));
+            fetchBadgeCounts();
           } catch { Alert.alert('Erro', 'Não foi possível processar. Tente novamente.'); }
           finally { setActing(null); }
         },
       }],
     );
-  }, [user]);
+  }, [user, fetchBadgeCounts]);
 
   const handleReject = useCallback(async (c: Contest) => {
     Alert.alert(
@@ -591,12 +692,13 @@ export default function AdminTab() {
               });
             } catch { /* best-effort */ }
             setContests(prev => prev.filter(x => x.id !== c.id));
+            fetchBadgeCounts();
           } catch { Alert.alert('Erro', 'Não foi possível processar. Tente novamente.'); }
           finally { setActing(null); }
         },
       }],
     );
-  }, [user]);
+  }, [user, fetchBadgeCounts]);
 
   // ── Ações: Suporte ────────────────────────────────────────────────────────
   const handleSendReply = useCallback(async (msg: SupportMsg) => {
@@ -627,17 +729,19 @@ export default function AdminTab() {
       ));
       setExpanded(null);
       setReplyText('');
+      fetchBadgeCounts();
     } catch {
       Alert.alert('Erro', 'Não foi possível enviar a resposta.');
     } finally {
       setSending(null);
     }
-  }, [user, replyText]);
+  }, [user, replyText, fetchBadgeCounts]);
 
   const handleMarkRead = useCallback(async (id: string) => {
     await supabase.from('support_messages').update({ read: true }).eq('id', id);
     setMsgs(prev => prev.map(m => m.id === id ? { ...m, read: true } : m));
-  }, []);
+    fetchBadgeCounts();
+  }, [fetchBadgeCounts]);
 
   const handleDeleteMsg = useCallback((id: string) => {
     Alert.alert(
@@ -696,7 +800,8 @@ export default function AdminTab() {
     }).eq('id', id);
     if (error) { Alert.alert('Erro', 'Não foi possível arquivar a denúncia.'); return; }
     setReports(prev => mfilt === 'pending' ? prev.filter(r => r.id !== id) : prev.map(r => r.id === id ? { ...r, status: 'reviewed' } : r));
-  }, [user, mfilt]);
+    fetchBadgeCounts();
+  }, [user, mfilt, fetchBadgeCounts]);
 
   // ── Ações: Trilhas ────────────────────────────────────────────────────────
   const handleSearchUsers = useCallback(async () => {
@@ -1197,6 +1302,7 @@ export default function AdminTab() {
               `Seu evento "${evento.titulo}" foi aprovado e já está no ar!`,
             ).catch(() => {});
             setEventosPendentes(prev => prev.filter(e => e.id !== evento.id));
+            fetchBadgeCounts();
           } else {
             Alert.alert('Erro', 'Não foi possível aprovar. Tente novamente.');
           }
@@ -1204,7 +1310,7 @@ export default function AdminTab() {
         },
       }],
     );
-  }, [user]);
+  }, [user, fetchBadgeCounts]);
 
   const handleAbrirRejeitar = useCallback((evento: EventoPatrocinado) => {
     setRejeitarAlvo(evento);
@@ -1229,7 +1335,8 @@ export default function AdminTab() {
     }
     setEventosPendentes(prev => prev.filter(e => e.id !== rejeitarAlvo.id));
     setRejeitarModalVisible(false);
-  }, [motivoRejeicao, rejeitarAlvo]);
+    fetchBadgeCounts();
+  }, [motivoRejeicao, rejeitarAlvo, fetchBadgeCounts]);
 
   // ── Ações: Configurações ──────────────────────────────────────────────────
   const handleToggleConfigBannerAtivo = useCallback(async (value: boolean) => {
@@ -1802,27 +1909,25 @@ export default function AdminTab() {
           <ThemedText style={[s.headerTitle, { color: theme.text }]}>Admin</ThemedText>
         </View>
 
-        {/* Seletor de seção */}
+        {/* Seletor de categoria */}
         <View style={[s.sectionRow, { borderBottomColor: C.border, backgroundColor: theme.backgroundElement }]}>
-          {([
-            { key: 'contests',      label: 'Contestações', icon: '✋' },
-            { key: 'support',       label: 'Suporte',       icon: '💬' },
-            { key: 'moderacao',     label: 'Denúncias',     icon: '🚩' },
-            { key: 'trilhas',       label: 'Trilhas',       icon: '🔓' },
-            { key: 'notifications', label: 'Notificar',     icon: '🔔' },
-            { key: 'ads',           label: 'Anúncios',      icon: '📢' },
-            { key: 'banners',       label: 'Banners',       icon: '🪧' },
-            { key: 'eventos',       label: 'Eventos',       icon: '🎪' },
-            { key: 'config',        label: 'Config',        icon: '⚙️' },
-          ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
-            const active = section === key;
+          {ADMIN_CATEGORIES.map(({ key, label, icon }) => {
+            const active = category === key;
+            const badge  = categoryBadge(key);
             return (
               <TouchableOpacity
                 key={key}
                 style={[s.sectionBtn, active && { borderBottomWidth: 2.5, borderBottomColor: C.purple }]}
-                onPress={() => setSection(key)}
+                onPress={() => handleSelectCategory(key)}
                 activeOpacity={0.7}>
-                <ThemedText style={{ fontSize: 20, lineHeight: 24 }}>{icon}</ThemedText>
+                <View>
+                  <ThemedText style={{ fontSize: 20, lineHeight: 24 }}>{icon}</ThemedText>
+                  {badge > 0 && (
+                    <View style={s.navBadge}>
+                      <ThemedText style={s.navBadgeTxt}>{badge > 99 ? '99+' : badge}</ThemedText>
+                    </View>
+                  )}
+                </View>
                 <ThemedText style={[s.sectionTxt, { color: active ? C.purple : theme.textSecondary }]}>
                   {label}
                 </ThemedText>
@@ -1830,6 +1935,39 @@ export default function AdminTab() {
             );
           })}
         </View>
+
+        {/* Seletor de seção dentro da categoria (só aparece com mais de 1 opção) */}
+        {(() => {
+          const sections = ADMIN_CATEGORIES.find(c => c.key === category)!.sections;
+          if (sections.length < 2) return null;
+          return (
+            <View style={[s.subSectionRow, { borderBottomColor: C.border }]}>
+              {sections.map(({ key, label, icon }) => {
+                const active = section === key;
+                const badge  = sectionBadge(key);
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[s.subSectionBtn, active && { backgroundColor: C.purple + '1c' }]}
+                    onPress={() => setSection(key)}
+                    activeOpacity={0.7}>
+                    <View>
+                      <ThemedText style={{ fontSize: 14 }}>{icon}</ThemedText>
+                      {badge > 0 && (
+                        <View style={[s.navBadge, s.navBadgeSm]}>
+                          <ThemedText style={s.navBadgeTxt}>{badge > 99 ? '99+' : badge}</ThemedText>
+                        </View>
+                      )}
+                    </View>
+                    <ThemedText style={[s.subSectionTxt, { color: active ? C.purple : theme.textSecondary }]}>
+                      {label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        })()}
 
         {/* ══ SEÇÃO: CONTESTAÇÕES ══ */}
         {section === 'contests' && (
@@ -2140,7 +2278,9 @@ export default function AdminTab() {
                     <View style={s.playerRow}>
                       <View style={{ flex: 1 }}>
                         <ThemedText type="smallBold" numberOfLines={1}>
-                          {report.reporter_name} denunciou {report.reported_user_name}
+                          <ThemedText type="smallBold" style={{ color: C.red }}>{report.reporter_name}</ThemedText>
+                          {' denunciou '}
+                          <ThemedText type="smallBold" style={{ color: C.purple }}>{report.reported_user_name}</ThemedText>
                         </ThemedText>
                         <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
                           {new Date(report.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -2845,6 +2985,15 @@ const s = StyleSheet.create({
   sectionRow: { flexDirection: 'row', borderBottomWidth: 1 },
   sectionBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 4 },
   sectionTxt: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  subSectionRow: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
+  subSectionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 7, gap: 5, borderRadius: C.radius.pill },
+  subSectionTxt: { fontSize: 11, fontWeight: '700' },
+  navBadge: {
+    position: 'absolute', top: -3, right: -10, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  navBadgeSm: { top: -4, right: -8 },
+  navBadgeTxt: { color: '#fff', fontSize: 9, lineHeight: 11, fontWeight: '800' },
 
   // Sub-filtros
   filterRow: { flexDirection: 'row', borderBottomWidth: 1 },

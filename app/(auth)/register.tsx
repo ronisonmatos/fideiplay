@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import Constants from 'expo-constants';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -22,6 +23,8 @@ import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
+
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 async function fetchLegalUrls(): Promise<{ termos: string; privacidade: string }> {
   const { data } = await supabase
@@ -314,6 +317,10 @@ export default function RegisterScreen() {
               </ThemedText>
             </TouchableOpacity>
 
+            <ThemedText style={[s.versionTxt, { color: theme.textSecondary }]}>
+              v{APP_VERSION}
+            </ThemedText>
+
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -403,4 +410,5 @@ const s = StyleSheet.create({
   footerTxt: { fontSize: 14 },
   skipBtn:   { alignItems: 'center', paddingTop: Spacing.one },
   skipTxt:   { fontSize: 13 },
+  versionTxt: { fontSize: 11, textAlign: 'center', paddingTop: Spacing.two },
 });
