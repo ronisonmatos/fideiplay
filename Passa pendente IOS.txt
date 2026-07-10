@@ -1,0 +1,32 @@
+Agora o typecheck final de tudo.
+
+  Ran 2 shell commands
+
+Sem erros novos. Vou rodar o typecheck completo mais uma vez para comparar com a lista de erros pré-existentes do início da sessão.
+
+  Read 1 file, ran 3 shell commands
+
+Typecheck limpo em relação ao que já existia — nenhuma regressão. Vou dar uma olhada final no diff completo antes de resumir.
+
+  Ran 1 shell command
+
+Implementação completa das duas features do plano. Resumo do que foi feito:
+
+Feature 2 — Chat (100% testável sem Mac):
+- 3 migrations novas (blocked_users, message_reports, chat_banned_words + trigger de filtro)
+- lib/chat-filtro.ts, hooks/use-chat-mensagens.ts (bloqueio), app/(tabs)/chat.tsx (menu de denunciar/bloquear no long-press, filtro antes do envio)
+- Nova seção "Denúncias" no admin + badge de pendências
+
+Feature 1 — Apple IAP (código pronto, teste final precisa de Mac):
+- Instalei expo-iap de verdade (npx expo install, que já ajustou package.json/app.json sozinho)
+- lib/iap.ts / lib/iap-products.ts, aba "🍎 Apple" em app/pagamento.tsx (some PIX/Cartão no iOS), botão "Restaurar compras" em app/configuracoes.tsx
+- supabase/functions/verify-apple-iap: usa a biblioteca oficial da Apple (@apple/app-store-server-library) para validar a assinatura JWS contra a cadeia de certificados real — baixei e conferi o fingerprint do certificado raiz da Apple (Apple Root CA G3) direto do site oficial deles, então a verificação de assinatura é de verdade, não um placeholder
+- Migration add_apple_iap_payments.sql
+
+Todo o typecheck ficou limpo (comparei com os erros que já existiam antes de eu mexer em qualquer coisa — nenhuma regressão).
+
+Antes de gerar o build de produção, você precisa:
+1. Rodar as 4 migrations novas no SQL Editor do Supabase (add_blocked_users, add_message_reports, add_chat_word_filter, add_apple_iap_payments)
+2. No App Store Connect: criar os 3 produtos IAP non-consumable com os IDs trilha_liturgia_avancada, trilha_teologia_moral, trilha_sete_moradas_modulo1 (preço R$ 9,90)
+3. Gerar a chave .p8 de In-App Purchase (diferente da chave de submit que vocês já usam) e configurar os secrets no Supabase: APPLE_IAP_PRIVATE_KEY, APPLE_IAP_KEY_ID, APPLE_IAP_ISSUER_ID, APPLE_BUNDLE_ID
+4. eas build --platform ios e testar a compra real com um sandbox tester — esse passo final realmente só dá pra fazer num Mac/TestFlight, não tem como contornar
