@@ -147,6 +147,7 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type AdminSection   = 'contests' | 'support' | 'moderacao' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
+type AdminCategory  = 'mod' | 'conteudo' | 'comunicacao' | 'sistema';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type EventosSub      = 'pendentes' | 'historico';
@@ -255,13 +256,65 @@ const STATUS_ICON: Record<string, string> = {
   pending: '⏳', approved: '✅', rejected: '❌',
 };
 
+// Navegação em 2 níveis: categoria (linha 1, sempre visível) → seção dentro
+// dela (linha 2, só aparece quando a categoria tem mais de uma seção). Evita
+// espremer as 9 seções numa única fileira de abas.
+const ADMIN_CATEGORIES: {
+  key: AdminCategory;
+  label: string;
+  icon: string;
+  sections: { key: AdminSection; label: string; icon: string }[];
+}[] = [
+  {
+    key: 'mod', label: 'Moderação', icon: '🚨',
+    sections: [
+      { key: 'contests',  label: 'Contestações', icon: '✋' },
+      { key: 'moderacao', label: 'Denúncias',    icon: '🚩' },
+    ],
+  },
+  {
+    key: 'conteudo', label: 'Conteúdo', icon: '📚',
+    sections: [
+      { key: 'trilhas', label: 'Trilhas',  icon: '🔓' },
+      { key: 'ads',     label: 'Anúncios', icon: '📢' },
+      { key: 'banners', label: 'Banners',  icon: '🪧' },
+      { key: 'eventos', label: 'Eventos',  icon: '🎪' },
+    ],
+  },
+  {
+    key: 'comunicacao', label: 'Comunicação', icon: '💬',
+    sections: [
+      { key: 'support',       label: 'Suporte',   icon: '💬' },
+      { key: 'notifications', label: 'Notificar', icon: '🔔' },
+    ],
+  },
+  {
+    key: 'sistema', label: 'Sistema', icon: '⚙️',
+    sections: [
+      { key: 'config', label: 'Config', icon: '⚙️' },
+    ],
+  },
+];
+
+function categoryOf(section: AdminSection): AdminCategory {
+  return ADMIN_CATEGORIES.find(c => c.sections.some(s => s.key === section))!.key;
+}
+
 // ─── Tela principal ───────────────────────────────────────────────────────────
 
 export default function AdminTab() {
   const theme = useTheme();
   const { user, profile } = useAuth();
 
-  const [section, setSection] = useState<AdminSection>('contests');
+  const [section, setSection]   = useState<AdminSection>('contests');
+  const [category, setCategory] = useState<AdminCategory>(categoryOf('contests'));
+
+  // Troca de categoria já seleciona a primeira seção dela, pra nunca ficar
+  // com a categoria ativa e o conteúdo de uma seção de outra categoria.
+  const handleSelectCategory = useCallback((cat: AdminCategory) => {
+    setCategory(cat);
+    setSection(ADMIN_CATEGORIES.find(c => c.key === cat)!.sections[0].key);
+  }, []);
 
   // ── Estado: Contestações ──────────────────────────────────────────────────
   const [filter,     setFilter]     = useState<FilterStatus>('pending');
@@ -1802,25 +1855,15 @@ export default function AdminTab() {
           <ThemedText style={[s.headerTitle, { color: theme.text }]}>Admin</ThemedText>
         </View>
 
-        {/* Seletor de seção */}
+        {/* Seletor de categoria */}
         <View style={[s.sectionRow, { borderBottomColor: C.border, backgroundColor: theme.backgroundElement }]}>
-          {([
-            { key: 'contests',      label: 'Contestações', icon: '✋' },
-            { key: 'support',       label: 'Suporte',       icon: '💬' },
-            { key: 'moderacao',     label: 'Denúncias',     icon: '🚩' },
-            { key: 'trilhas',       label: 'Trilhas',       icon: '🔓' },
-            { key: 'notifications', label: 'Notificar',     icon: '🔔' },
-            { key: 'ads',           label: 'Anúncios',      icon: '📢' },
-            { key: 'banners',       label: 'Banners',       icon: '🪧' },
-            { key: 'eventos',       label: 'Eventos',       icon: '🎪' },
-            { key: 'config',        label: 'Config',        icon: '⚙️' },
-          ] as { key: AdminSection; label: string; icon: string }[]).map(({ key, label, icon }) => {
-            const active = section === key;
+          {ADMIN_CATEGORIES.map(({ key, label, icon }) => {
+            const active = category === key;
             return (
               <TouchableOpacity
                 key={key}
                 style={[s.sectionBtn, active && { borderBottomWidth: 2.5, borderBottomColor: C.purple }]}
-                onPress={() => setSection(key)}
+                onPress={() => handleSelectCategory(key)}
                 activeOpacity={0.7}>
                 <ThemedText style={{ fontSize: 20, lineHeight: 24 }}>{icon}</ThemedText>
                 <ThemedText style={[s.sectionTxt, { color: active ? C.purple : theme.textSecondary }]}>
@@ -1830,6 +1873,31 @@ export default function AdminTab() {
             );
           })}
         </View>
+
+        {/* Seletor de seção dentro da categoria (só aparece com mais de 1 opção) */}
+        {(() => {
+          const sections = ADMIN_CATEGORIES.find(c => c.key === category)!.sections;
+          if (sections.length < 2) return null;
+          return (
+            <View style={[s.subSectionRow, { borderBottomColor: C.border }]}>
+              {sections.map(({ key, label, icon }) => {
+                const active = section === key;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[s.subSectionBtn, active && { backgroundColor: C.purple + '1c' }]}
+                    onPress={() => setSection(key)}
+                    activeOpacity={0.7}>
+                    <ThemedText style={{ fontSize: 14 }}>{icon}</ThemedText>
+                    <ThemedText style={[s.subSectionTxt, { color: active ? C.purple : theme.textSecondary }]}>
+                      {label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        })()}
 
         {/* ══ SEÇÃO: CONTESTAÇÕES ══ */}
         {section === 'contests' && (
@@ -2845,6 +2913,9 @@ const s = StyleSheet.create({
   sectionRow: { flexDirection: 'row', borderBottomWidth: 1 },
   sectionBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 4 },
   sectionTxt: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  subSectionRow: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
+  subSectionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 7, gap: 5, borderRadius: C.radius.pill },
+  subSectionTxt: { fontSize: 11, fontWeight: '700' },
 
   // Sub-filtros
   filterRow: { flexDirection: 'row', borderBottomWidth: 1 },
