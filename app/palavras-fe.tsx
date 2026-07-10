@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GameHeader } from '@/components/game-header';
 import { GameRewardBanner } from '@/components/game-reward-banner';
@@ -103,6 +103,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function PalavrasFeScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { reportResult } = useGameStore();
   const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
@@ -410,7 +411,10 @@ export default function PalavrasFeScreen() {
           </View>
         </ScrollView>
 
-        <TouchableOpacity onPress={handleRevealLetter} style={styles.hintFab} activeOpacity={0.8}>
+        <TouchableOpacity
+          onPress={handleRevealLetter}
+          style={[styles.hintFab, { bottom: Spacing.three + insets.bottom }]}
+          activeOpacity={0.8}>
           <ThemedText style={styles.hintFabText}>
             💡 Revelar letra ({ECONOMY.PALAVRA_FE_REVELAR_LETRA} 🪙)
           </ThemedText>

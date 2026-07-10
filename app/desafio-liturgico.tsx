@@ -106,13 +106,17 @@ export default function DesafioLiturgicoScreen() {
   useEffect(() => {
     if (phase !== 'playing') return;
     timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { endGame(0); return 0; }
-        return t - 1;
-      });
+      setTimeLeft(t => Math.max(0, t - 1));
     }, 1000);
     return stopTimer;
   }, [phase, endGame, stopTimer]);
+
+  // Fim do tempo — efeito fica FORA do updater de setTimeLeft (updaters devem
+  // ser puros; o React pode reexecutá-los, ex. StrictMode). O updater não pode
+  // usar variável local do closure porque "tempo extra" soma 15s ao estado.
+  useEffect(() => {
+    if (phase === 'playing' && timeLeft === 0) endGame(0);
+  }, [phase, timeLeft, endGame]);
 
   const startWithDifficulty = useCallback((diff: Difficulty) => {
     playClickSound();

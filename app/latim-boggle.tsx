@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, LayoutChangeEvent, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -230,6 +230,7 @@ function FoundConnector({ index, segmentsSV, gridSizeSV, cellSizeSV, color }: Fo
 
 export default function LatimBoggleScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { reportResult } = useGameStore();
   const { user, profile, refreshProfile } = useAuth();
   const { isLevelComplete, markLevelComplete } = useGameLevels();
@@ -264,6 +265,7 @@ export default function LatimBoggleScreen() {
 
   useEffect(() => { levelRef.current = level; }, [level]);
   useEffect(() => { foundWordsRef.current = foundWords; }, [foundWords]);
+  useEffect(() => () => { if (revealTimeout.current) clearTimeout(revealTimeout.current); }, []);
 
   // Reporta XP/moedas ao completar o jogo dentro de um efeito — chamar reportResult
   // (que faz setState no GameStoreProvider) direto no corpo do render disparava
@@ -757,7 +759,10 @@ export default function LatimBoggleScreen() {
           )}
 
           {!allWordsFound && revealsUsed < ECONOMY.BOGGLE_MAX_REVELACOES && (
-            <TouchableOpacity onPress={handleRevealLetter} style={styles.hintFab} activeOpacity={0.8}>
+            <TouchableOpacity
+              onPress={handleRevealLetter}
+              style={[styles.hintFab, { bottom: Spacing.three + insets.bottom }]}
+              activeOpacity={0.8}>
               <ThemedText style={styles.hintFabText}>
                 💡 Revelar letra ({ECONOMY.BOGGLE_REVELAR_LETRA} 🪙)
               </ThemedText>

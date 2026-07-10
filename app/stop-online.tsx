@@ -381,18 +381,28 @@ export default function StopOnlineScreen() {
       timerSoundRef.current = sound;
     }).catch(() => {});
 
+    // Efeitos do fim do tempo (parar timer, popup, submit) ficam FORA do
+    // updater de setTimeLeft — updaters devem ser puros (o React pode
+    // reexecutá-los, ex. StrictMode), o que aqui duplicaria o submit. O tempo
+    // restante vive numa variável local: este efeito sempre parte de TIMER
+    // (setTimeLeft(TIMER) acima) e nada mais altera timeLeft durante 'playing'.
+    let restante = TIMER;
     timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        const next = t - 1;
-        // P2 async: popup quando o timer bate no mesmo valor que P1 tinha ao dar Stop
-        if (isCountUpRef.current && asyncTimeLimitRef.current < TIMER && next <= (TIMER - asyncTimeLimitRef.current)) {
-          stopTimer();
-          setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
-          return TIMER - asyncTimeLimitRef.current;
-        }
-        if (next <= 0) { stopTimer(); doSubmitRef.current(); return 0; }
-        return next;
-      });
+      restante -= 1;
+      // P2 async: popup quando o timer bate no mesmo valor que P1 tinha ao dar Stop
+      if (isCountUpRef.current && asyncTimeLimitRef.current < TIMER && restante <= (TIMER - asyncTimeLimitRef.current)) {
+        setTimeLeft(TIMER - asyncTimeLimitRef.current);
+        stopTimer();
+        setStopPopup({ name: oppNameRef.current, elapsed: asyncTimeLimitRef.current });
+        return;
+      }
+      if (restante <= 0) {
+        setTimeLeft(0);
+        stopTimer();
+        doSubmitRef.current();
+        return;
+      }
+      setTimeLeft(restante);
     }, 1000);
     return () => { cancelled = true; stopTimer(); };
   }, [phase, stopTimer]);

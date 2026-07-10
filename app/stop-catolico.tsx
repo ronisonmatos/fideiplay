@@ -188,11 +188,21 @@ export default function StopCatolicoScreen() {
       timerSoundRef.current = sound;
     }).catch(() => {});
 
+    // Efeitos do fim do tempo (parar timer/som, mudar de fase) ficam FORA do
+    // updater de setTimeLeft — updaters devem ser puros (o React pode
+    // reexecutá-los, ex. StrictMode), o que duplicaria os efeitos. O tempo
+    // restante vive numa variável local: startGame sempre reseta para
+    // TIMER_DURATION antes de entrar em 'playing'.
+    let restante = TIMER_DURATION;
     timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { stopTimer(); setPhase('result'); return 0; }
-        return t - 1;
-      });
+      restante -= 1;
+      if (restante <= 0) {
+        setTimeLeft(0);
+        stopTimer();
+        setPhase('result');
+        return;
+      }
+      setTimeLeft(restante);
     }, 1000);
     return () => { cancelled = true; stopTimer(); };
   }, [phase, stopTimer]);

@@ -181,15 +181,16 @@ function TesteJogo({
   useEffect(() => {
     if (respondida || !questaoAtual) return;
     setTempoRestante(TEMPO_POR_QUESTAO);
+    let restante = TEMPO_POR_QUESTAO;
     const id = setInterval(() => {
-      setTempoRestante(t => {
-        if (t <= 1) {
-          clearInterval(id);
-          onResponder(null);
-          return 0;
-        }
-        return t - 1;
-      });
+      restante -= 1;
+      if (restante <= 0) {
+        clearInterval(id);
+        setTempoRestante(0);
+        onResponder(null);
+      } else {
+        setTempoRestante(restante);
+      }
     }, 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,7 +255,7 @@ function TesteJogo({
             })}
           </View>
 
-          {respondida && questaoAtual.explicacao && (
+          {respondida && selecionado !== null && questaoAtual.explicacao && (
             <View style={[s.explicacaoBox, { backgroundColor: theme.backgroundElement }]}>
               <ThemedText themeColor="textSecondary" style={{ fontSize: 12, lineHeight: 17 }}>
                 {questaoAtual.explicacao}

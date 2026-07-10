@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { todayKey } from './daily-mission';
 import type { CategoriaEvento } from '@/constants/banner-config';
 
 export interface BannerAd {
@@ -38,7 +39,7 @@ function dentroDoAlcance(
 }
 
 async function fetchActiveEventosPatrocinados(localizacao?: LocalizacaoFiltro): Promise<BannerAd[]> {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayKey();
   const { data, error } = await supabase
     .from('eventos_patrocinados')
     .select('id, titulo, descricao, imagem_url, link_externo, local_evento, data_inicio, exibicao_inicio, exibicao_fim, alcance, estados, cidades, categoria')
@@ -81,7 +82,7 @@ export async function fetchActiveBannerAds(localizacao?: LocalizacaoFiltro): Pro
     ]);
     if (error) return eventos;
 
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = todayKey();
     const banners: BannerAd[] = (data ?? [])
       .filter(ad => {
         // Fora do período de exibição (quando definido), o banner some mesmo com ativo = true

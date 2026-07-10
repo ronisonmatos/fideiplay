@@ -1,5 +1,6 @@
 import { ActivityIndicator, Animated, Image, Linking, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -220,7 +221,11 @@ export default function AdRewardScreen() {
       )}
 
       {/* Gradiente topo */}
-      <View style={s.gradientTop} pointerEvents="none" />
+      <LinearGradient
+        colors={['rgba(0,0,0,0.7)', 'transparent']}
+        style={s.gradientTop}
+        pointerEvents="none"
+      />
       {/* Gradiente base */}
       <View style={s.gradientBottom} pointerEvents="none" />
 
@@ -294,16 +299,10 @@ const s = StyleSheet.create({
   fill:   { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 32 },
 
-  // Gradientes simulados
   gradientTop: {
     ...StyleSheet.absoluteFillObject,
     bottom: undefined,
     height: 160,
-    backgroundColor: 'transparent',
-    // sombra manual via camadas
-    borderTopWidth: 0,
-    opacity: 1,
-    background: 'linear-gradient(#000, transparent)',
   },
   gradientBottom: {
     ...StyleSheet.absoluteFillObject,

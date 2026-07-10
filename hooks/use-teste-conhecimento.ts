@@ -39,7 +39,10 @@ interface RespostaRegistrada {
 }
 
 // Tempo em que a resposta certa fica destacada antes de avançar sozinho.
+// Quando o usuário respondeu, dá mais tempo para ler a explicação; quando o
+// tempo esgotou sem seleção (sem explicação exibida), avança mais rápido.
 const TEMPO_REVELACAO_MS = 2000;
+const TEMPO_REVELACAO_COM_RESPOSTA_MS = 12000;
 
 export function useTesteConhecimento() {
   const [fase, setFase]               = useState<FaseTeste>('inicio');
@@ -111,7 +114,7 @@ export function useTesteConhecimento() {
         setSelecionado(null);
         setRespondida(false);
       }
-    }, TEMPO_REVELACAO_MS);
+    }, opcaoIndice !== null ? TEMPO_REVELACAO_COM_RESPOSTA_MS : TEMPO_REVELACAO_MS);
   }, [respondida, questoes, indice, calcularResultado]);
 
   const salvarResultado = useCallback(async (userId: string) => {
