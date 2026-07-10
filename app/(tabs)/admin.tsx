@@ -147,7 +147,7 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type AdminSection   = 'contests' | 'support' | 'moderacao' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
-type AdminCategory  = 'mod' | 'conteudo' | 'comunicacao' | 'sistema';
+type AdminCategory  = 'denuncias' | 'mod' | 'conteudo' | 'ads' | 'comunicacao' | 'sistema';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
 type EventosSub      = 'pendentes' | 'historico';
@@ -266,23 +266,33 @@ const ADMIN_CATEGORIES: {
   sections: { key: AdminSection; label: string; icon: string }[];
 }[] = [
   {
-    key: 'mod', label: 'Moderação', icon: '🚨',
+    key: 'denuncias', label: 'Denúncias', icon: '🚨',
     sections: [
-      { key: 'contests',  label: 'Contestações', icon: '✋' },
-      { key: 'moderacao', label: 'Denúncias',    icon: '🚩' },
+      { key: 'moderacao', label: 'Denúncias', icon: '🚨' },
+    ],
+  },
+  {
+    key: 'mod', label: 'Modera', icon: '✋',
+    sections: [
+      { key: 'contests', label: 'Contestações', icon: '✋' },
     ],
   },
   {
     key: 'conteudo', label: 'Conteúdo', icon: '📚',
     sections: [
-      { key: 'trilhas', label: 'Trilhas',  icon: '🔓' },
+      { key: 'trilhas', label: 'Trilhas', icon: '🔓' },
+    ],
+  },
+  {
+    key: 'ads', label: 'ADS', icon: '📢',
+    sections: [
       { key: 'ads',     label: 'Anúncios', icon: '📢' },
       { key: 'banners', label: 'Banners',  icon: '🪧' },
       { key: 'eventos', label: 'Eventos',  icon: '🎪' },
     ],
   },
   {
-    key: 'comunicacao', label: 'Comunicação', icon: '💬',
+    key: 'comunicacao', label: 'Comuni', icon: '💬',
     sections: [
       { key: 'support',       label: 'Suporte',   icon: '💬' },
       { key: 'notifications', label: 'Notificar', icon: '🔔' },
@@ -2268,7 +2278,9 @@ export default function AdminTab() {
                     <View style={s.playerRow}>
                       <View style={{ flex: 1 }}>
                         <ThemedText type="smallBold" numberOfLines={1}>
-                          {report.reporter_name} denunciou {report.reported_user_name}
+                          <ThemedText type="smallBold" style={{ color: C.red }}>{report.reporter_name}</ThemedText>
+                          {' denunciou '}
+                          <ThemedText type="smallBold" style={{ color: C.purple }}>{report.reported_user_name}</ThemedText>
                         </ThemedText>
                         <ThemedText themeColor="textSecondary" style={{ fontSize: 11 }}>
                           {new Date(report.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}

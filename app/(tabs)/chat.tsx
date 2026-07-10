@@ -409,7 +409,8 @@ export default function ChatScreen() {
               reported_user_id:   msg.user_id,
               reported_user_name: msg.user_name,
             }).then(({ error }) => {
-              if (error) Alert.alert('Erro', 'Não foi possível enviar a denúncia. Tente novamente.');
+              if (error?.code === '23505') Alert.alert('Você já denunciou essa mensagem', 'Um admin ainda vai revisar sua denúncia.');
+              else if (error) Alert.alert('Erro', 'Não foi possível enviar a denúncia. Tente novamente.');
               else Alert.alert('Denúncia enviada', 'Obrigado, um admin vai revisar.');
             });
           },
