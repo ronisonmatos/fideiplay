@@ -309,12 +309,29 @@ export default function AdminTab() {
   const [section, setSection]   = useState<AdminSection>('contests');
   const [category, setCategory] = useState<AdminCategory>(categoryOf('contests'));
 
+  // Contadores de pendência por módulo, usados nos badges do menu.
+  const [badgeCounts, setBadgeCounts] = useState({ contests: 0, moderacao: 0, eventos: 0, support: 0 });
+
   // Troca de categoria já seleciona a primeira seção dela, pra nunca ficar
   // com a categoria ativa e o conteúdo de uma seção de outra categoria.
   const handleSelectCategory = useCallback((cat: AdminCategory) => {
     setCategory(cat);
     setSection(ADMIN_CATEGORIES.find(c => c.key === cat)!.sections[0].key);
   }, []);
+
+  // Só Contestações, Denúncias, Eventos e Suporte têm um conceito de
+  // "pendente"; as demais seções nunca mostram badge.
+  const sectionBadge = useCallback((key: AdminSection): number => {
+    if (key === 'contests')  return badgeCounts.contests;
+    if (key === 'moderacao') return badgeCounts.moderacao;
+    if (key === 'eventos')   return badgeCounts.eventos;
+    if (key === 'support')   return badgeCounts.support;
+    return 0;
+  }, [badgeCounts]);
+
+  const categoryBadge = useCallback((key: AdminCategory): number => (
+    ADMIN_CATEGORIES.find(c => c.key === key)!.sections.reduce((sum, sec) => sum + sectionBadge(sec.key), 0)
+  ), [sectionBadge]);
 
   // ── Estado: Contestações ──────────────────────────────────────────────────
   const [filter,     setFilter]     = useState<FilterStatus>('pending');
@@ -575,8 +592,28 @@ export default function AdminTab() {
     setEventosRefresh(false);
   }, [eventosSub, profile?.is_admin]);
 
+  // ── Contadores de pendência (badges do menu) ──────────────────────────────
+  // Independente da seção ativa — só assim o menu mostra "há algo pra ver"
+  // em módulos que o admin ainda nem abriu nessa sessão.
+  const fetchBadgeCounts = useCallback(async () => {
+    if (!profile?.is_admin) return;
+    const [c, m, e, s] = await Promise.all([
+      supabase.from('stop_contests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('message_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('eventos_patrocinados').select('id', { count: 'exact', head: true }).eq('status', 'aguardando_aprovacao'),
+      supabase.from('support_messages').select('id', { count: 'exact', head: true }).eq('read', false),
+    ]);
+    setBadgeCounts({
+      contests:  c.count ?? 0,
+      moderacao: m.count ?? 0,
+      eventos:   e.count ?? 0,
+      support:   s.count ?? 0,
+    });
+  }, [profile?.is_admin]);
+
   // Recarrega ao focar a aba
   useFocusEffect(useCallback(() => {
+    fetchBadgeCounts();
     if (section === 'contests') fetchContests();
     else if (section === 'support') fetchSupport();
     else if (section === 'moderacao') fetchReports();
@@ -584,7 +621,7 @@ export default function AdminTab() {
     else if (section === 'banners') fetchBanners();
     else if (section === 'eventos') fetchEventos();
     else if (section === 'config') fetchConfig();
-  }, [section, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
+  }, [section, fetchBadgeCounts, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {
@@ -617,12 +654,13 @@ export default function AdminTab() {
               });
             } catch { /* best-effort */ }
             setContests(prev => prev.filter(x => x.id !== c.id));
+            fetchBadgeCounts();
           } catch { Alert.alert('Erro', 'Não foi possível processar. Tente novamente.'); }
           finally { setActing(null); }
         },
       }],
     );
-  }, [user]);
+  }, [user, fetchBadgeCounts]);
 
   const handleReject = useCallback(async (c: Contest) => {
     Alert.alert(
@@ -644,12 +682,13 @@ export default function AdminTab() {
               });
             } catch { /* best-effort */ }
             setContests(prev => prev.filter(x => x.id !== c.id));
+            fetchBadgeCounts();
           } catch { Alert.alert('Erro', 'Não foi possível processar. Tente novamente.'); }
           finally { setActing(null); }
         },
       }],
     );
-  }, [user]);
+  }, [user, fetchBadgeCounts]);
 
   // ── Ações: Suporte ────────────────────────────────────────────────────────
   const handleSendReply = useCallback(async (msg: SupportMsg) => {
@@ -680,17 +719,19 @@ export default function AdminTab() {
       ));
       setExpanded(null);
       setReplyText('');
+      fetchBadgeCounts();
     } catch {
       Alert.alert('Erro', 'Não foi possível enviar a resposta.');
     } finally {
       setSending(null);
     }
-  }, [user, replyText]);
+  }, [user, replyText, fetchBadgeCounts]);
 
   const handleMarkRead = useCallback(async (id: string) => {
     await supabase.from('support_messages').update({ read: true }).eq('id', id);
     setMsgs(prev => prev.map(m => m.id === id ? { ...m, read: true } : m));
-  }, []);
+    fetchBadgeCounts();
+  }, [fetchBadgeCounts]);
 
   const handleDeleteMsg = useCallback((id: string) => {
     Alert.alert(
@@ -749,7 +790,8 @@ export default function AdminTab() {
     }).eq('id', id);
     if (error) { Alert.alert('Erro', 'Não foi possível arquivar a denúncia.'); return; }
     setReports(prev => mfilt === 'pending' ? prev.filter(r => r.id !== id) : prev.map(r => r.id === id ? { ...r, status: 'reviewed' } : r));
-  }, [user, mfilt]);
+    fetchBadgeCounts();
+  }, [user, mfilt, fetchBadgeCounts]);
 
   // ── Ações: Trilhas ────────────────────────────────────────────────────────
   const handleSearchUsers = useCallback(async () => {
@@ -1250,6 +1292,7 @@ export default function AdminTab() {
               `Seu evento "${evento.titulo}" foi aprovado e já está no ar!`,
             ).catch(() => {});
             setEventosPendentes(prev => prev.filter(e => e.id !== evento.id));
+            fetchBadgeCounts();
           } else {
             Alert.alert('Erro', 'Não foi possível aprovar. Tente novamente.');
           }
@@ -1257,7 +1300,7 @@ export default function AdminTab() {
         },
       }],
     );
-  }, [user]);
+  }, [user, fetchBadgeCounts]);
 
   const handleAbrirRejeitar = useCallback((evento: EventoPatrocinado) => {
     setRejeitarAlvo(evento);
@@ -1282,7 +1325,8 @@ export default function AdminTab() {
     }
     setEventosPendentes(prev => prev.filter(e => e.id !== rejeitarAlvo.id));
     setRejeitarModalVisible(false);
-  }, [motivoRejeicao, rejeitarAlvo]);
+    fetchBadgeCounts();
+  }, [motivoRejeicao, rejeitarAlvo, fetchBadgeCounts]);
 
   // ── Ações: Configurações ──────────────────────────────────────────────────
   const handleToggleConfigBannerAtivo = useCallback(async (value: boolean) => {
@@ -1859,13 +1903,21 @@ export default function AdminTab() {
         <View style={[s.sectionRow, { borderBottomColor: C.border, backgroundColor: theme.backgroundElement }]}>
           {ADMIN_CATEGORIES.map(({ key, label, icon }) => {
             const active = category === key;
+            const badge  = categoryBadge(key);
             return (
               <TouchableOpacity
                 key={key}
                 style={[s.sectionBtn, active && { borderBottomWidth: 2.5, borderBottomColor: C.purple }]}
                 onPress={() => handleSelectCategory(key)}
                 activeOpacity={0.7}>
-                <ThemedText style={{ fontSize: 20, lineHeight: 24 }}>{icon}</ThemedText>
+                <View>
+                  <ThemedText style={{ fontSize: 20, lineHeight: 24 }}>{icon}</ThemedText>
+                  {badge > 0 && (
+                    <View style={s.navBadge}>
+                      <ThemedText style={s.navBadgeTxt}>{badge > 99 ? '99+' : badge}</ThemedText>
+                    </View>
+                  )}
+                </View>
                 <ThemedText style={[s.sectionTxt, { color: active ? C.purple : theme.textSecondary }]}>
                   {label}
                 </ThemedText>
@@ -1882,13 +1934,21 @@ export default function AdminTab() {
             <View style={[s.subSectionRow, { borderBottomColor: C.border }]}>
               {sections.map(({ key, label, icon }) => {
                 const active = section === key;
+                const badge  = sectionBadge(key);
                 return (
                   <TouchableOpacity
                     key={key}
                     style={[s.subSectionBtn, active && { backgroundColor: C.purple + '1c' }]}
                     onPress={() => setSection(key)}
                     activeOpacity={0.7}>
-                    <ThemedText style={{ fontSize: 14 }}>{icon}</ThemedText>
+                    <View>
+                      <ThemedText style={{ fontSize: 14 }}>{icon}</ThemedText>
+                      {badge > 0 && (
+                        <View style={[s.navBadge, s.navBadgeSm]}>
+                          <ThemedText style={s.navBadgeTxt}>{badge > 99 ? '99+' : badge}</ThemedText>
+                        </View>
+                      )}
+                    </View>
                     <ThemedText style={[s.subSectionTxt, { color: active ? C.purple : theme.textSecondary }]}>
                       {label}
                     </ThemedText>
@@ -2916,6 +2976,12 @@ const s = StyleSheet.create({
   subSectionRow: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
   subSectionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 7, gap: 5, borderRadius: C.radius.pill },
   subSectionTxt: { fontSize: 11, fontWeight: '700' },
+  navBadge: {
+    position: 'absolute', top: -3, right: -10, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  navBadgeSm: { top: -4, right: -8 },
+  navBadgeTxt: { color: '#fff', fontSize: 9, fontWeight: '800' },
 
   // Sub-filtros
   filterRow: { flexDirection: 'row', borderBottomWidth: 1 },
