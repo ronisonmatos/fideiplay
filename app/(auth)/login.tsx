@@ -3,6 +3,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -53,7 +54,10 @@ export default function LoginScreen() {
     <ThemedView style={s.fill}>
       <SafeAreaView style={s.fill} edges={['top', 'bottom']}>
         <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={s.inner}>
+          <ScrollView
+            contentContainerStyle={s.inner}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
 
             {/* Logo */}
             <View style={s.logoBlock}>
@@ -148,7 +152,7 @@ export default function LoginScreen() {
               v{APP_VERSION}
             </ThemedText>
 
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
@@ -157,7 +161,7 @@ export default function LoginScreen() {
 
 const s = StyleSheet.create({
   fill:      { flex: 1 },
-  inner:     { flex: 1, paddingHorizontal: Spacing.four, justifyContent: 'center', gap: Spacing.five },
+  inner:     { flexGrow: 1, paddingHorizontal: Spacing.four, paddingVertical: Spacing.five, justifyContent: 'center', gap: Spacing.five },
   logoBlock: { alignItems: 'center', gap: Spacing.one },
   logo:      { width: 140, height: 140 },
   subtitle:  { fontSize: 14, textAlign: 'center' },
