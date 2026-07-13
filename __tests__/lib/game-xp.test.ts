@@ -13,6 +13,7 @@ import {
   maxXpQuiz,
 } from '@/lib/game-xp';
 import { ECONOMY } from '@/constants/economy';
+import { WORDS_PER_ROUND } from '@/constants/puzzle-themes';
 import type { GamePack, PuzzleTheme, QuizQuestion, Sanctuary } from '@/hooks/use-game-packs';
 import type { LatimBoggleLevel } from '@/constants/latim-boggle-levels';
 
@@ -63,20 +64,23 @@ describe('maxXpPalavras', () => {
     words: Array.from({ length: nWords }, (_, i) => `PALAVRA${i}`),
   });
 
-  it('usa o tema com mais palavras, não a soma dos temas', () => {
-    const base = [theme('facil', 5), theme('facil', 3)];
-    expect(maxXpPalavras(base, [])).toBe(5 * ECONOMY.XP_FACIL);
+  it('usa a amostra fixa por rodada (WORDS_PER_ROUND), não o tamanho do banco do tema', () => {
+    const base = [theme('facil', 3), theme('facil', 20)];
+    expect(maxXpPalavras(base, [])).toBe(WORDS_PER_ROUND.facil * ECONOMY.XP_FACIL);
   });
 
-  it('compara dificuldades pelo XP total do melhor tema de cada uma', () => {
-    // fácil: 8×5=40; difícil: 5×9=45 → difícil vence
+  it('compara dificuldades pelo XP total da amostra de cada uma', () => {
     const base = [theme('facil', 8), theme('dificil', 5)];
-    expect(maxXpPalavras(base, [])).toBe(5 * ECONOMY.XP_DIFICIL);
+    const expected = Math.max(
+      WORDS_PER_ROUND.facil * ECONOMY.XP_FACIL,
+      WORDS_PER_ROUND.dificil * ECONOMY.XP_DIFICIL,
+    );
+    expect(maxXpPalavras(base, [])).toBe(expected);
   });
 
   it('dificuldade sem temas conta como zero em vez de quebrar', () => {
     const base = [theme('medio', 4)];
-    expect(maxXpPalavras(base, [])).toBe(4 * ECONOMY.XP_MEDIO);
+    expect(maxXpPalavras(base, [])).toBe(WORDS_PER_ROUND.medio * ECONOMY.XP_MEDIO);
   });
 });
 

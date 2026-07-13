@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
-import { PUZZLE_THEMES } from '@/constants/puzzle-themes';
+import { PUZZLE_THEMES, WORDS_PER_ROUND } from '@/constants/puzzle-themes';
 import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useGameLevels } from '@/context/game-levels-context';
@@ -75,6 +75,15 @@ function matchWord(path: Cell[], grid: string[][], words: string[]): string | nu
 
 function cellKey([r, c]: Cell) { return `${r},${c}`; }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 // Acha onde uma palavra está escondida na grade (8 direções, em linha reta) — usado
 // pela dica "revelar letra", já que o jogador já sabe a palavra, só não sabe onde está.
 function findWordCells(grid: string[][], word: string): Cell[] | null {
@@ -123,26 +132,28 @@ export default function PalavrasFeScreen() {
   function startDifficulty(diff: Difficulty) {
     playClickSound();
     const allThemes = mergePuzzleThemes(PUZZLE_THEMES, packs);
-    const themes = allThemes.filter(t => t.difficulty === diff);
-    const shuffled = [...themes].sort(() => Math.random() - 0.5);
-    for (const t of shuffled) {
-      let result: ReturnType<typeof placeWords> = null;
-      for (let i = 0; i < 5; i++) {
-        result = placeWords(t.words, t.gridSize);
-        if (result) break;
-      }
-      if (result) {
-        setActiveDiff(diff);
-        setActivePuzzle({ theme: t, grid: result.grid });
-        setFoundWords([]);
-        setFoundCells(new Set());
-        setStart(null);
-        setPreview([]);
-        setHintCell(null);
-        setCoinsEarned(null);
-        reported.current = false;
-        setPhase('playing');
-        return;
+    const themes = shuffle(allThemes.filter(t => t.difficulty === diff));
+    const need = WORDS_PER_ROUND[diff];
+    for (const t of themes) {
+      // Cada tentativa sorteia um subconjunto novo do banco de palavras do tema
+      // (não só a posição na grade) — assim a mesma dificuldade não repete
+      // sempre as mesmas palavras em jogadas seguidas.
+      for (let i = 0; i < 8; i++) {
+        const picked = shuffle(t.words).slice(0, Math.min(need, t.words.length));
+        const result = placeWords(picked, t.gridSize);
+        if (result) {
+          setActiveDiff(diff);
+          setActivePuzzle({ theme: { ...t, words: picked }, grid: result.grid });
+          setFoundWords([]);
+          setFoundCells(new Set());
+          setStart(null);
+          setPreview([]);
+          setHintCell(null);
+          setCoinsEarned(null);
+          reported.current = false;
+          setPhase('playing');
+          return;
+        }
       }
     }
   }
@@ -231,7 +242,7 @@ export default function PalavrasFeScreen() {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Palavras da Fé" subtitle="VOCABULÁRIO" />
+          <GameHeader title="Cruzada Católica" subtitle="VOCABULÁRIO" />
           <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <ThemedText style={styles.selectTitle}>Escolha a Dificuldade</ThemedText>
             <ThemedText themeColor="textSecondary" style={styles.selectSub}>
@@ -271,7 +282,7 @@ export default function PalavrasFeScreen() {
     return (
       <ThemedView style={styles.fill}>
         <SafeAreaView style={styles.fill} edges={['top']}>
-          <GameHeader title="Palavras da Fé" subtitle="VOCABULÁRIO" />
+          <GameHeader title="Cruzada Católica" subtitle="VOCABULÁRIO" />
           <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <View style={styles.resultCard}>
               <ThemedText style={styles.resultEmoji}>🎉</ThemedText>
@@ -322,7 +333,7 @@ export default function PalavrasFeScreen() {
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top']}>
         <GameHeader
-          title="Palavras da Fé"
+          title="Cruzada Católica"
           subtitle="VOCABULÁRIO"
           onBack={() => setPhase('select')}
           right={

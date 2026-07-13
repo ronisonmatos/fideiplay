@@ -48,7 +48,7 @@ export const GAMES: GameInfo[] = [
     gameId: 'palavras-fe',
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     image: require('@/assets/images/palavra_cruzada.png') as number,
-    title: 'Palavras da Fé',
+    title: 'Cruzada Católica',
     tag: 'Vocabulário',
     tagColor: '#3B82F6',
     desc: '9 temas · 3 níveis de dificuldade',
