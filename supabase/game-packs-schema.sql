@@ -4,7 +4,7 @@
 -- 1. Tabela principal de packs
 create table if not exists game_packs (
   id          uuid    primary key default gen_random_uuid(),
-  game_type   text    not null, -- 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop' | 'latim'
+  game_type   text    not null, -- 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop' | 'latim' | 'trilhas'
   titulo      text    not null,
   descricao   text,
   categoria   text,             -- ex: 'santos', 'biblia', 'liturgia', 'maria'
@@ -41,6 +41,18 @@ create table if not exists game_packs (
 --   { "niveis": [{ "id": "chave_unica", "title": "...", "difficulty": "facil|medio|dificil", "gridSize": 6, "words": [{ "word": "PAX", "meaning": "Paz", "emoji": "🕊️" }] }] }
 --   A grade é gerada automaticamente a partir de "words" + "gridSize" — não precisa
 --   (nem deve) enviar uma grade pronta.
+--
+-- trilhas:
+--   { "trilhas": [{ "id": 1000, "titulo": "...", "descricao": "...", "icone": "📿",
+--                    "nivel": "Iniciante|Intermediário|Avançado", "totalLicoes": 2, "xpTotal": 60,
+--                    "gratis": true, "licoes": [{ "id": 1, "titulo": "...", "versiculo": "Jo 3,16",
+--                    "resumo": "...", "conteudo": [{ "tipo": "texto|versiculo|destaque|curiosidade", "texto": "..." }],
+--                    "perguntas": [{ "pergunta": "...", "opcoes": ["A","B","C","D"], "correta": 0, "explicacao": "..." }],
+--                    "xp": 30 }] }] }
+--   Ver seção 7 mais abaixo para as regras de "id" (faixa reservada, obrigatoriamente
+--   sequencial dentro de "licoes"). IMPORTANTE: nesta linha do game_packs, sempre
+--   gratuito=true — quem controla free/premium é o "gratis" de dentro da trilha,
+--   não a coluna gratuito daqui (ver seção 7).
 
 alter table game_packs enable row level security;
 
@@ -542,6 +554,168 @@ VALUES (
     "categorias": [
       { "key": "doutor_igreja", "label": "Doutor da Igreja",     "emoji": "📚" },
       { "key": "religiao",      "label": "Ordem ou Congregação", "emoji": "⛪" }
+    ]
+  }$json$::jsonb
+);
+*/
+
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 7. TRILHAS (lições — aba "Trilhas")
+-- ───────────────────────────────────────────────────────────────────────────────
+-- ATENÇÃO — diferente de TODOS os outros game_types acima: as colunas
+-- "gratuito" e "coins_price" DESTA TABELA (game_packs) NÃO TÊM EFEITO NENHUM
+-- sobre trilhas. Deixe sempre gratuito=true na linha do pack (senão o pack
+-- inteiro some da lista, em vez de virar premium — veja mergeTrilhas em
+-- hooks/use-game-packs.ts). Quem controla se UMA trilha específica é grátis
+-- ou paga é o campo "gratis" (e "preco") DENTRO de cada trilha, no JSON
+-- abaixo — o mesmo sistema usado pelas trilhas embutidas no app (user_trilhas,
+-- trilha_config, tela de pagamento). Pra tornar uma trilha premium: mude
+-- "gratis" para false e adicione "preco" dentro do objeto da trilha, não na
+-- linha do game_packs.
+--
+-- conteudo.trilhas[]:
+--   id          → NÚMERO ÚNICO EM TODO O APP (não só neste pack). É a mesma chave
+--                 usada em user_trilhas.trilha_id, no pagamento e no progresso salvo
+--                 de cada usuário — repetir um id existente FAZ A TRILHA SER
+--                 IGNORADA silenciosamente no merge (não sobrescreve, não quebra).
+--                 As trilhas embutidas no app usam ids 1–8. USE SEMPRE ids ≥ 1000
+--                 para trilhas cadastradas via banco, e não repita entre packs.
+--   titulo, descricao → exibidos no card da aba Trilhas
+--   icone       → duas opções, ambas strings (packs não têm como referenciar um
+--                 asset local via require(), então nunca é PNG embutido):
+--                   • EMOJI, ex: "📿" — use quando não tiver arte própria
+--                   • URL PÚBLICA de um .png subido no bucket "trilha-icones"
+--                     do Storage (ex: "https://<projeto>.supabase.co/storage/v1/
+--                     object/public/trilha-icones/consagracao.png") — suba o
+--                     arquivo (bucket público, só admin escreve) e cole a URL
+--                     pública aqui. TrilhaIcon detecta automaticamente: string
+--                     começando com "http://" ou "https://" vira <Image>,
+--                     qualquer outra string vira emoji.
+--   nivel       → texto livre exibido no header da trilha (ex: "Iniciante")
+--   totalLicoes → deve bater com o tamanho real de "licoes" abaixo
+--   xpTotal     → deve bater com a soma de "licoes[].xp"
+--   gratis      → true = aparece direto em "Disponíveis" para todo mundo
+--                 false = aparece em "Premium", bloqueada até o admin liberar
+--                 manualmente (aba Trilhas do painel admin) ou o usuário comprar.
+--                 ATENÇÃO: no iOS, trilha paga só pode ser vendida via Apple IAP
+--                 (Guideline 3.1.1) — e isso exige cadastrar um produto no App
+--                 Store Connect e mapear em lib/iap-products.ts (ação manual, fora
+--                 do banco). Sem esse mapa, uma trilha paga fica sem forma de
+--                 compra no iOS. Para evitar isso, prefira "gratis": true para
+--                 trilhas cadastradas só via banco.
+--   preco       → obrigatório se gratis=false (preço em R$, ex: 9.90)
+--   emPromocao  → opcional, boolean. true mostra uma faixa "PROMOÇÃO" no canto
+--                 do card (só visual, não muda preço nem cobrança). Some
+--                 automaticamente assim que a trilha premium é desbloqueada
+--                 (comprada/liberada) — não há mais o que promover depois disso.
+--   licoes[]    → cada lição:
+--     id        → único DENTRO da trilha e OBRIGATORIAMENTE SEQUENCIAL a partir de 1
+--                 (1, 2, 3, ...). A navegação "próxima lição" busca licaoId+1 — um
+--                 buraco na sequência trava o usuário na lição anterior.
+--     titulo, versiculo, resumo → cabeçalho da lição
+--     conteudo[] → blocos de texto exibidos em ordem antes do quiz:
+--       tipo    → texto | versiculo | destaque | curiosidade (estilos visuais diferentes)
+--       texto   → conteúdo do bloco
+--     perguntas[] → quiz de fixação ao final da lição:
+--       pergunta, opcoes (EXATAMENTE 4), correta (índice 0–3), explicacao
+--     xp        → XP ganho ao concluir a lição
+-- ───────────────────────────────────────────────────────────────────────────────
+
+-- Exemplo GRATUITO:
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'trilhas',
+  'Devoção Mariana',
+  'maria',
+  true,
+  10,
+  $json${
+    "trilhas": [
+      {
+        "id": 1000,
+        "titulo": "Devoção Mariana",
+        "descricao": "Títulos, festas e orações a Nossa Senhora",
+        "icone": "🌹",
+        "nivel": "Iniciante",
+        "totalLicoes": 1,
+        "xpTotal": 30,
+        "gratis": true,
+        "licoes": [
+          {
+            "id": 1,
+            "titulo": "Quem é Maria?",
+            "versiculo": "Lc 1,38",
+            "resumo": "A Mãe de Deus e sua missão na história da salvação.",
+            "conteudo": [
+              { "tipo": "texto", "texto": "Maria é a Mãe de Jesus Cristo e, por isso, Mãe de Deus (Theotokos)..." },
+              { "tipo": "versiculo", "texto": "\"Eis a serva do Senhor, faça-se em mim segundo a tua palavra.\" — Lc 1,38" },
+              { "tipo": "destaque", "texto": "O dogma da Maternidade Divina foi definido no Concílio de Éfeso (431 d.C.)." },
+              { "tipo": "curiosidade", "texto": "Maria é venerada com títulos que variam por país e cultura, como Nossa Senhora Aparecida no Brasil." }
+            ],
+            "perguntas": [
+              {
+                "pergunta": "Por que Maria é chamada de \"Mãe de Deus\"?",
+                "opcoes": ["Por tradição popular", "Porque gerou Jesus, que é Deus", "Por decisão de um papa", "É um título apenas simbólico"],
+                "correta": 1,
+                "explicacao": "Como Jesus é verdadeiro Deus e verdadeiro homem, Maria, que o gerou, é verdadeiramente Mãe de Deus — dogma definido em Éfeso (431)."
+              }
+            ],
+            "xp": 30
+          }
+        ]
+      }
+    ]
+  }$json$::jsonb
+);
+*/
+
+-- Exemplo de TRILHA PREMIUM (a trilha é paga, não o pack — cuidado com a
+-- ressalva do iOS acima). Repare que "gratuito"/"coins_price" aqui na linha
+-- do game_packs continuam true/0 como sempre — é "gratis":false lá dentro do
+-- JSON que faz a trilha aparecer em "Premium":
+/*
+INSERT INTO game_packs (game_type, titulo, categoria, gratuito, ordem, conteudo)
+VALUES (
+  'trilhas',
+  'Patrística',
+  'historia',
+  true,
+  20,
+  $json${
+    "trilhas": [
+      {
+        "id": 1001,
+        "titulo": "Padres da Igreja",
+        "descricao": "Os grandes doutores dos primeiros séculos",
+        "icone": "📜",
+        "nivel": "Avançado",
+        "totalLicoes": 1,
+        "xpTotal": 30,
+        "gratis": false,
+        "preco": 14.90,
+        "licoes": [
+          {
+            "id": 1,
+            "titulo": "Santo Agostinho",
+            "versiculo": "Confissões, I,1",
+            "resumo": "Da vida dissoluta à conversão e ao episcopado de Hipona.",
+            "conteudo": [
+              { "tipo": "texto", "texto": "Agostinho de Hipona (354–430) é um dos maiores teólogos da história da Igreja..." }
+            ],
+            "perguntas": [
+              {
+                "pergunta": "Qual obra autobiográfica Agostinho escreveu sobre sua conversão?",
+                "opcoes": ["A Cidade de Deus", "Confissões", "De Trinitate", "Enarrationes"],
+                "correta": 1,
+                "explicacao": "Confissões narra a busca espiritual de Agostinho até sua conversão ao cristianismo em 386."
+              }
+            ],
+            "xp": 30
+          }
+        ]
+      }
     ]
   }$json$::jsonb
 );

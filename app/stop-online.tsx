@@ -2137,6 +2137,9 @@ export default function StopOnlineScreen() {
                   <ThemedText style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: theme.textSecondary }}>
                     RESPOSTAS DOS PARTICIPANTES
                   </ThemedText>
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11, fontStyle: 'italic' }}>
+                    Segure sua resposta para contestar
+                  </ThemedText>
                   {playerPairs.map((pair, pairIdx) => {
                     const alone = pair.length === 1;
                     return (
@@ -2182,11 +2185,42 @@ export default function StopOnlineScreen() {
                                   : bm === 'ai_invalid' ? C.red
                                   : !ans ? theme.textSecondary
                                   : ans[0].toUpperCase() === letter ? C.green : C.red;
+                                const contestKey = `${r.playerId}:${cat.key}`;
+                                const canContest = isMe && isContestable(bm, ans);
+                                const alreadyContested = contested.has(contestKey);
                                 return (
-                                  <View key={r.playerId} style={[
-                                    { flex: 1, paddingHorizontal: 10, gap: 1 },
-                                    !alone && i === 0 && { borderRightWidth: 1, borderRightColor: C.border + '44' },
-                                  ]}>
+                                  <TouchableOpacity key={r.playerId} activeOpacity={canContest && !alreadyContested ? 0.7 : 1}
+                                    delayLongPress={500}
+                                    onLongPress={canContest && !alreadyContested ? async () => {
+                                      if (!user) return;
+                                      Alert.alert(
+                                        'Contestar resposta',
+                                        `Contestar "${ans}" como resposta para "${cat.label}"?`,
+                                        [
+                                          { text: 'Cancelar', style: 'cancel' },
+                                          { text: '✋ Contestar', onPress: async () => {
+                                            const { ok, error: err } = await submitContest({
+                                              userId: user.id,
+                                              roomId: roomIdRef.current,
+                                              categoryKey: cat.key,
+                                              letter,
+                                              answer: ans,
+                                              originalResult: bm!,
+                                              gameMode: 'online',
+                                            });
+                                            if (ok) {
+                                              setContested(prev => new Set([...prev, contestKey]));
+                                            } else {
+                                              Alert.alert('Erro', err ?? 'Não foi possível enviar a contestação.');
+                                            }
+                                          }},
+                                        ]
+                                      );
+                                    } : undefined}
+                                    style={[
+                                      { flex: 1, paddingHorizontal: 10, gap: 1 },
+                                      !alone && i === 0 && { borderRightWidth: 1, borderRightColor: C.border + '44' },
+                                    ]}>
                                     <ThemedText style={{ fontSize: 14, fontWeight: '600', color }} numberOfLines={1}>
                                       {ans || '—'}
                                     </ThemedText>
@@ -2194,7 +2228,10 @@ export default function StopOnlineScreen() {
                                     {bm === 'ai_valid'   && <ThemedText style={s.compBadge}>✅ Válida (IA)</ThemedText>}
                                     {bm === 'unverified' && <ThemedText style={[s.compBadge, { color: C.gold }]}>⚠️ Não verificada</ThemedText>}
                                     {bm === 'ai_invalid' && <ThemedText style={[s.compBadge, { color: C.red }]}>❌ Inválida</ThemedText>}
-                                  </View>
+                                    {alreadyContested && (
+                                      <ThemedText style={[s.compBadge, { color: C.green }]}>✓ Contestação enviada</ThemedText>
+                                    )}
+                                  </TouchableOpacity>
                                 );
                               })}
                             </View>

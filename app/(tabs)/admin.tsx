@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,6 +29,7 @@ import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 import { TRILHAS } from '@/data/trilhas';
+import { useGamePacks, mergeTrilhas } from '@/hooks/use-game-packs';
 import {
   type AdminUserResult,
   listUserTrilhas,
@@ -41,8 +42,6 @@ import { suggestBannerDescription } from '@/lib/banner-ads';
 import { ALCANCE_LABELS } from '@/constants/eventos-precos';
 import { CATEGORIAS_EVENTO, CORES_CATEGORIA, type CategoriaEvento } from '@/constants/banner-config';
 import { notificarUsuario, type EventoPatrocinado } from '@/lib/eventos-patrocinados';
-
-const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
 
 // Máscara automática enquanto digita — só números, barras/dois-pontos entram sozinhos
 function formatDateInput(raw: string): string {
@@ -315,6 +314,8 @@ function categoryOf(section: AdminSection): AdminCategory {
 export default function AdminTab() {
   const theme = useTheme();
   const { user, profile } = useAuth();
+  const { packs: trilhasPacks, refresh: refreshTrilhasPacks } = useGamePacks('trilhas');
+  const TRILHAS_PREMIUM = useMemo(() => mergeTrilhas(TRILHAS, trilhasPacks).filter(t => !t.gratis), [trilhasPacks]);
 
   const [section, setSection]   = useState<AdminSection>('contests');
   const [category, setCategory] = useState<AdminCategory>(categoryOf('contests'));
@@ -631,7 +632,8 @@ export default function AdminTab() {
     else if (section === 'banners') fetchBanners();
     else if (section === 'eventos') fetchEventos();
     else if (section === 'config') fetchConfig();
-  }, [section, fetchBadgeCounts, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig]));
+    else if (section === 'trilhas') refreshTrilhasPacks();
+  }, [section, fetchBadgeCounts, fetchContests, fetchSupport, fetchReports, fetchAds, fetchBanners, fetchEventos, fetchConfig, refreshTrilhasPacks]));
 
   // ── Ações: Contestações ───────────────────────────────────────────────────
   const handleApprove = useCallback(async (c: Contest) => {

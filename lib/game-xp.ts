@@ -1,5 +1,6 @@
 import { ECONOMY } from '@/constants/economy';
 import type { LatimBoggleLevel } from '@/constants/latim-boggle-levels';
+import { WORDS_PER_ROUND } from '@/constants/puzzle-themes';
 import {
   mergeLatimLevels,
   mergeLiturgQuestions,
@@ -42,16 +43,13 @@ export function maxXpLiturgico(base: LiturgQuestion[], packs: GamePack[]): numbe
   return maxByDifficultyCount(mergeLiturgQuestions(base, packs));
 }
 
-// Palavras da Fé: cada rodada joga só UM tema sorteado daquela dificuldade —
-// o máximo é o tema com mais palavras, não a soma de todos os temas.
+// Cruzada Católica: cada rodada sorteia um tema e, dele, um subconjunto fixo
+// de palavras (WORDS_PER_ROUND) — o máximo não cresce com o tamanho do banco
+// de cada tema, só com a quantidade sorteada por rodada naquela dificuldade.
 export function maxXpPalavras(base: PuzzleTheme[], packs: GamePack[]): number {
   const all = mergePuzzleThemes(base, packs);
   return Math.max(
-    ...DIFFS.map(d => {
-      const themes = all.filter(t => t.difficulty === d);
-      const maxWords = themes.length ? Math.max(...themes.map(t => t.words.length)) : 0;
-      return maxWords * XP_BY_DIFF[d];
-    }),
+    ...DIFFS.map(d => (all.some(t => t.difficulty === d) ? WORDS_PER_ROUND[d] * XP_BY_DIFF[d] : 0)),
   );
 }
 

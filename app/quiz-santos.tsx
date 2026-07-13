@@ -29,6 +29,21 @@ const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; emoj
   dificil: { label: 'Difícil', color: C.red,    emoji: '📖', desc: 'Teologia, concílios e história da Igreja' },
 };
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function shuffleQuestion(q: (typeof ALL_QUESTIONS)[number]): (typeof ALL_QUESTIONS)[number] {
+  const correctAnswer = q.options[q.correct];
+  const shuffled = shuffle(q.options);
+  return { ...q, options: shuffled, correct: shuffled.indexOf(correctAnswer) };
+}
+
 export default function QuizSantosScreen() {
   const theme  = useTheme();
   const scheme = useColorScheme() ?? 'light';
@@ -66,7 +81,7 @@ export default function QuizSantosScreen() {
   const startWithDifficulty = useCallback((diff: Difficulty) => {
     playClickSound();
     setCoinsEarned(null);
-    const filtered = allQuestions.filter(q => q.difficulty === diff);
+    const filtered = shuffle(allQuestions.filter(q => q.difficulty === diff)).map(shuffleQuestion);
     setDifficulty(diff);
     setQuestions(filtered);
     setIndex(0);
