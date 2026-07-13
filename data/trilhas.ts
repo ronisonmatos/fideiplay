@@ -34,6 +34,7 @@ export interface Trilha {
   xpTotal: number;
   gratis: boolean;
   preco?: number;
+  emPromocao?: boolean;
   licoes: Licao[];
 }
 

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +12,7 @@ import { C, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { Bloco, TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeTrilhas } from '@/hooks/use-game-packs';
 import { pushProgress } from '@/lib/progress-sync';
 import { supabase } from '@/lib/supabase';
 
@@ -62,7 +63,9 @@ export default function LicaoScreen() {
   const theme = useTheme();
   const { user } = useAuth();
   const { trilhaId, licaoId } = useLocalSearchParams<{ trilhaId: string; licaoId: string }>();
-  const trilha = TRILHAS.find(t => t.id === Number(trilhaId));
+  const { packs } = useGamePacks('trilhas');
+  const todasTrilhas = useMemo(() => mergeTrilhas(TRILHAS, packs), [packs]);
+  const trilha = todasTrilhas.find(t => t.id === Number(trilhaId));
   const licao = trilha?.licoes.find(l => l.id === Number(licaoId));
 
   const [fase, setFase] = useState<Fase>('conteudo');

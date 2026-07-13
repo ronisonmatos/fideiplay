@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GuestBanner } from '@/components/guest-banner';
+import { PromoRibbon } from '@/components/promo-ribbon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TrilhaIcon } from '@/components/trilha-icon';
@@ -14,6 +15,7 @@ import { useAuth } from '@/context/auth-context';
 import { NIVEIS } from '@/constants/teste-conhecimento';
 import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeTrilhas } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
 import { pullProgress } from '@/lib/progress-sync';
 import { fetchUltimoResultado, type TesteConhecimentoRow } from '@/lib/teste-conhecimento';
@@ -30,12 +32,13 @@ interface TrilhaConfig {
   coinsPurchasable: boolean;
 }
 
-const TRILHAS_GRATIS = TRILHAS.filter(t => t.gratis);
-const TRILHAS_PREMIUM = TRILHAS.filter(t => !t.gratis);
-
 export default function TrilhasScreen() {
   const theme = useTheme();
   const { user, trilhasDesbloqueadas, refreshTrilhas } = useAuth();
+  const { packs, refresh: refreshTrilhasPacks } = useGamePacks('trilhas');
+  const todasTrilhas = useMemo(() => mergeTrilhas(TRILHAS, packs), [packs]);
+  const TRILHAS_GRATIS  = useMemo(() => todasTrilhas.filter(t => t.gratis), [todasTrilhas]);
+  const TRILHAS_PREMIUM = useMemo(() => todasTrilhas.filter(t => !t.gratis), [todasTrilhas]);
   const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [trilhaConfigs, setTrilhaConfigs] = useState<Record<number, TrilhaConfig>>({});
@@ -56,7 +59,7 @@ export default function TrilhasScreen() {
     }
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw) setProgresso(JSON.parse(raw));
-    await refreshTrilhas().catch(() => {});
+    await Promise.all([refreshTrilhas(), refreshTrilhasPacks()]).catch(() => {});
     const { data } = await supabase.from('trilha_config').select('trilha_id, coins_price, coins_purchasable');
     if (data) {
       const map: Record<number, TrilhaConfig> = {};
@@ -65,7 +68,7 @@ export default function TrilhasScreen() {
       }
       setTrilhaConfigs(map);
     }
-  }, [user, refreshTrilhas]);
+  }, [user, refreshTrilhas, refreshTrilhasPacks]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -159,6 +162,7 @@ export default function TrilhasScreen() {
                 onPress={() => router.push(`/trilha-detalhe?id=${trilha.id}`)}
                 activeOpacity={0.82}
                 style={[styles.trilhaCard, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
+                {trilha.emPromocao && <PromoRibbon />}
                 <View style={styles.trilhaTop}>
                   <TrilhaIcon icone={trilha.icone} size={64} />
                   <View style={styles.trilhaInfo}>
@@ -228,6 +232,7 @@ export default function TrilhasScreen() {
                 }}
                 activeOpacity={0.75}
                 style={[styles.trilhaCard, styles.trilhaLocked, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
+                {trilha.emPromocao && <PromoRibbon />}
                 <View style={styles.trilhaTop}>
                   <TrilhaIcon icone={trilha.icone} size={64} opacity={0.5} />
                   <View style={styles.trilhaInfo}>
@@ -319,6 +324,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: Spacing.three,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   trilhaLocked: { opacity: 0.7 },
   lockedOpacity: { opacity: 0.5 },

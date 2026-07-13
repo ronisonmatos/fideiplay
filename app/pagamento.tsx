@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -23,6 +23,7 @@ import { useAuth } from '@/context/auth-context';
 import { TRILHAS } from '@/data/trilhas';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeTrilhas } from '@/hooks/use-game-packs';
 import {
   buscarProdutoIAP,
   comprarProdutoIAP,
@@ -43,7 +44,9 @@ export default function PagamentoScreen() {
     preco: string;
     coinsPrice?: string;
   }>();
-  const trilha = TRILHAS.find(t => t.id === Number(trilhaId));
+  const { packs } = useGamePacks('trilhas');
+  const todasTrilhas = useMemo(() => mergeTrilhas(TRILHAS, packs), [packs]);
+  const trilha = todasTrilhas.find(t => t.id === Number(trilhaId));
   const preco = parseFloat(precoStr ?? '1.00');
   const coinsPrice = parseInt(coinsPriceStr ?? '0', 10);
   const { refreshTrilhas, profile, refreshProfile } = useAuth();

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/auth-context';
 import type { LatimBoggleLevel } from '@/constants/latim-boggle-levels';
+import type { Trilha } from '@/data/trilhas';
 
-export type GameType = 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop' | 'latim';
+export type GameType = 'quiz' | 'versiculo' | 'peregrinacao' | 'palavras' | 'liturgico' | 'stop' | 'latim' | 'trilhas';
 
 export interface GamePack {
   id: string;
@@ -204,6 +205,38 @@ export interface StopCategoryDB {
   label:        string;
   emoji:        string;
   validLetters?: string[];
+}
+
+// Trilhas: id é a chave global usada em toda a base (user_trilhas.trilha_id,
+// pagamento, progresso salvo por usuário) — trilhas de packs com id repetido
+// (entre si ou com uma trilha hardcoded) são descartadas em vez de sobrescrever
+// silenciosamente uma trilha existente. Ver supabase/game-packs-schema.sql para
+// a faixa de ids reservada a packs.
+//
+// Diferente dos outros mergeXxx desse arquivo, NÃO filtra por pack.owned —
+// trilha não é "pacote comprado por inteiro" como quiz/palavras/etc., ela já
+// tem seu próprio sistema de free/premium por trilha (campo "gratis"/"preco"
+// dentro de cada trilha, resolvido via user_trilhas + trilha_config). Um pack
+// de trilhas fica sempre visível assim que ativo+visivel; gratuito/coins_price
+// na linha do game_packs não têm efeito sobre trilhas (ver schema.sql).
+export function mergeTrilhas(
+  hardcoded: Trilha[],
+  packs: GamePack[],
+): Trilha[] {
+  const existingIds = new Set(hardcoded.map((t) => t.id));
+  const extra: Trilha[] = [];
+  for (const pack of packs) {
+    const trilhas = (pack.conteudo as { trilhas?: Trilha[] }).trilhas;
+    if (Array.isArray(trilhas)) {
+      for (const t of trilhas) {
+        if (!existingIds.has(t.id)) {
+          existingIds.add(t.id);
+          extra.push(t);
+        }
+      }
+    }
+  }
+  return [...hardcoded, ...extra];
 }
 
 export function mergeStopCategories(

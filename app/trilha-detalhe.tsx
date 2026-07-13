@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ import { TrilhaIcon } from '@/components/trilha-icon';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { TRILHAS } from '@/data/trilhas';
 import { useTheme } from '@/hooks/use-theme';
+import { useGamePacks, mergeTrilhas } from '@/hooks/use-game-packs';
 
 const STORAGE_KEY = '@santosplay:trilhas_progresso';
 
@@ -22,7 +23,9 @@ interface Progresso {
 export default function TrilhaDetalheScreen() {
   const theme = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const trilha = TRILHAS.find(t => t.id === Number(id));
+  const { packs } = useGamePacks('trilhas');
+  const todasTrilhas = useMemo(() => mergeTrilhas(TRILHAS, packs), [packs]);
+  const trilha = todasTrilhas.find(t => t.id === Number(id));
   const [progresso, setProgresso] = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
 
   useFocusEffect(
