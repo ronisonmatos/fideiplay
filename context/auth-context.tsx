@@ -5,6 +5,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { supabase } from '@/lib/supabase';
+import { recoverSessionWithRetry } from '@/lib/auth-session';
 import { getAvatarUrl, isSaintAvatar } from '@/constants/avatares';
 
 export interface Profile {
@@ -79,28 +80,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Reset guest mode when user authenticates
   useEffect(() => { if (session) setGuest(false); }, [session]);
 
-  // Recupera a sessão com tentativas + backoff. Ao voltar do background (ou
-  // logo após atualizar o app), a rede pode levar vários segundos pra ficar
-  // pronta — uma única tentativa falha e deixava o usuário "deslogado" até
-  // fechar e reabrir o app. Retorna null só quando o refresh token é
-  // realmente inválido/revogado (aí sim é logout de verdade).
+  // Lógica de tentativas/backoff extraída pra lib/auth-session.ts (testável
+  // sem módulos nativos); aqui só resta a guarda contra execuções paralelas.
   const recoverSession = useCallback(async (): Promise<Session | null> => {
     if (recoveringRef.current) return null;
     recoveringRef.current = true;
     try {
-      for (let attempt = 0; attempt < 4; attempt++) {
-        const { data: { session: s } } = await supabase.auth.getSession();
-        if (s) return s;
-        const { data: refreshed, error } = await supabase.auth.refreshSession();
-        if (refreshed?.session) return refreshed.session;
-        const msg = (error?.message ?? '').toLowerCase();
-        // Sem sessão armazenada (visitante) ou refresh token revogado — não
-        // adianta insistir.
-        if (msg.includes('refresh token') || msg.includes('session missing')) return null;
-        console.warn(`[auth] recoverSession falhou (tentativa ${attempt + 1}/4):`, error);
-        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
-      }
-      return null;
+      return await recoverSessionWithRetry(supabase.auth);
     } finally {
       recoveringRef.current = false;
     }
