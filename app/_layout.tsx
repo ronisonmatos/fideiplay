@@ -9,6 +9,7 @@ import Constants from 'expo-constants';
 const isExpoGoAndroid = Platform.OS === 'android' && Constants.appOwnership === 'expo';
 
 import { AnimatedSplashOverlay } from '@/components/animated-splash';
+import OnboardingPermissoes, { deveMostrarOnboardingPermissoes } from '@/components/onboarding-permissoes';
 import { GameStoreProvider, useGameStore } from '@/context/game-store';
 import { GameLevelsProvider } from '@/context/game-levels-context';
 import { AuthProvider, useAuth } from '@/context/auth-context';
@@ -190,11 +191,17 @@ function AuthGate() {
 
   useEffect(() => {
     if (loading) return;
-    setupNotificationChannel().catch(() => {});
-    scheduleDailyReminder().catch(() => {});
-    // Pede localização logo em seguida da permissão de notificação — mesmo
-    // momento de onboarding, evita ter que ir em Configurações pedir depois.
-    solicitarLocalizacaoRef.current().catch(() => {});
+    setupNotificationChannel().catch(() => {}); // só cria o canal Android, sem diálogo
+    (async () => {
+      // Em instalação nova, quem pede as permissões — com telas explicando o
+      // porquê — é o overlay de onboarding (OnboardingPermissoes). Só disparamos
+      // os pedidos automáticos quando esse onboarding não vai aparecer (usuário
+      // que já passou por ele, atualização de app com permissão já concedida,
+      // web etc.), pra não abrir os diálogos do SO sem contexto.
+      if (await deveMostrarOnboardingPermissoes()) return;
+      scheduleDailyReminder().catch(() => {});
+      solicitarLocalizacaoRef.current().catch(() => {});
+    })();
   }, [loading]);
 
   // Aplica convite salvo localmente (usuário abriu o link de convite antes de
@@ -254,9 +261,10 @@ export default function RootLayout() {
               <NotificationsProvider>
                 <ProgressSyncBridge />
                 <NotificationBridge />
-                <AnimatedSplashOverlay />
                 <AuthGate />
                 <Stack screenOptions={{ headerShown: false }} />
+                <OnboardingPermissoes />
+                <AnimatedSplashOverlay />
               </NotificationsProvider>
             </GameLevelsProvider>
           </GameStoreProvider>
