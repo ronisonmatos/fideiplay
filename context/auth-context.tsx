@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
@@ -70,8 +70,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [trilhasDesbloqueadas, setTrilhasDesbloqueadas] = useState<number[]>([]);
   const [signInTick, setSignInTick] = useState(0);
 
+  // Distingue o signOut pedido pelo usuário de um SIGNED_OUT espúrio emitido
+  // pelo supabase-js quando a renovação do token falha por rede instável
+  // (típico ao voltar do background). Só o primeiro deve limpar a sessão.
+  const explicitSignOutRef = useRef(false);
+  const recoveringRef      = useRef(false);
+
   // Reset guest mode when user authenticates
   useEffect(() => { if (session) setGuest(false); }, [session]);
+
+  // Recupera a sessão com tentativas + backoff. Ao voltar do background (ou
+  // logo após atualizar o app), a rede pode levar vários segundos pra ficar
+  // pronta — uma única tentativa falha e deixava o usuário "deslogado" até
+  // fechar e reabrir o app. Retorna null só quando o refresh token é
+  // realmente inválido/revogado (aí sim é logout de verdade).
+  const recoverSession = useCallback(async (): Promise<Session | null> => {
+    if (recoveringRef.current) return null;
+    recoveringRef.current = true;
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const { data: { session: s } } = await supabase.auth.getSession();
+        if (s) return s;
+        const { data: refreshed, error } = await supabase.auth.refreshSession();
+        if (refreshed?.session) return refreshed.session;
+        const msg = (error?.message ?? '').toLowerCase();
+        // Sem sessão armazenada (visitante) ou refresh token revogado — não
+        // adianta insistir.
+        if (msg.includes('refresh token') || msg.includes('session missing')) return null;
+        console.warn(`[auth] recoverSession falhou (tentativa ${attempt + 1}/4):`, error);
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+      }
+      return null;
+    } finally {
+      recoveringRef.current = false;
+    }
+  }, []);
 
   const loadProfile = useCallback(async (userId: string) => {
     const data = await fetchWithRetry<Profile>('loadProfile', () =>
@@ -110,36 +143,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadTrilhas(s.user.id);
       }
       setLoading(false);
+      // Boot sem sessão pode ser rede lenta no primeiro acesso (comum logo
+      // após atualizar o app): tenta recuperar em segundo plano. Para
+      // visitante de verdade o recoverSession desiste na primeira tentativa
+      // ("session missing"), então não custa nada.
+      if (!s) {
+        recoverSession().then(recovered => {
+          if (recovered?.user.id) {
+            setSession(recovered);
+            loadProfile(recovered.user.id).catch(() => {});
+            loadTrilhas(recovered.user.id).catch(() => {});
+          }
+        });
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
-      setSession(s);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       if (s) {
-        await loadProfile(s.user.id);
-        await loadTrilhas(s.user.id);
+        setSession(s);
+        loadProfile(s.user.id).catch(() => {});
+        loadTrilhas(s.user.id).catch(() => {});
         // Login explícito (não a sessão persistida sendo restaurada no boot) —
         // usado para forçar atualização de localização ignorando o cache de 24h.
         if (event === 'SIGNED_IN') setSignInTick(t => t + 1);
-      } else {
-        setProfile(null);
-        setTrilhasDesbloqueadas([]);
-        // Não chama setLoading(false) aqui: o getSession() abaixo é quem controla
-        // o estado de carregamento inicial. Se chamar aqui, pode disparar antes do
-        // getSession() resolver e mostrar a tela de login mesmo com sessão válida.
+      } else if (event === 'SIGNED_OUT') {
+        if (explicitSignOutRef.current) {
+          explicitSignOutRef.current = false;
+          setSession(null);
+          setProfile(null);
+          setTrilhasDesbloqueadas([]);
+        } else {
+          // SIGNED_OUT que o usuário não pediu = quase sempre falha transitória
+          // ao renovar o token (app voltando do background sem rede pronta).
+          // Tenta recuperar antes de deslogar — só limpa se o refresh token
+          // estiver realmente inválido. setTimeout(0) tira a chamada de auth
+          // de dentro do callback (evita deadlock do lock interno do supabase-js).
+          setTimeout(async () => {
+            const recovered = await recoverSession();
+            if (recovered?.user.id) {
+              setSession(recovered);
+              loadProfile(recovered.user.id).catch(() => {});
+              loadTrilhas(recovered.user.id).catch(() => {});
+            } else {
+              setSession(null);
+              setProfile(null);
+              setTrilhasDesbloqueadas([]);
+            }
+          }, 0);
+        }
       }
+      // Eventos com sessão nula que não são SIGNED_OUT (ex.: INITIAL_SESSION
+      // de visitante) não limpam nada: o getSession() do boot controla o
+      // estado inicial e o loading.
     });
 
     // Quando o app volta do background, reinicia o auto-refresh do token.
     // Sem isso, o JWT expira enquanto o app está parado e queries falham com 401.
-    const appStateSub = AppState.addEventListener('change', async (nextState) => {
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         supabase.auth.startAutoRefresh();
-        // Força re-leitura da sessão para garantir token válido em memória
-        const { data: { session: current } } = await supabase.auth.getSession();
-        if (current?.user.id) {
-          setSession(current);
-          loadProfile(current.user.id).catch(() => {});
-        }
+        // Garante token válido em memória, com retry — a rede pode demorar
+        // alguns segundos pra voltar junto com o app.
+        (async () => {
+          const current = await recoverSession();
+          if (current?.user.id) {
+            setSession(current);
+            loadProfile(current.user.id).catch(() => {});
+            loadTrilhas(current.user.id).catch(() => {});
+          }
+        })();
       } else {
         supabase.auth.stopAutoRefresh();
       }
@@ -149,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       appStateSub.remove();
     };
-  }, [loadProfile, loadTrilhas]);
+  }, [loadProfile, loadTrilhas, recoverSession]);
 
   // Watchdog: se a sessão existe mas o profile não carregou (as 3 tentativas
   // iniciais falharam), continua tentando periodicamente em segundo plano até
@@ -188,6 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    explicitSignOutRef.current = true;
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([
       '@santosplay:game_store',
