@@ -272,7 +272,7 @@ export function useSolitario() {
 
   const desfazer = useCallback(async () => {
     if (fase !== 'jogando' || !mesa || mesa.historico.length === 0) return;
-    const ok = await gastar(ECONOMY.SOLITARIO_DESFAZER, 'Desfazer jogada — Solitário Católico');
+    const ok = await gastar(ECONOMY.SOLITARIO_DESFAZER, 'Desfazer jogada — Paciência Católica');
     if (!ok) {
       Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.SOLITARIO_DESFAZER} 🪙 para desfazer a última jogada.`);
       return;
@@ -293,7 +293,7 @@ export function useSolitario() {
     if (fase !== 'jogando' || !mesa) return;
     const jogada = encontrarMelhorJogada(mesa.colunas);
     if (!jogada) return;
-    const ok = await gastar(ECONOMY.SOLITARIO_DICA, 'Dica — Solitário Católico');
+    const ok = await gastar(ECONOMY.SOLITARIO_DICA, 'Dica — Paciência Católica');
     if (!ok) {
       Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.SOLITARIO_DICA} 🪙 para usar uma dica.`);
       return;

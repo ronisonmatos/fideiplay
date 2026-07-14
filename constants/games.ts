@@ -88,7 +88,7 @@ export const GAMES: GameInfo[] = [
     gameId: 'solitario-catolico',
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     image: require('@/assets/images/solitario_catolico.png') as number,
-    title: 'Solitário Católico',
+    title: 'Paciência Católica',
     tag: 'Cartas',
     tagColor: C.green,
     desc: '20 níveis · Agrupe cartas por categoria',

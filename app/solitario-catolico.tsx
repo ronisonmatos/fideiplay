@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -18,7 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Colors, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
-import { MAX_LEVEL, getNivel, xpDoNivelAtual, type CartaSolitario } from '@/constants/solitario-niveis';
+import { MAX_LEVEL, xpDoNivelAtual, type CartaSolitario } from '@/constants/solitario-niveis';
 import { useGameStore } from '@/context/game-store';
 import { useGameLevels } from '@/context/game-levels-context';
 import { useSolitario } from '@/hooks/use-solitario';
@@ -110,9 +110,6 @@ function FaceUpCard({ carta, usaImagem, selecionada, destaque, onPress, style }:
         {/* eslint-disable-next-line @typescript-eslint/no-require-imports */}
         <Image source={require('@/assets/images/frente_carta.png')} style={s.faceUpBg} resizeMode="stretch" />
         <View style={s.faceUpOverlay}>
-          <View style={[s.categoriaBadge, { backgroundColor: carta.cor }]}>
-            <ThemedText style={s.categoriaBadgeText}>{carta.icone}</ThemedText>
-          </View>
           <View style={s.faceUpConteudo}>
             {usaImagem && carta.imagemUrl ? (
               <Animated.Image source={{ uri: carta.imagemUrl }} style={s.cardImage} resizeMode="cover" />
@@ -136,9 +133,18 @@ export default function SolitarioCatolicoScreen() {
     iniciarNivel, sair, selecionarCarta, desfazer, dica,
   } = solitario;
 
-  const [mostrarNiveis, setMostrarNiveis] = useState(false);
   const [coinsGanhas, setCoinsGanhas] = useState<number | null>(null);
   const rewardedLevelRef = useRef<string | null>(null);
+
+  // Progressão é sempre sequencial — sem grade de seleção de nível. O próximo
+  // nível é sempre o primeiro ainda não concluído; se tudo já foi concluído,
+  // recomeça do 1 (permite rejogar do início em vez de travar no fim).
+  const proximoNivel = useMemo(() => {
+    for (let n = 1; n <= MAX_LEVEL; n++) {
+      if (!isLevelComplete(GAME_ID, `nivel-${n}`)) return n;
+    }
+    return 1;
+  }, [isLevelComplete, GAME_ID]);
 
   // Recompensa é por nível concluído (não por sessão inteira) — o guard precisa ser
   // pelo id do nível, não um ref fixo, já que a tela permanece montada entre níveis.
@@ -156,7 +162,7 @@ export default function SolitarioCatolicoScreen() {
       + (semDica ? ECONOMY.SOLITARIO_BONUS_SEM_DICA : 0)
       + (sobrouMovimentos ? ECONOMY.SOLITARIO_BONUS_MOVIMENTOS : 0);
 
-    ganhar(total, 'Solitário Católico — nível concluído')
+    ganhar(total, 'Paciência Católica — nível concluído')
       .then(ok => setCoinsGanhas(ok ? total : 0))
       .catch(() => setCoinsGanhas(0));
   }, [fase, nivelAtual, dicasUsadas, movimentosRestantes, movimentosIniciais, reportResult, markLevelComplete, ganhar, GAME_ID]);
@@ -167,65 +173,31 @@ export default function SolitarioCatolicoScreen() {
     iniciarNivel(numero);
   }, [iniciarNivel]);
 
-  const voltarParaNiveis = useCallback(() => {
+  const voltarAoMenu = useCallback(() => {
     sair();
-    setMostrarNiveis(true);
   }, [sair]);
 
   // ── Introdução ────────────────────────────────────────────────────────────
-  if (fase === 'idle' && !mostrarNiveis) {
+  if (fase === 'idle') {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" subtitle="CARTAS" />
+          <GameHeader title="Paciência Católica" subtitle="CARTAS" />
           <View style={[s.center, { paddingBottom: BottomTabInset + Spacing.four }]}>
             {/* eslint-disable-next-line @typescript-eslint/no-require-imports */}
             <Image source={require('@/assets/images/solitario_catolico.png')} style={s.gameIcon} resizeMode="contain" />
-            <ThemedText type="subtitle" style={s.textCenter}>Solitário Católico</ThemedText>
+            <ThemedText type="subtitle" style={s.textCenter}>Paciência Católica</ThemedText>
             <ThemedText themeColor="textSecondary" style={[s.textCenter, s.desc]}>
               Agrupe 4 cartas da mesma categoria para elas sumirem do tabuleiro.{'\n'}
               Limpe todas as cartas antes de acabar os movimentos!
             </ThemedText>
-            <TouchableOpacity style={s.primaryBtn} onPress={() => { playClickSound(); setMostrarNiveis(true); }} activeOpacity={0.8}>
-              <ThemedText style={s.primaryBtnText}>ESCOLHER NÍVEL</ThemedText>
+            <ThemedText style={[s.textCenter, s.nivelAtualTxt, { color: C.purple }]}>
+              Nível {proximoNivel} de {MAX_LEVEL}
+            </ThemedText>
+            <TouchableOpacity style={s.primaryBtn} onPress={() => iniciar(proximoNivel)} activeOpacity={0.8}>
+              <ThemedText style={s.primaryBtnText}>JOGAR</ThemedText>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
-      </ThemedView>
-    );
-  }
-
-  // ── Seleção de nível ──────────────────────────────────────────────────────
-  if (fase === 'idle' && mostrarNiveis) {
-    return (
-      <ThemedView style={s.fill}>
-        <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" subtitle="ESCOLHA O NÍVEL" onBack={() => setMostrarNiveis(false)} />
-          <ScrollView contentContainerStyle={[s.nivelGrid, { paddingBottom: BottomTabInset + Spacing.four }]}>
-            {Array.from({ length: MAX_LEVEL }, (_, i) => i + 1).map(numero => {
-              const nivel = getNivel(numero);
-              if (!nivel) return null;
-              const concluido = isLevelComplete(GAME_ID, nivel.id);
-              const desbloqueado = numero === 1 || isLevelComplete(GAME_ID, `nivel-${numero - 1}`);
-              return (
-                <TouchableOpacity
-                  key={nivel.id}
-                  disabled={!desbloqueado}
-                  onPress={() => iniciar(numero)}
-                  activeOpacity={0.8}
-                  style={[
-                    s.nivelBtn,
-                    { borderColor: concluido ? C.green : C.purple },
-                    !desbloqueado && s.nivelBtnBloqueado,
-                  ]}>
-                  <ThemedText style={[s.nivelBtnNum, { color: concluido ? C.green : C.purple }]}>
-                    {desbloqueado ? numero : '🔒'}
-                  </ThemedText>
-                  {concluido && <ThemedText style={{ fontSize: 12 }}>✅</ThemedText>}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         </SafeAreaView>
       </ThemedView>
     );
@@ -236,7 +208,7 @@ export default function SolitarioCatolicoScreen() {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" onBack={voltarParaNiveis} />
+          <GameHeader title="Paciência Católica" onBack={voltarAoMenu} />
           <View style={s.center}><ActivityIndicator color={C.purple} size="large" /></View>
         </SafeAreaView>
       </ThemedView>
@@ -248,14 +220,14 @@ export default function SolitarioCatolicoScreen() {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" onBack={voltarParaNiveis} />
+          <GameHeader title="Paciência Católica" onBack={voltarAoMenu} />
           <View style={s.center}>
             <ThemedText style={{ fontSize: 44, lineHeight: 52 }}>🗂️</ThemedText>
             <ThemedText type="subtitle" style={s.textCenter}>Nível indisponível</ThemedText>
             <ThemedText themeColor="textSecondary" style={[s.textCenter, s.desc]}>
               Ainda não há cartas suficientes cadastradas para este nível. Tente novamente mais tarde.
             </ThemedText>
-            <TouchableOpacity style={s.primaryBtn} onPress={voltarParaNiveis} activeOpacity={0.8}>
+            <TouchableOpacity style={s.primaryBtn} onPress={voltarAoMenu} activeOpacity={0.8}>
               <ThemedText style={s.primaryBtnText}>VOLTAR</ThemedText>
             </TouchableOpacity>
           </View>
@@ -269,7 +241,7 @@ export default function SolitarioCatolicoScreen() {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" onBack={voltarParaNiveis} />
+          <GameHeader title="Paciência Católica" onBack={voltarAoMenu} />
           <View style={s.center}>
             <ThemedText style={{ fontSize: 44, lineHeight: 52 }}>⚠️</ThemedText>
             <ThemedText type="subtitle" style={s.textCenter}>Algo deu errado</ThemedText>
@@ -296,7 +268,7 @@ export default function SolitarioCatolicoScreen() {
       <ThemedView style={s.fill}>
         <Confetti />
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" />
+          <GameHeader title="Paciência Católica" />
           <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <View style={s.resultCard}>
               <ThemedText style={s.resultEmoji}>🎉</ThemedText>
@@ -307,7 +279,7 @@ export default function SolitarioCatolicoScreen() {
             </View>
             <GameRewardBanner xp={xpDoNivelAtual(nivelAtual.numero)} coins={coinsGanhas} />
             {ultimoNivel ? (
-              <TouchableOpacity style={[s.btn, { backgroundColor: C.green }]} onPress={voltarParaNiveis} activeOpacity={0.85}>
+              <TouchableOpacity style={[s.btn, { backgroundColor: C.green }]} onPress={voltarAoMenu} activeOpacity={0.85}>
                 <ThemedText style={s.btnText}>🏆 JOGO CONCLUÍDO — VOLTAR AO MENU</ThemedText>
               </TouchableOpacity>
             ) : (
@@ -315,7 +287,7 @@ export default function SolitarioCatolicoScreen() {
                 <TouchableOpacity style={[s.btn, { backgroundColor: C.purple }]} onPress={() => iniciar(nivelAtual.numero + 1)} activeOpacity={0.85}>
                   <ThemedText style={s.btnText}>PRÓXIMO NÍVEL</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.outlineBtn, { borderColor: C.purple }]} onPress={voltarParaNiveis} activeOpacity={0.85}>
+                <TouchableOpacity style={[s.outlineBtn, { borderColor: C.purple }]} onPress={voltarAoMenu} activeOpacity={0.85}>
                   <ThemedText style={[s.outlineBtnText, { color: C.purple }]}>VOLTAR AO MENU</ThemedText>
                 </TouchableOpacity>
               </>
@@ -331,7 +303,7 @@ export default function SolitarioCatolicoScreen() {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
-          <GameHeader title="Solitário Católico" />
+          <GameHeader title="Paciência Católica" />
           <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: BottomTabInset + Spacing.four }]}>
             <View style={s.resultCard}>
               <ThemedText style={s.resultEmoji}>📿</ThemedText>
@@ -344,7 +316,7 @@ export default function SolitarioCatolicoScreen() {
             <TouchableOpacity style={[s.btn, { backgroundColor: C.purple }]} onPress={() => iniciar(nivelAtual.numero)} activeOpacity={0.85}>
               <ThemedText style={s.btnText}>TENTAR NOVAMENTE</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.outlineBtn, { borderColor: C.purple }]} onPress={voltarParaNiveis} activeOpacity={0.85}>
+            <TouchableOpacity style={[s.outlineBtn, { borderColor: C.purple }]} onPress={voltarAoMenu} activeOpacity={0.85}>
               <ThemedText style={[s.outlineBtnText, { color: C.purple }]}>VOLTAR</ThemedText>
             </TouchableOpacity>
           </ScrollView>
@@ -360,7 +332,7 @@ export default function SolitarioCatolicoScreen() {
     <View style={[s.fill, { backgroundColor: FELT_GREEN }]}>
       <SafeAreaView style={s.fill} edges={['top']}>
         <View style={s.jogandoHeader}>
-          <TouchableOpacity onPress={voltarParaNiveis} hitSlop={12} style={s.backBtnFelt}>
+          <TouchableOpacity onPress={voltarAoMenu} hitSlop={12} style={s.backBtnFelt}>
             <ThemedText style={s.backArrowFelt}>←</ThemedText>
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
@@ -425,7 +397,7 @@ export default function SolitarioCatolicoScreen() {
           <TouchableOpacity onPress={dica} activeOpacity={0.8} style={s.controleBtn}>
             <ThemedText style={s.controleBtnText}>💡 {ECONOMY.SOLITARIO_DICA} 🪙</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity onPress={voltarParaNiveis} activeOpacity={0.8} style={s.controleBtn}>
+          <TouchableOpacity onPress={voltarAoMenu} activeOpacity={0.8} style={s.controleBtn}>
             <ThemedText style={s.controleBtnText}>⏸️ Menu</ThemedText>
           </TouchableOpacity>
         </View>
@@ -451,22 +423,12 @@ const s = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '800', letterSpacing: 1, fontSize: 14 },
   outlineBtn: { alignSelf: 'stretch', paddingVertical: 14, borderRadius: C.radius.pill, alignItems: 'center', borderWidth: 1.5 },
   outlineBtnText: { fontWeight: '700', fontSize: 14 },
+  nivelAtualTxt: { fontSize: 15, fontWeight: '800' },
 
   resultCard: { alignItems: 'center', gap: Spacing.two, padding: Spacing.four },
   resultEmoji: { fontSize: 52, lineHeight: 64 },
   resultTitle: { fontSize: 24, fontWeight: '800' },
   resultSub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-
-  nivelGrid: {
-    paddingHorizontal: Spacing.four, paddingTop: Spacing.three,
-    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, justifyContent: 'center',
-  },
-  nivelBtn: {
-    width: 64, height: 64, borderRadius: C.radius.md, borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center', gap: 2,
-  },
-  nivelBtnBloqueado: { opacity: 0.4 },
-  nivelBtnNum: { fontSize: 18, fontWeight: '800' },
 
   // ── Tabuleiro (felt) ──
   jogandoHeader: {
@@ -519,12 +481,6 @@ const s = StyleSheet.create({
   faceUpDestaque: { borderColor: C.gold, borderWidth: 2.5 },
   faceUpNome: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: '#221F33' },
   cardImage: { width: '100%', height: '100%', borderRadius: C.radius.sm },
-  categoriaBadge: {
-    position: 'absolute', top: 4, left: 4, width: 24, height: 24, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center', zIndex: 2,
-    borderWidth: 1.5, borderColor: '#fff',
-  },
-  categoriaBadgeText: { fontSize: 14 },
 
   controles: {
     flexDirection: 'row', justifyContent: 'center', gap: Spacing.three,
