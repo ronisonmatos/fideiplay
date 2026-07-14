@@ -49,7 +49,7 @@ export default function PagamentoScreen() {
   const trilha = todasTrilhas.find(t => t.id === Number(trilhaId));
   const preco = parseFloat(precoStr ?? '1.00');
   const coinsPrice = parseInt(coinsPriceStr ?? '0', 10);
-  const { refreshTrilhas, profile, refreshProfile } = useAuth();
+  const { user, refreshTrilhas, profile, refreshProfile } = useAuth();
   const theme = useTheme();
 
   const productId = productIdDaTrilha(Number(trilhaId));
@@ -254,6 +254,28 @@ export default function PagamentoScreen() {
   }
 
   const falta = coinsPrice - (profile?.coins ?? 0);
+
+  if (!user) {
+    return (
+      <ThemedView style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={s.gateCenter}>
+            <ThemedText style={{ fontSize: 48, lineHeight: 56 }}>🔒</ThemedText>
+            <ThemedText type="subtitle" style={{ textAlign: 'center' }}>Entre na sua conta</ThemedText>
+            <ThemedText themeColor="textSecondary" style={{ textAlign: 'center' }}>
+              Você precisa estar logado para comprar uma trilha.
+            </ThemedText>
+            <TouchableOpacity
+              style={[s.btnPrincipal, { backgroundColor: C.purple }]}
+              onPress={() => router.push('/(auth)/login')}
+              activeOpacity={0.8}>
+              <ThemedText style={s.btnText}>ENTRAR</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={{ flex: 1 }}>
@@ -566,6 +588,10 @@ export default function PagamentoScreen() {
 }
 
 const s = StyleSheet.create({
+  gateCenter: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.two, paddingHorizontal: Spacing.four,
+  },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderBottomWidth: 1,

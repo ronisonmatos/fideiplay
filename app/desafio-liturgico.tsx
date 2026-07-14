@@ -30,6 +30,10 @@ interface LiturgQuestion {
   difficulty: Difficulty;
 }
 
+// Easter egg: 7 toques no cronômetro congelam o tempo por alguns segundos.
+const CLIQUES_SECRETOS = 7;
+const CONGELAR_SEGUNDOS = 10;
+
 const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; emoji: string; desc: string; time: number }> = {
   facil:   { label: 'Fácil',   color: C.green, emoji: '🌿', desc: 'Cores, tempos e sacramentos básicos', time: 90 },
   medio:   { label: 'Médio',   color: C.gold,  emoji: '✝️', desc: 'Semana Santa, ritos e datas litúrgicas', time: 75 },
@@ -66,9 +70,13 @@ export default function DesafioLiturgicoScreen() {
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
   const [usouTempoExtra, setUsouTempoExtra] = useState(false);
+  const [congelado, setCongelado] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reported = useRef(false);
   const finalTimeRef = useRef(60);
+  const congeladoRef = useRef(false);
+  const congelarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cliquesTimerRef = useRef(0);
 
   const cfg = DIFFICULTY_CONFIG[difficulty];
 
@@ -97,6 +105,20 @@ export default function DesafioLiturgicoScreen() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
+  useEffect(() => { congeladoRef.current = congelado; }, [congelado]);
+
+  useEffect(() => () => { if (congelarTimeoutRef.current) clearTimeout(congelarTimeoutRef.current); }, []);
+
+  const handleTimerTap = useCallback(() => {
+    cliquesTimerRef.current += 1;
+    if (cliquesTimerRef.current >= CLIQUES_SECRETOS) {
+      cliquesTimerRef.current = 0;
+      setCongelado(true);
+      if (congelarTimeoutRef.current) clearTimeout(congelarTimeoutRef.current);
+      congelarTimeoutRef.current = setTimeout(() => setCongelado(false), CONGELAR_SEGUNDOS * 1000);
+    }
+  }, []);
+
   const endGame = useCallback((remainingTime?: number) => {
     stopTimer();
     if (remainingTime !== undefined) finalTimeRef.current = remainingTime;
@@ -106,6 +128,7 @@ export default function DesafioLiturgicoScreen() {
   useEffect(() => {
     if (phase !== 'playing') return;
     timerRef.current = setInterval(() => {
+      if (congeladoRef.current) return;
       setTimeLeft(t => Math.max(0, t - 1));
     }, 1000);
     return stopTimer;
@@ -131,6 +154,9 @@ export default function DesafioLiturgicoScreen() {
     setTimeLeft(totalTime);
     finalTimeRef.current = totalTime;
     setUsouTempoExtra(false);
+    cliquesTimerRef.current = 0;
+    if (congelarTimeoutRef.current) clearTimeout(congelarTimeoutRef.current);
+    setCongelado(false);
     setPhase('playing');
   }, []);
 
@@ -269,9 +295,11 @@ export default function DesafioLiturgicoScreen() {
           title="Desafio Litúrgico"
           onBack={() => setPhase('difficulty')}
           right={
-            <ThemedText type="smallBold" style={{ color: timerColor, fontSize: 18 }}>
-              {timeLeft}s
-            </ThemedText>
+            <TouchableOpacity onPress={handleTimerTap} activeOpacity={0.7} hitSlop={8}>
+              <ThemedText type="smallBold" style={{ color: congelado ? C.gold : timerColor, fontSize: 18 }}>
+                {congelado ? '❄️ ' : ''}{timeLeft}s
+              </ThemedText>
+            </TouchableOpacity>
           }
         />
         <ScrollView
