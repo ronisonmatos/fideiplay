@@ -53,27 +53,70 @@ function revelarSeVazio(colunas: Coluna[], colunaIndex: number) {
   }
 }
 
-function grupoCompletoEm(pilha: CartaSolitario[]): boolean {
-  if (pilha.length !== 4) return false;
-  const reais = pilha.filter(c => !c.isWildcard);
+// Tamanho de grupo necessário pra fechar: 4 normalmente, mas 5 quando a Carta
+// Categoria está envolvida (ela é somada ao baralho, não substitui uma carta real —
+// ver criarCartaCategoria em constants/solitario-niveis.ts).
+function tamanhoNecessario(cartas: CartaSolitario[]): number {
+  return cartas.some(c => c.isCategoria) ? 5 : 4;
+}
+
+// Um grupo com coringa só é válido se as cartas reais forem da MESMA categoria que
+// o coringa substituiu no baralho (coringa.categoriaId, ver montarBaralho) — essa é a
+// ÚNICA categoria que ficou com uma carta a menos. Fechar com qualquer outra categoria
+// (que já tinha as cartas completas por conta própria) gastaria cartas reais dela à
+// toa, sobrando 1 carta sem par ali, enquanto a categoria certa fica travada pra
+// sempre — daí SOLITARIO_DESFAZER existir, mas o ideal é nunca deixar acontecer.
+// A Carta Categoria participa como uma carta real normal (categoriaId = a dela mesma),
+// só muda quantas cartas o grupo precisa (ver tamanhoNecessario).
+function grupoValido(cartas: CartaSolitario[]): boolean {
+  if (cartas.length !== tamanhoNecessario(cartas)) return false;
+  const coringa = cartas.find(c => c.isWildcard);
+  const reais = cartas.filter(c => !c.isWildcard);
   if (reais.length === 0) return false;
-  const categoria = reais[0].categoriaId;
+  const categoria = coringa ? coringa.categoriaId : reais[0].categoriaId;
   return reais.every(c => c.categoriaId === categoria);
 }
 
-// Fecha o grupo da coluna se as 4 cartas do topo já baterem — muta em lugar (a coluna
-// já é uma cópia isolada dentro do updater de estado). Retorna se fechou algo.
+function grupoCompletoEm(pilha: CartaSolitario[]): boolean {
+  return grupoValido(pilha);
+}
+
+// Fecha o grupo da coluna se as cartas do topo já baterem (4 ou 5, conforme a Carta
+// Categoria estar presente) — muta em lugar (a coluna já é uma cópia isolada dentro
+// do updater de estado). Retorna se fechou algo.
 function fecharGrupoSeCompleto(colunas: Coluna[], colunaIndex: number): boolean {
   const col = colunas[colunaIndex];
   if (!grupoCompletoEm(col.pilha)) return false;
-  col.pilha.splice(0, 4);
+  col.pilha.splice(0, col.pilha.length);
   return true;
+}
+
+// Categoria "travada" da pilha é a da primeira carta real (não-coringa) — null se a
+// pilha só tem coringa(s) até agora, caso em que a categoria ainda está em aberto.
+// A Carta Categoria conta como carta real aqui (trava a pilha na hora que entra).
+function categoriaDaPilha(pilha: CartaSolitario[]): string | null {
+  const real = pilha.find(c => !c.isWildcard);
+  return real ? real.categoriaId : null;
 }
 
 function movimentoLegal(cartaMovida: CartaSolitario, destino: Coluna): boolean {
   if (destino.pilha.length === 0) return true;
-  const topoDestino = destino.pilha[destino.pilha.length - 1];
-  return cartaMovida.isWildcard || topoDestino.isWildcard || cartaMovida.categoriaId === topoDestino.categoriaId;
+  // Olhar só o topo (em vez da categoria real da pilha) deixava empilhar qualquer
+  // carta sobre um coringa que estivesse no topo, formando grupos com categorias
+  // misturadas que nunca fechavam — travando o tabuleiro com sobra. A Carta Categoria
+  // segue essa mesma regra (não tem a flexibilidade do coringa).
+  const categoriaDestino = categoriaDaPilha(destino.pilha);
+  if (!cartaMovida.isWildcard && categoriaDestino !== null && cartaMovida.categoriaId !== categoriaDestino) {
+    return false;
+  }
+  const resultante = [...destino.pilha, cartaMovida];
+  if (resultante.length === tamanhoNecessario(resultante)) {
+    // A jogada fecharia o grupo — barra se o coringa estiver envolvido (já na pilha
+    // ou sendo movido agora) numa categoria que não é a dele, pra nunca deixar o
+    // coringa se "gastar" na categoria errada (ver grupoValido).
+    return grupoValido(resultante);
+  }
+  return true;
 }
 
 function existeMovimentoLegal(colunas: Coluna[]): boolean {

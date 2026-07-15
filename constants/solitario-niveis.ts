@@ -4,8 +4,9 @@ export interface CartaSolitario {
   id: string;
   nome: string;
   imagemUrl: string | null;
-  categoriaId: string | null; // null só para o coringa
+  categoriaId: string | null; // no coringa, é a categoria que ele substituiu no baralho (única que ele pode fechar)
   isWildcard: boolean;
+  isCategoria: boolean; // Carta Categoria: âncora de UMA categoria específica — grupo dela precisa de 5 cartas, não 4
   icone: string;
   cor: string;
 }
@@ -60,10 +61,20 @@ function generateLevel(n: number): NivelSolitario {
   };
 }
 
+// Sem pelo menos 1 coluna "livre" (colunas > categorias), o tabuleiro trava: cada
+// pilha não-vazia fica presa numa categoria, e uma vez que todas as colunas estejam
+// ocupadas por categorias diferentes não sobra destino válido pra manobra — mesmo
+// com movimentos sobrando. Confirmado por simulação: colunas <= categorias trava
+// ~72-81% das partidas; colunas = categorias + 1 elimina esse travamento.
+function comBufferGarantido(nivel: NivelSolitario): NivelSolitario {
+  const colunas = Math.max(nivel.colunas, nivel.categorias + 1);
+  return colunas === nivel.colunas ? nivel : { ...nivel, colunas };
+}
+
 export function getNivel(n: number): NivelSolitario | null {
   if (n < 1 || n > MAX_LEVEL) return null;
-  if (n <= SOLITARIO_NIVEIS_FIXOS.length) return SOLITARIO_NIVEIS_FIXOS[n - 1];
-  return generateLevel(n);
+  const nivel = n <= SOLITARIO_NIVEIS_FIXOS.length ? SOLITARIO_NIVEIS_FIXOS[n - 1] : generateLevel(n);
+  return comBufferGarantido(nivel);
 }
 
 function xpDoNivel(numero: number): number {
@@ -90,15 +101,33 @@ function shuffle<T>(arr: T[]): T[] {
 
 export const CORINGA_ID = 'coringa';
 
-function criarCoringa(): CartaSolitario {
+function criarCoringa(categoriaAlvo: string | null): CartaSolitario {
   return {
     id: CORINGA_ID,
     nome: 'Coringa',
     imagemUrl: null,
-    categoriaId: null,
+    categoriaId: categoriaAlvo,
     isWildcard: true,
+    isCategoria: false,
     icone: '⭐',
     cor: '#EF9F27',
+  };
+}
+
+// Carta Categoria: define/ancora a categoria (ex.: "Categoria Orações") — as demais
+// cartas da MESMA categoria devem se juntar a ela. Ao contrário do coringa, não é
+// substituída no baralho: é somada por cima, então o grupo que a contém precisa de
+// 5 cartas (ela + 4 reais) pra fechar em vez de 4 (ver grupoValido no hook).
+function criarCartaCategoria(cat: CategoriaComCartas): CartaSolitario {
+  return {
+    id: `categoria-${cat.id}`,
+    nome: `Categoria ${cat.nome}`,
+    imagemUrl: null,
+    categoriaId: cat.id,
+    isWildcard: false,
+    isCategoria: true,
+    icone: cat.icone,
+    cor: cat.cor,
   };
 }
 
@@ -146,6 +175,7 @@ export function montarBaralho(nivel: NivelSolitario, categoriasDisponiveis: Cate
         imagemUrl: carta.imagemUrl,
         categoriaId: cat.id,
         isWildcard: false,
+        isCategoria: false,
         icone: cat.icone,
         cor: cat.cor,
       });
@@ -155,11 +185,22 @@ export function montarBaralho(nivel: NivelSolitario, categoriasDisponiveis: Cate
   // O coringa SUBSTITUI uma carta real (não é somado ao baralho) — o total de
   // cartas do nível é sempre múltiplo de 4 (unidades de grupo completo), então
   // adicionar o coringa por cima deixava sempre 1 carta impossível de agrupar,
-  // travando o tabuleiro para sempre com uma carta sobrando.
+  // travando o tabuleiro para sempre com uma carta sobrando. Ele guarda a categoria
+  // da carta que substituiu (`categoriaAlvo`) porque é a ÚNICA categoria que fica
+  // com uma carta a menos — fechar um grupo do coringa em qualquer outra categoria
+  // (que já tinha as 4 cartas completas por conta própria) gastaria 3 cartas reais
+  // dela à toa, sobrando 1 carta sem par bem ali (ver `grupoValido` no hook).
   if (nivel.temCoringa && baralho.length > 0) {
     const idx = Math.floor(Math.random() * baralho.length);
-    baralho[idx] = criarCoringa();
+    const categoriaAlvo = baralho[idx].categoriaId;
+    baralho[idx] = criarCoringa(categoriaAlvo);
   }
+
+  // Uma Carta Categoria por categoria efetivamente usada no nível (unidade > 0) —
+  // depois da substituição do coringa, pra nunca sortear o índice dela por engano.
+  selecionadas.forEach((cat, i) => {
+    if (unidadesAtribuidas[i] > 0) baralho.push(criarCartaCategoria(cat));
+  });
 
   return {
     baralho: shuffle(baralho),

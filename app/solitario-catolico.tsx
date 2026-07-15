@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import Animated, {
   Easing,
   FadeOutUp,
@@ -108,10 +109,21 @@ function FaceUpCard({ carta, usaImagem, selecionada, destaque, onPress, style }:
           destaque && s.faceUpDestaque,
         ]}>
         {/* eslint-disable-next-line @typescript-eslint/no-require-imports */}
-        <Image source={require('@/assets/images/frente_carta.png')} style={s.faceUpBg} resizeMode="stretch" />
+        <Image
+          source={carta.isCategoria
+            ? require('@/assets/images/fundo_carta_categoria.png')
+            : require('@/assets/images/frente_carta.png')}
+          style={s.faceUpBg}
+          resizeMode="stretch"
+        />
         <View style={s.faceUpOverlay}>
           <View style={s.faceUpConteudo}>
-            {usaImagem && carta.imagemUrl ? (
+            {carta.isCategoria ? (
+              <>
+                <ThemedText style={s.faceUpIcone}>{carta.icone}</ThemedText>
+                <ThemedText style={s.faceUpNome} numberOfLines={3}>{carta.nome}</ThemedText>
+              </>
+            ) : usaImagem && carta.imagemUrl ? (
               <Animated.Image source={{ uri: carta.imagemUrl }} style={s.cardImage} resizeMode="cover" />
             ) : (
               <ThemedText style={s.faceUpNome} numberOfLines={3}>{carta.nome}</ThemedText>
@@ -397,8 +409,8 @@ export default function SolitarioCatolicoScreen() {
           <TouchableOpacity onPress={dica} activeOpacity={0.8} style={s.controleBtn}>
             <ThemedText style={s.controleBtnText}>💡 {ECONOMY.SOLITARIO_DICA} 🪙</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity onPress={voltarAoMenu} activeOpacity={0.8} style={s.controleBtn}>
-            <ThemedText style={s.controleBtnText}>⏸️ Menu</ThemedText>
+          <TouchableOpacity onPress={() => router.push('/ad-reward')} activeOpacity={0.8} style={s.controleBtn}>
+            <ThemedText style={s.controleBtnText}>📺 +{ECONOMY.ASSISTIR_ANUNCIO} 🪙</ThemedText>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -480,6 +492,7 @@ const s = StyleSheet.create({
   faceUpSelecionada: { borderColor: C.gold, borderWidth: 3 },
   faceUpDestaque: { borderColor: C.gold, borderWidth: 2.5 },
   faceUpNome: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: '#221F33' },
+  faceUpIcone: { fontSize: 22, lineHeight: 26, marginBottom: 4 },
   cardImage: { width: '100%', height: '100%', borderRadius: C.radius.sm },
 
   controles: {
