@@ -265,6 +265,24 @@ export function useSolitario() {
     }
   }, []);
 
+  // Aplica uma movida já validada (mutação em lugar — `colunas` já deve ser uma
+  // cópia isolada). Compartilhado entre o fluxo de toque em duas etapas
+  // (selecionarCarta) e o arrastar direto (moverCarta), pra não duplicar a lógica
+  // de revelar carta/fechar grupo entre os dois jeitos de mover uma carta.
+  const aplicarMovimento = useCallback((colunas: Coluna[], origemIdx: number, destinoIdx: number, cartaMovida: CartaSolitario) => {
+    colunas[origemIdx].pilha.pop();
+    colunas[destinoIdx].pilha.push(cartaMovida);
+    revelarSeVazio(colunas, origemIdx);
+
+    const fechou = fecharGrupoSeCompleto(colunas, destinoIdx);
+    if (fechou) {
+      revelarSeVazio(colunas, destinoIdx);
+      setUltimoGrupo({ colunaIndex: destinoIdx, cor: cartaMovida.cor });
+      if (grupoTimeoutRef.current) clearTimeout(grupoTimeoutRef.current);
+      grupoTimeoutRef.current = setTimeout(() => setUltimoGrupo(null), 700);
+    }
+  }, []);
+
   const selecionarCarta = useCallback((colunaIndex: number) => {
     if (fase !== 'jogando') return;
     setMesa(prev => {
@@ -290,19 +308,8 @@ export function useSolitario() {
       }
 
       const snapshot: HistoricoEntrada = { colunas: clonarColunas(colunas), movimentosRestantes: prev.movimentosRestantes };
-
       const novasColunas = clonarColunas(colunas);
-      novasColunas[selecionada].pilha.pop();
-      novasColunas[colunaIndex].pilha.push(cartaMovida);
-      revelarSeVazio(novasColunas, selecionada);
-
-      const fechou = fecharGrupoSeCompleto(novasColunas, colunaIndex);
-      if (fechou) {
-        revelarSeVazio(novasColunas, colunaIndex);
-        setUltimoGrupo({ colunaIndex, cor: cartaMovida.cor });
-        if (grupoTimeoutRef.current) clearTimeout(grupoTimeoutRef.current);
-        grupoTimeoutRef.current = setTimeout(() => setUltimoGrupo(null), 700);
-      }
+      aplicarMovimento(novasColunas, selecionada, colunaIndex, cartaMovida);
 
       return {
         colunas: novasColunas,
@@ -311,7 +318,35 @@ export function useSolitario() {
         historico: [...prev.historico, snapshot],
       };
     });
-  }, [fase]);
+  }, [fase, aplicarMovimento]);
+
+  // Move direto de uma coluna pra outra sem passar pela seleção em duas etapas —
+  // usado pelo arrastar (drag and drop). Retorna se a jogada foi aceita, pra quem
+  // chamou saber se deixa a carta no lugar (drop válido) ou anima ela de volta
+  // (drop inválido). A checagem de legalidade roda contra `mesa` (closure) pra
+  // devolver a resposta na hora — a mutação de fato usa o `prev` do updater.
+  const moverCarta = useCallback((origemIdx: number, destinoIdx: number): boolean => {
+    if (fase !== 'jogando' || !mesa || origemIdx === destinoIdx) return false;
+    const origem = mesa.colunas[origemIdx];
+    if (origem.pilha.length === 0) return false;
+    const cartaMovida = origem.pilha[origem.pilha.length - 1];
+    if (!movimentoLegal(cartaMovida, mesa.colunas[destinoIdx])) return false;
+
+    setMesa(prev => {
+      if (!prev) return prev;
+      const snapshot: HistoricoEntrada = { colunas: clonarColunas(prev.colunas), movimentosRestantes: prev.movimentosRestantes };
+      const novasColunas = clonarColunas(prev.colunas);
+      aplicarMovimento(novasColunas, origemIdx, destinoIdx, cartaMovida);
+
+      return {
+        colunas: novasColunas,
+        selecionada: null,
+        movimentosRestantes: prev.movimentosRestantes - 1,
+        historico: [...prev.historico, snapshot],
+      };
+    });
+    return true;
+  }, [fase, mesa, aplicarMovimento]);
 
   const desfazer = useCallback(async () => {
     if (fase !== 'jogando' || !mesa || mesa.historico.length === 0) return;
@@ -378,6 +413,7 @@ export function useSolitario() {
     iniciarNivel,
     sair,
     selecionarCarta,
+    moverCarta,
     desfazer,
     dica,
     verificarGrupoCompleto,

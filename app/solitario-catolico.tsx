@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   FadeOutUp,
@@ -10,6 +11,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -87,16 +89,49 @@ function FaceDownIndicator({ quantidade }: { quantidade: number }) {
   );
 }
 
+// Miolo visual da carta virada pra cima — sem toque nem gesto, reaproveitado tanto
+// pela carta "parada" (FaceUpCard) quanto pela do topo, que aceita arrastar
+// (CartaArrastavel). Mantém a lógica de imagem/texto num único lugar.
+function FaceUpCardConteudo({ carta }: { carta: CartaSolitario }) {
+  return (
+    <>
+      {/* eslint-disable-next-line @typescript-eslint/no-require-imports */}
+      <Image
+        source={carta.isCategoria
+          ? require('@/assets/images/fundo_carta_categoria.png')
+          : require('@/assets/images/frente_carta.png')}
+        style={s.faceUpBg}
+        resizeMode="stretch"
+      />
+      <View style={s.faceUpOverlay}>
+        <View style={s.faceUpConteudo}>
+          {carta.isCategoria ? (
+            <ThemedText style={s.faceUpNome} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.7}>{carta.nome}</ThemedText>
+          ) : carta.imagemUrl ? (
+            // Preparado para o banco poder trocar palavra por imagem em qualquer
+            // carta/nível — decisão é por carta (tem imagemUrl ou não), não mais
+            // fixa por nível.
+            <Animated.Image source={{ uri: carta.imagemUrl }} style={s.cardImage} resizeMode="cover" />
+          ) : (
+            <ThemedText style={s.faceUpNome} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.7}>{carta.nome}</ThemedText>
+          )}
+        </View>
+      </View>
+    </>
+  );
+}
+
 interface FaceUpCardProps {
   carta: CartaSolitario;
-  usaImagem: boolean;
   selecionada: boolean;
   destaque: boolean;
   onPress: () => void;
   style?: ViewStyle;
 }
 
-function FaceUpCard({ carta, usaImagem, selecionada, destaque, onPress, style }: FaceUpCardProps) {
+// Carta parada (não é o topo da pilha) — só toque, sem gesto de arrastar, já que
+// não é ela quem se move (ver movimentoLegal/aplicarMovimento no hook).
+function FaceUpCard({ carta, selecionada, destaque, onPress, style }: FaceUpCardProps) {
   return (
     <Animated.View exiting={FadeOutUp.duration(450)} style={style}>
       <TouchableOpacity
@@ -108,29 +143,89 @@ function FaceUpCard({ carta, usaImagem, selecionada, destaque, onPress, style }:
           selecionada && s.faceUpSelecionada,
           destaque && s.faceUpDestaque,
         ]}>
-        {/* eslint-disable-next-line @typescript-eslint/no-require-imports */}
-        <Image
-          source={carta.isCategoria
-            ? require('@/assets/images/fundo_carta_categoria.png')
-            : require('@/assets/images/frente_carta.png')}
-          style={s.faceUpBg}
-          resizeMode="stretch"
-        />
-        <View style={s.faceUpOverlay}>
-          <View style={s.faceUpConteudo}>
-            {carta.isCategoria ? (
-              <>
-                <ThemedText style={s.faceUpIcone}>{carta.icone}</ThemedText>
-                <ThemedText style={s.faceUpNome} numberOfLines={3}>{carta.nome}</ThemedText>
-              </>
-            ) : usaImagem && carta.imagemUrl ? (
-              <Animated.Image source={{ uri: carta.imagemUrl }} style={s.cardImage} resizeMode="cover" />
-            ) : (
-              <ThemedText style={s.faceUpNome} numberOfLines={3}>{carta.nome}</ThemedText>
-            )}
-          </View>
-        </View>
+        <FaceUpCardConteudo carta={carta} />
       </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const ARRASTE_MIN_DISTANCIA = 10;
+
+interface CartaArrastavelProps {
+  carta: CartaSolitario;
+  colunaIndex: number;
+  selecionada: boolean;
+  destaque: boolean;
+  style?: ViewStyle;
+  onTap: () => void;
+  onSoltar: (destinoIndex: number) => boolean;
+  onIniciarArraste: () => void;
+  onFinalizarArraste: () => void;
+  encontrarColunaEm: (x: number, y: number) => number | null;
+}
+
+// Carta do topo da pilha — a única que pode ser movida. Segurar e arrastar solta
+// numa coluna: se o destino for válido, a jogada é aplicada e essa instância
+// desmonta (a carta passa a existir na coluna de destino); se for inválido, ela
+// volta animada pro lugar. Um toque curto (sem arrastar) continua funcionando como
+// seleção, igual ao resto do jogo — o próprio gesto decide se foi toque ou arraste
+// pela distância percorrida, então não precisa de um Tap gesture separado.
+function CartaArrastavel({
+  carta, colunaIndex, selecionada, destaque, style,
+  onTap, onSoltar, onIniciarArraste, onFinalizarArraste, encontrarColunaEm,
+}: CartaArrastavelProps) {
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const arrastando = useSharedValue(false);
+
+  const pan = Gesture.Pan()
+    .maxPointers(1)
+    .onStart(() => {
+      arrastando.value = true;
+      onIniciarArraste();
+    })
+    .onUpdate(e => {
+      translateX.value = e.translationX;
+      translateY.value = e.translationY;
+    })
+    .onEnd(e => {
+      arrastando.value = false;
+      const distancia = Math.hypot(e.translationX, e.translationY);
+      let sucesso = false;
+      if (distancia < ARRASTE_MIN_DISTANCIA) {
+        onTap();
+      } else {
+        const destino = encontrarColunaEm(e.absoluteX, e.absoluteY);
+        if (destino !== null && destino !== colunaIndex) sucesso = onSoltar(destino);
+      }
+      if (!sucesso) {
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+      }
+      onFinalizarArraste();
+    })
+    .runOnJS(true);
+
+  const estiloArraste = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
+    zIndex: arrastando.value ? 50 : 0,
+    elevation: arrastando.value ? 12 : 4,
+  }));
+
+  return (
+    <Animated.View exiting={FadeOutUp.duration(450)} style={style}>
+      <GestureDetector gesture={pan}>
+        <Animated.View
+          style={[
+            s.card,
+            s.faceUp,
+            selecionada && s.faceUpSelecionada,
+            destaque && s.faceUpDestaque,
+            estiloArraste,
+          ]}>
+          <FaceUpCardConteudo carta={carta} />
+        </Animated.View>
+      </GestureDetector>
     </Animated.View>
   );
 }
@@ -142,11 +237,48 @@ export default function SolitarioCatolicoScreen() {
   const {
     GAME_ID, fase, nivelAtual, colunas, selecionada, movimentosRestantes, movimentosIniciais,
     podeDesfazer, dicaAtual, dicasUsadas, ultimoGrupo, tempoGastoMs, saldoMoedas, ganhar,
-    iniciarNivel, sair, selecionarCarta, desfazer, dica,
+    iniciarNivel, sair, selecionarCarta, moverCarta, desfazer, dica,
   } = solitario;
 
   const [coinsGanhas, setCoinsGanhas] = useState<number | null>(null);
   const rewardedLevelRef = useRef<string | null>(null);
+
+  // Posição (na janela) de cada coluna, pra saber onde uma carta arrastada foi
+  // solta. Medida sob demanda a cada início de arraste (não guardada de forma
+  // reativa) — é barato, sempre atual mesmo se o tabuleiro rolou, e evita
+  // recalcular a cada frame do gesto.
+  const colunaRefs = useRef<Array<ElementRef<typeof TouchableOpacity> | null>>([]);
+  const colunaRects = useRef<Array<{ x: number; y: number; width: number; height: number } | null>>([]);
+
+  // O tabuleiro rola num ScrollView — sem desligar o scroll enquanto uma carta
+  // está sendo arrastada, os dois gestos competem pelo mesmo toque e a página
+  // fica "pulando"/rolando sozinha em vez de só mover a carta.
+  const [algumaCartaArrastando, setAlgumaCartaArrastando] = useState(false);
+
+  const medirColunas = useCallback(() => {
+    colunaRefs.current.forEach((ref, i) => {
+      ref?.measureInWindow((x, y, width, height) => {
+        colunaRects.current[i] = { x, y, width, height };
+      });
+    });
+  }, []);
+
+  const iniciarArraste = useCallback(() => {
+    medirColunas();
+    setAlgumaCartaArrastando(true);
+  }, [medirColunas]);
+
+  const finalizarArraste = useCallback(() => {
+    setAlgumaCartaArrastando(false);
+  }, []);
+
+  const encontrarColunaEm = useCallback((x: number, y: number): number | null => {
+    for (let i = 0; i < colunaRects.current.length; i++) {
+      const r = colunaRects.current[i];
+      if (r && x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) return i;
+    }
+    return null;
+  }, []);
 
   // Progressão é sempre sequencial — sem grade de seleção de nível. O próximo
   // nível é sempre o primeiro ainda não concluído; se tudo já foi concluído,
@@ -356,7 +488,9 @@ export default function SolitarioCatolicoScreen() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={[s.tabuleiro, { paddingBottom: BottomTabInset + 96 }]}>
+        <ScrollView
+          scrollEnabled={!algumaCartaArrastando}
+          contentContainerStyle={[s.tabuleiro, { paddingBottom: BottomTabInset + 96 }]}>
           <View style={s.colunasRow}>
             {colunas.map((coluna, idx) => {
               const topoIdx = coluna.pilha.length - 1;
@@ -364,24 +498,46 @@ export default function SolitarioCatolicoScreen() {
               return (
                 <TouchableOpacity
                   key={idx}
+                  ref={el => { colunaRefs.current[idx] = el; }}
                   activeOpacity={0.9}
                   onPress={() => selecionarCarta(idx)}
                   style={[s.coluna, { width: COLUNA_WIDTH }]}>
                   <FaceDownIndicator quantidade={coluna.monte.length} />
-                  <View style={[s.pilhaWrap, { minHeight: CARD_H + PEEK * 3 }]}>
+                  {/* Cartas empilhadas são position:absolute e não esticam o pai
+                      sozinhas — sem esse cálculo, pilhas com mais de ~4 cartas
+                      "vazam" visualmente abaixo da altura medida da coluna,
+                      deixando o alvo de soltar o arraste impreciso ali embaixo. */}
+                  <View style={[s.pilhaWrap, {
+                    minHeight: Math.max(CARD_H + PEEK * 3, (coluna.pilha.length - 1) * PEEK + CARD_H),
+                  }]}>
                     {coluna.pilha.length === 0 && (
                       <View style={[s.emptySlot, emDestaque && s.emptySlotDestaque]} />
                     )}
                     {coluna.pilha.map((carta, cIdx) => (
-                      <FaceUpCard
-                        key={carta.id}
-                        carta={carta}
-                        usaImagem={nivelAtual.usaImagem}
-                        selecionada={selecionada === idx && cIdx === topoIdx}
-                        destaque={!!emDestaque && cIdx === topoIdx}
-                        onPress={() => selecionarCarta(idx)}
-                        style={{ position: 'absolute', top: cIdx * PEEK }}
-                      />
+                      cIdx === topoIdx ? (
+                        <CartaArrastavel
+                          key={carta.id}
+                          carta={carta}
+                          colunaIndex={idx}
+                          selecionada={selecionada === idx}
+                          destaque={!!emDestaque}
+                          style={{ position: 'absolute', top: cIdx * PEEK }}
+                          onTap={() => selecionarCarta(idx)}
+                          onSoltar={destino => moverCarta(idx, destino)}
+                          onIniciarArraste={iniciarArraste}
+                          onFinalizarArraste={finalizarArraste}
+                          encontrarColunaEm={encontrarColunaEm}
+                        />
+                      ) : (
+                        <FaceUpCard
+                          key={carta.id}
+                          carta={carta}
+                          selecionada={false}
+                          destaque={false}
+                          onPress={() => selecionarCarta(idx)}
+                          style={{ position: 'absolute', top: cIdx * PEEK }}
+                        />
+                      )
                     ))}
                   </View>
                   {ultimoGrupo?.colunaIndex === idx && (
@@ -488,11 +644,10 @@ const s = StyleSheet.create({
   },
   faceUpBg: { width: '100%', height: '100%' },
   faceUpOverlay: { ...StyleSheet.absoluteFillObject },
-  faceUpConteudo: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 12 },
+  faceUpConteudo: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 },
   faceUpSelecionada: { borderColor: C.gold, borderWidth: 3 },
   faceUpDestaque: { borderColor: C.gold, borderWidth: 2.5 },
-  faceUpNome: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: '#221F33' },
-  faceUpIcone: { fontSize: 22, lineHeight: 26, marginBottom: 4 },
+  faceUpNome: { fontSize: 11, lineHeight: 13, fontWeight: '700', textAlign: 'center', color: '#221F33' },
   cardImage: { width: '100%', height: '100%', borderRadius: C.radius.sm },
 
   controles: {

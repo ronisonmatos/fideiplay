@@ -1,6 +1,4 @@
-- Competição online / Sistema de Rank Geral ou de um jogo específico
 
-- Stop competir com outro jogadores
 
 - Jogo igual o que a esposa joga 
 
@@ -163,3 +161,24 @@ Resumo do que cada coisa controla:
 ├─────────────────────────┼────────────────┼──────────────────────┤
 │ versionCode (ex: 48)    │ EAS automático │ A cada build         │
 └─────────────────────────┴────────────────┴──────────────────────┘
+
+
+
+
+=====================================================
+Jogo de debate com IA
+
+
+
+==================================================
+
+
+
+Notificação fixa mudar a mensagem as fez 8h
+
+Telas de aceitar o GPS e notificaçã com exemplos de cada uma.
+Quando é uma nova instalação de aparecer uma tela com um exemplo de notificação (Foi liberado nova trilha e/ou novo jogo disponível)
+Depois uma tela para aceita o GPS com um exemplo Evento próximo à você (Com banner de exemplo)
+
+
+Adicionar comando secreto no jogo Desafio liturgico, clicar mais 7x no cronometro para o relogio.

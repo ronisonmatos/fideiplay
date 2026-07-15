@@ -19,7 +19,6 @@ export interface NivelSolitario {
   totalCartas: number;
   movimentos: number;
   temCoringa: boolean;
-  usaImagem: boolean; // a partir do nível 6 — CardView prefere imagemUrl quando existir
 }
 
 export interface CategoriaComCartas {
@@ -33,11 +32,11 @@ export interface CategoriaComCartas {
 export const MAX_LEVEL = 20;
 
 export const SOLITARIO_NIVEIS_FIXOS: NivelSolitario[] = [
-  { id: 'nivel-1', numero: 1, colunas: 3, categorias: 2, totalCartas: 8,  movimentos: 100, temCoringa: true, usaImagem: false },
-  { id: 'nivel-2', numero: 2, colunas: 3, categorias: 3, totalCartas: 12, movimentos: 80,  temCoringa: true, usaImagem: false },
-  { id: 'nivel-3', numero: 3, colunas: 4, categorias: 3, totalCartas: 16, movimentos: 70,  temCoringa: true, usaImagem: false },
-  { id: 'nivel-4', numero: 4, colunas: 4, categorias: 4, totalCartas: 20, movimentos: 60,  temCoringa: true, usaImagem: false },
-  { id: 'nivel-5', numero: 5, colunas: 5, categorias: 4, totalCartas: 24, movimentos: 50,  temCoringa: true, usaImagem: false },
+  { id: 'nivel-1', numero: 1, colunas: 3, categorias: 2, totalCartas: 8,  movimentos: 100, temCoringa: true },
+  { id: 'nivel-2', numero: 2, colunas: 3, categorias: 3, totalCartas: 12, movimentos: 80,  temCoringa: true },
+  { id: 'nivel-3', numero: 3, colunas: 4, categorias: 3, totalCartas: 16, movimentos: 70,  temCoringa: true },
+  { id: 'nivel-4', numero: 4, colunas: 4, categorias: 4, totalCartas: 20, movimentos: 60,  temCoringa: true },
+  { id: 'nivel-5', numero: 5, colunas: 5, categorias: 4, totalCartas: 24, movimentos: 50,  temCoringa: true },
 ];
 
 // Níveis 6-20: colunas ficam em 5, cartas crescem até o nível 11 e depois estabilizam
@@ -57,7 +56,6 @@ function generateLevel(n: number): NivelSolitario {
     totalCartas,
     movimentos,
     temCoringa: true,
-    usaImagem: true,
   };
 }
 
@@ -114,14 +112,16 @@ function criarCoringa(categoriaAlvo: string | null): CartaSolitario {
   };
 }
 
-// Carta Categoria: define/ancora a categoria (ex.: "Categoria Orações") — as demais
-// cartas da MESMA categoria devem se juntar a ela. Ao contrário do coringa, não é
-// substituída no baralho: é somada por cima, então o grupo que a contém precisa de
-// 5 cartas (ela + 4 reais) pra fechar em vez de 4 (ver grupoValido no hook).
+// Carta Categoria: define/ancora a categoria (ex.: "Orações") — as demais cartas da
+// MESMA categoria devem se juntar a ela. A arte própria (fundo_carta_categoria.png)
+// já deixa claro que é uma carta especial, por isso o nome não repete a palavra
+// "Categoria". Ao contrário do coringa, não é substituída no baralho: é somada por
+// cima, então o grupo que a contém precisa de 5 cartas (ela + 4 reais) pra fechar em
+// vez de 4 (ver grupoValido no hook).
 function criarCartaCategoria(cat: CategoriaComCartas): CartaSolitario {
   return {
     id: `categoria-${cat.id}`,
-    nome: `Categoria ${cat.nome}`,
+    nome: cat.nome,
     imagemUrl: null,
     categoriaId: cat.id,
     isWildcard: false,
