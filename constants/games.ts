@@ -84,4 +84,14 @@ export const GAMES: GameInfo[] = [
     desc: '7 níveis · Vocabulário litúrgico em latim',
     route: '/latim-boggle',
   },
+  {
+    gameId: 'solitario-catolico',
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    image: require('@/assets/images/solitario_catolico.png') as number,
+    title: 'Paciência Católica',
+    tag: 'Cartas',
+    tagColor: C.green,
+    desc: '20 níveis · Agrupe cartas por categoria',
+    route: '/solitario-catolico',
+  },
 ];

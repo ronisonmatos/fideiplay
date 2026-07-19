@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 
+import { AdminSolitarioSection } from '@/components/admin-solitario';
 import { AvatarImage } from '@/components/avatar-image';
 import { DateField } from '@/components/date-field';
 import { ThemedText } from '@/components/themed-text';
@@ -145,7 +146,7 @@ async function pickAndUploadAdImages(opts?: { multiple?: boolean; limit?: number
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type AdminSection   = 'contests' | 'support' | 'moderacao' | 'trilhas' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
+type AdminSection   = 'contests' | 'support' | 'moderacao' | 'trilhas' | 'solitario' | 'notifications' | 'ads' | 'banners' | 'eventos' | 'config';
 type AdminCategory  = 'denuncias' | 'mod' | 'conteudo' | 'ads' | 'comunicacao' | 'sistema';
 type NotifMode       = 'geral' | 'direto';
 type NotifSchedule    = 'now' | '1h' | 'tomorrow9' | 'custom';
@@ -279,7 +280,8 @@ const ADMIN_CATEGORIES: {
   {
     key: 'conteudo', label: 'Conteúdo', icon: '📚',
     sections: [
-      { key: 'trilhas', label: 'Trilhas', icon: '🔓' },
+      { key: 'trilhas',   label: 'Trilhas',   icon: '🔓' },
+      { key: 'solitario', label: 'Solitário', icon: '🃏' },
     ],
   },
   {
@@ -2420,6 +2422,9 @@ export default function AdminTab() {
             )}
           </ScrollView>
         )}
+
+        {/* ══ SEÇÃO: SOLITÁRIO CATÓLICO (categorias/cartas) ══ */}
+        {section === 'solitario' && <AdminSolitarioSection />}
 
         {/* ══ SEÇÃO: NOTIFICAÇÕES ══ */}
         {section === 'notifications' && (

@@ -23,6 +23,7 @@ import { ALL_FRASES } from '@/constants/versiculo-frases';
 import { PUZZLE_THEMES } from '@/constants/puzzle-themes';
 import { SANCTUARIES } from '@/constants/sanctuaries';
 import { LATIM_BOGGLE_LEVELS } from '@/constants/latim-boggle-levels';
+import { SOLITARIO_XP_TOTAL } from '@/constants/solitario-niveis';
 import { getDailyMission, getLast7DaysStars } from '@/lib/daily-mission';
 import {
   MAX_XP_STOP,
@@ -39,7 +40,7 @@ import { useAuth } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
 import { useNotifications } from '@/context/notifications-context';
 
-const FILTER_TAGS = ['Todos', 'Quiz', 'Bíblia', 'Aventura', 'Vocabulário', 'Liturgia'];
+const FILTER_TAGS = ['Todos', 'Quiz', 'Bíblia', 'Aventura', 'Vocabulário', 'Liturgia', 'Cartas'];
 const WEEKDAY_LETTERS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 function useCountdown() {
@@ -117,6 +118,7 @@ export default function HomeScreen() {
     'desafio-liturgico':  maxXpLiturgico(LITURGICO_QUESTIONS, liturgicoPacks),
     'stop-solo':          MAX_XP_STOP,
     'latim-boggle':       maxXpLatim(LATIM_BOGGLE_LEVELS, latimPacks),
+    'solitario-catolico': SOLITARIO_XP_TOTAL,
   }), [quizPacks, versiculoPacks, peregrinacaoPacks, palavrasPacks, liturgicoPacks, latimPacks]);
 
   const cardBorder = scheme === 'dark' ? C.border : 'rgba(0,0,0,0.08)';

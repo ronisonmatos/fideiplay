@@ -88,6 +88,31 @@ export async function sendChatOSNotification(title: string, body: string): Promi
 
 const DAILY_REMINDER_ID = 'daily-study-reminder';
 
+// Um trigger DAILY do SO grava o conteúdo no momento em que é agendado — o
+// mesmo título/corpo dispara todo dia até alguém reagendar. Por isso a
+// variedade vem daqui: cada vez que scheduleDailyReminder() roda (abertura
+// do app, onboarding de permissões), sorteamos uma mensagem e um horário
+// novos dentro da janela da manhã, então usuários que abrem o app com
+// alguma frequência veem mensagem/horário mudarem dia a dia.
+const DAILY_REMINDER_MESSAGES: { title: string; body: string }[] = [
+  { title: '📖 Hora de estudar!', body: 'Que tal aprofundar sua fé hoje? Uma lição por dia forma um católico sólido.' },
+  { title: '✝️ Bom dia!', body: 'Comece o dia com uma lição — sua trilha espera por você.' },
+  { title: '🕊️ A fé se cultiva todo dia', body: 'Volte ao SantosPlay e continue de onde parou na sua trilha.' },
+  { title: '📿 Um minuto pela fé', body: 'Que tal um Quiz Católico rápido antes de começar o dia?' },
+  { title: '⛪ Sua trilha te espera', body: 'Cada lição é um passo mais perto de conhecer melhor a fé católica.' },
+  { title: '🌅 Comece bem o dia', body: 'Uma pequena lição de manhã fortalece toda a sua jornada de fé.' },
+  { title: '🙏 Não perca sua sequência!', body: 'Continue estudando hoje e mantenha seu progresso na trilha.' },
+  { title: '📖 Hora de crescer na fé', body: 'Volte pro SantosPlay e desafie seu conhecimento católico hoje.' },
+];
+
+// Janela de horário: entre 7h e 9h59, minuto qualquer — evita cair fora da manhã.
+function randomMorningTime(): { hour: number; minute: number } {
+  return {
+    hour: 7 + Math.floor(Math.random() * 3),
+    minute: Math.floor(Math.random() * 60),
+  };
+}
+
 export async function scheduleDailyReminder() {
   const granted = await requestNotificationPermission();
   if (!granted) return;
@@ -95,17 +120,20 @@ export async function scheduleDailyReminder() {
   // Cancela se já existe para não duplicar
   await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_ID).catch(() => {});
 
+  const { title, body } = DAILY_REMINDER_MESSAGES[Math.floor(Math.random() * DAILY_REMINDER_MESSAGES.length)];
+  const { hour, minute } = randomMorningTime();
+
   await Notifications.scheduleNotificationAsync({
     identifier: DAILY_REMINDER_ID,
     content: {
-      title: '📖 Hora de estudar!',
-      body: 'Que tal aprofundar sua fé hoje? Uma lição por dia forma um católico sólido.',
+      title,
+      body,
       sound: 'church_bell.wav',
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: 8,
-      minute: 0,
+      hour,
+      minute,
       channelId: NOTIF_CHANNEL,
     },
   });
