@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TrilhaIcon } from '@/components/trilha-icon';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { useAuth } from '@/context/auth-context';
 import { NIVEIS } from '@/constants/teste-conhecimento';
 import { TRILHAS } from '@/data/trilhas';
@@ -42,6 +43,16 @@ export default function TrilhasScreen() {
   const [progresso,  setProgresso]  = useState<Progresso>({ licoesConcluidas: [], xpTotal: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [trilhaConfigs, setTrilhaConfigs] = useState<Record<number, TrilhaConfig>>({});
+
+  // Quais trilhas premium exibir. Com pagamentos reais desligados (iOS até a 1ª
+  // aprovação na Apple), esconde as que só custam dinheiro — mantém as já
+  // desbloqueadas e as desbloqueáveis por moedas (moeda não é dinheiro real).
+  const premiumParaMostrar = useMemo(() => TRILHAS_PREMIUM.filter(trilha => {
+    if (trilhasDesbloqueadas.includes(trilha.id)) return true;
+    if (PAGAMENTOS_REAIS_HABILITADOS) return true;
+    const config = trilhaConfigs[trilha.id];
+    return !!(config?.coinsPurchasable && config.coinsPrice > 0);
+  }), [TRILHAS_PREMIUM, trilhasDesbloqueadas, trilhaConfigs]);
   const [testeResultado, setTesteResultado] = useState<TesteConhecimentoRow | null>(null);
 
   const loadData = useCallback(async () => {
@@ -185,9 +196,13 @@ export default function TrilhasScreen() {
             );
           })}
 
-          {/* Trilhas premium */}
-          <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: Spacing.two }]}>PREMIUM</ThemedText>
-          {TRILHAS_PREMIUM.map(trilha => {
+          {/* Trilhas premium — com pagamentos reais desligados (iOS até a 1ª
+              aprovação na Apple), só aparecem as já desbloqueadas e as que dá
+              pra desbloquear com moedas; as que só custam dinheiro ficam ocultas. */}
+          {premiumParaMostrar.length > 0 && (
+            <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: Spacing.two }]}>PREMIUM</ThemedText>
+          )}
+          {premiumParaMostrar.map(trilha => {
             const desbloqueada = trilhasDesbloqueadas.includes(trilha.id);
             const concluidas = licoesDaTrilha(trilha.id);
             const pct = trilha.totalLicoes > 0 ? concluidas / trilha.totalLicoes : 0;
@@ -252,7 +267,9 @@ export default function TrilhasScreen() {
                     {coinsPrice > 0 ? (
                       <View style={[styles.metaCoinsRow, styles.lockedOpacity]}>
                         <ThemedText style={[styles.trilhaMeta, { color: theme.textSecondary }]}>
-                          {trilha.nivel} · {trilha.totalLicoes} lições · R$ {trilha.preco?.toFixed(2).replace('.', ',')}{'  ou  '}
+                          {trilha.nivel} · {trilha.totalLicoes} lições · {PAGAMENTOS_REAIS_HABILITADOS
+                            ? `R$ ${trilha.preco?.toFixed(2).replace('.', ',')}  ou  `
+                            : ''}
                         </ThemedText>
                         <Image source={require('@/assets/images/moedas.png')} style={styles.coinIconMeta} resizeMode="contain" />
                         <ThemedText style={[styles.trilhaMeta, { color: theme.textSecondary }]}>{coinsPrice} moedas</ThemedText>

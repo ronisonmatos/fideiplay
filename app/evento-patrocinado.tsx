@@ -22,6 +22,7 @@ import { DateField } from '@/components/date-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
+import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import {
   ALCANCE_LABELS,
   calcularValorEvento,
@@ -314,7 +315,9 @@ export default function EventoPatrocinadoScreen() {
     );
   }
 
-  if (!ativo) {
+  // !ativo = feature desligada pelo admin. !PAGAMENTOS_REAIS_HABILITADOS = iOS
+  // antes da 1ª aprovação na Apple (divulgação paga fica fora até o IAP existir).
+  if (!ativo || !PAGAMENTOS_REAIS_HABILITADOS) {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
