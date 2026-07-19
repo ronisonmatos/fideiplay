@@ -19,6 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TrilhaIcon } from '@/components/trilha-icon';
 import { C, Spacing } from '@/constants/theme';
+import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { useAuth } from '@/context/auth-context';
 import { TRILHAS } from '@/data/trilhas';
 import { supabase } from '@/lib/supabase';
@@ -54,14 +55,17 @@ export default function PagamentoScreen() {
 
   const productId = productIdDaTrilha(Number(trilhaId));
 
-  // No iOS, trilha paga só pode ser vendida via Apple IAP (Guideline 3.1.1)
-  // — PIX/Cartão (Mercado Pago) somem da lista de abas nessa plataforma.
-  // Moedas continua disponível nas duas (não é venda com dinheiro real).
-  const abasVisiveis: Aba[] = Platform.OS === 'ios'
-    ? (coinsPrice > 0 ? ['apple', 'moedas'] : ['apple'])
-    : (coinsPrice > 0 ? ['moedas', 'pix', 'card'] : ['pix', 'card']);
+  // Enquanto os pagamentos reais estão desligados (iOS, até a 1ª aprovação na
+  // Apple), a única forma de desbloqueio é por MOEDAS. Com pagamentos ligados,
+  // no iOS a venda é via Apple IAP (Guideline 3.1.1) e no Android via PIX/Cartão.
+  // Moedas (ganhas jogando) aparecem sempre que a trilha as aceita.
+  const abasVisiveis: Aba[] = !PAGAMENTOS_REAIS_HABILITADOS
+    ? (coinsPrice > 0 ? ['moedas'] : [])
+    : Platform.OS === 'ios'
+      ? (coinsPrice > 0 ? ['apple', 'moedas'] : ['apple'])
+      : (coinsPrice > 0 ? ['moedas', 'pix', 'card'] : ['pix', 'card']);
 
-  const [aba, setAba] = useState<Aba>(abasVisiveis[0]);
+  const [aba, setAba] = useState<Aba>(abasVisiveis[0] ?? 'moedas');
   const [showCoinsModal, setShowCoinsModal] = useState(false);
   const [fase, setFase] = useState<Fase>('idle');
   const [pixCode, setPixCode] = useState('');
@@ -75,9 +79,10 @@ export default function PagamentoScreen() {
 
   useEffect(() => () => { pararPolling(); compraListenerRef.current?.(); }, []);
 
-  // Conexão com a StoreKit — só no iOS, só enquanto esta tela está aberta.
+  // Conexão com a StoreKit — só no iOS com pagamentos reais ligados, e só
+  // enquanto esta tela está aberta.
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
+    if (Platform.OS !== 'ios' || !PAGAMENTOS_REAIS_HABILITADOS) return;
     iniciarConexaoIAP().catch(() => {});
     return () => { encerrarConexaoIAP().catch(() => {}); };
   }, []);
@@ -85,7 +90,7 @@ export default function PagamentoScreen() {
   // Preço real localizado da Apple — mais fiel que o "R$ preco" fixo vindo
   // da query string, e é o que a StoreKit sheet vai de fato cobrar.
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !productId) return;
+    if (Platform.OS !== 'ios' || !PAGAMENTOS_REAIS_HABILITADOS || !productId) return;
     buscarProdutoIAP(productId).then(p => { if (p?.displayPrice) setApplePrice(p.displayPrice); }).catch(() => {});
   }, [productId]);
 
@@ -306,12 +311,30 @@ export default function PagamentoScreen() {
                 {trilha?.totalLicoes} lições · {trilha?.xpTotal} XP
               </ThemedText>
             </View>
-            <ThemedText style={[s.preco, { color: C.gold }]}>
-              R$ {preco.toFixed(2).replace('.', ',')}
-            </ThemedText>
+            {PAGAMENTOS_REAIS_HABILITADOS ? (
+              <ThemedText style={[s.preco, { color: C.gold }]}>
+                R$ {preco.toFixed(2).replace('.', ',')}
+              </ThemedText>
+            ) : coinsPrice > 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Image source={require('@/assets/images/moedas.png')} style={s.coinIconTab} resizeMode="contain" />
+                <ThemedText style={[s.preco, { color: C.gold }]}>{coinsPrice}</ThemedText>
+              </View>
+            ) : null}
           </View>
 
-          {(fase === 'idle' || fase === 'loading') && (
+          {abasVisiveis.length === 0 && (
+            <View style={s.abaContent}>
+              <ThemedText style={[s.abaTitle, { color: theme.text, textAlign: 'center' }]}>
+                Indisponível no momento
+              </ThemedText>
+              <ThemedText style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 20 }}>
+                Esta trilha ainda não pode ser desbloqueada por aqui. Fique de olho — em breve novidades!
+              </ThemedText>
+            </View>
+          )}
+
+          {abasVisiveis.length > 0 && (fase === 'idle' || fase === 'loading') && (
             <>
               <View style={[s.tabs, { backgroundColor: theme.backgroundElement, borderColor: C.border }]}>
                 {abasVisiveis.map(a => (

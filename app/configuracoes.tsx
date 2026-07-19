@@ -22,6 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AvatarImage } from '@/components/avatar-image';
 import { C, Spacing } from '@/constants/theme';
+import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/context/notifications-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -348,8 +349,9 @@ export default function ConfiguracoesScreen() {
             </View>
           </ThemedView>
 
-          {/* Compras (iOS) */}
-          {Platform.OS === 'ios' && user && (
+          {/* Compras (iOS) — só faz sentido com o IAP ligado; enquanto os
+              pagamentos reais estão desabilitados no iOS, não há compra a restaurar. */}
+          {Platform.OS === 'ios' && PAGAMENTOS_REAIS_HABILITADOS && user && (
             <>
               <ThemedText style={s.sectionLabel}>COMPRAS</ThemedText>
               <ThemedView type="backgroundElement" style={s.card}>

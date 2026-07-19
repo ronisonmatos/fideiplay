@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { C, Spacing } from '@/constants/theme';
+import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { ALCANCE_LABELS } from '@/constants/eventos-precos';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
@@ -64,10 +65,12 @@ export default function MeusEventosScreen() {
           contentContainerStyle={s.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />}>
 
-          <TouchableOpacity style={s.novoBtn} onPress={() => router.push('/evento-patrocinado')} activeOpacity={0.85}>
-            <Image source={require('@/assets/images/icone_evento.png')} style={{ width: 18, height: 18 }} resizeMode="contain" />
-            <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>Divulgar novo evento</ThemedText>
-          </TouchableOpacity>
+          {PAGAMENTOS_REAIS_HABILITADOS && (
+            <TouchableOpacity style={s.novoBtn} onPress={() => router.push('/evento-patrocinado')} activeOpacity={0.85}>
+              <Image source={require('@/assets/images/icone_evento.png')} style={{ width: 18, height: 18 }} resizeMode="contain" />
+              <ThemedText style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>Divulgar novo evento</ThemedText>
+            </TouchableOpacity>
+          )}
 
           {loading ? (
             <ActivityIndicator color={C.purple} style={{ paddingVertical: 32 }} />

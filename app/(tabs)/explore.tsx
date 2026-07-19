@@ -19,6 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AvatarImage } from '@/components/avatar-image';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
+import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { useAuth } from '@/context/auth-context';
 import type { Profile } from '@/context/auth-context';
 import { useGameStore } from '@/context/game-store';
@@ -427,7 +428,7 @@ export default function ContaScreen() {
             {/* Minha comunidade */}
             <ThemedText style={styles.sectionLabel}>MINHA COMUNIDADE</ThemedText>
             <View style={{ gap: Spacing.two }}>
-              {eventosAtivo && (
+              {eventosAtivo && PAGAMENTOS_REAIS_HABILITADOS && (
                 <TouchableOpacity
                   style={[styles.comunidadeBtn, { backgroundColor: '#26215C' }]}
                   onPress={() => router.push('/evento-patrocinado')}
