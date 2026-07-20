@@ -253,7 +253,12 @@ export default function SolitarioCatolicoScreen() {
   // O tabuleiro rola num ScrollView — sem desligar o scroll enquanto uma carta
   // está sendo arrastada, os dois gestos competem pelo mesmo toque e a página
   // fica "pulando"/rolando sozinha em vez de só mover a carta.
-  const [algumaCartaArrastando, setAlgumaCartaArrastando] = useState(false);
+  // Índice da coluna cuja carta do topo está sendo arrastada agora (null = nenhuma).
+  // Serve pra dois fins: desligar o scroll durante o arraste e — o principal —
+  // elevar o zIndex/elevation dessa coluna acima das vizinhas. Sem isso, o zIndex
+  // da carta só ordena dentro da própria coluna, então uma carta arrastada por cima
+  // de colunas seguintes (irmãs renderizadas depois) aparecia ATRÁS delas.
+  const [colunaArrastando, setColunaArrastando] = useState<number | null>(null);
 
   const medirColunas = useCallback(() => {
     colunaRefs.current.forEach((ref, i) => {
@@ -263,13 +268,13 @@ export default function SolitarioCatolicoScreen() {
     });
   }, []);
 
-  const iniciarArraste = useCallback(() => {
+  const iniciarArraste = useCallback((colunaIndex: number) => {
     medirColunas();
-    setAlgumaCartaArrastando(true);
+    setColunaArrastando(colunaIndex);
   }, [medirColunas]);
 
   const finalizarArraste = useCallback(() => {
-    setAlgumaCartaArrastando(false);
+    setColunaArrastando(null);
   }, []);
 
   const encontrarColunaEm = useCallback((x: number, y: number): number | null => {
@@ -489,7 +494,7 @@ export default function SolitarioCatolicoScreen() {
         </View>
 
         <ScrollView
-          scrollEnabled={!algumaCartaArrastando}
+          scrollEnabled={colunaArrastando === null}
           contentContainerStyle={[s.tabuleiro, { paddingBottom: BottomTabInset + 96 }]}>
           <View style={s.colunasRow}>
             {colunas.map((coluna, idx) => {
@@ -501,7 +506,13 @@ export default function SolitarioCatolicoScreen() {
                   ref={el => { colunaRefs.current[idx] = el; }}
                   activeOpacity={0.9}
                   onPress={() => selecionarCarta(idx)}
-                  style={[s.coluna, { width: COLUNA_WIDTH }]}>
+                  style={[
+                    s.coluna,
+                    { width: COLUNA_WIDTH },
+                    // A coluna que está arrastando sobe acima das vizinhas — só assim
+                    // a carta arrastada passa por cima das cartas das outras colunas.
+                    colunaArrastando === idx && s.colunaArrastando,
+                  ]}>
                   <FaceDownIndicator quantidade={coluna.monte.length} />
                   {/* Cartas empilhadas são position:absolute e não esticam o pai
                       sozinhas — sem esse cálculo, pilhas com mais de ~4 cartas
@@ -524,7 +535,7 @@ export default function SolitarioCatolicoScreen() {
                           style={{ position: 'absolute', top: cIdx * PEEK }}
                           onTap={() => selecionarCarta(idx)}
                           onSoltar={destino => moverCarta(idx, destino)}
-                          onIniciarArraste={iniciarArraste}
+                          onIniciarArraste={() => iniciarArraste(idx)}
                           onFinalizarArraste={finalizarArraste}
                           encontrarColunaEm={encontrarColunaEm}
                         />
@@ -613,6 +624,7 @@ const s = StyleSheet.create({
   tabuleiro: { paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   colunasRow: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.two, flexWrap: 'wrap' },
   coluna: { alignItems: 'center', gap: Spacing.two },
+  colunaArrastando: { zIndex: 100, elevation: 24 },
   pilhaWrap: { width: CARD_W, alignItems: 'center' },
   emptySlot: {
     width: CARD_W, height: CARD_H, borderRadius: C.radius.md,
