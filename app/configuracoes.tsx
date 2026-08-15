@@ -21,6 +21,7 @@ import Constants from 'expo-constants';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AvatarImage } from '@/components/avatar-image';
+import { ParentalGate } from '@/components/parental-gate';
 import { C, Spacing } from '@/constants/theme';
 import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { useAuth } from '@/context/auth-context';
@@ -31,6 +32,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { aplicarConvite } from '@/lib/convites';
 import { restaurarComprasApple } from '@/lib/iap';
 import { trilhaIdDoProduct } from '@/lib/iap-products';
+import { isMinor } from '@/lib/idade';
 import { supabase } from '@/lib/supabase';
 import { AVATARES_SANTOS, getAvatarNome } from '@/constants/avatares';
 
@@ -57,7 +59,34 @@ export default function ConfiguracoesScreen() {
   const [savingAvatar,  setSavingAvatar]  = useState(false);
   const [pickedAvatar,  setPickedAvatar]  = useState<string | null>(null);
   const [restaurando,   setRestaurando]   = useState(false);
+  const [gateVisible,   setGateVisible]   = useState(false);
+  const [togglingChat,  setTogglingChat]  = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Controle dos pais (Política para Famílias, Play Store) — o chat da
+  // comunidade nasce desativado em contas de menores de idade; só um adulto,
+  // passando pelo portão parental, pode ligar de volta.
+  const menorDeIdade      = isMinor(profile?.birth_date);
+  const chatSocialLigado  = profile?.chat_social_enabled === true;
+
+  async function handleDesligarChatSocial() {
+    if (!user) return;
+    setTogglingChat(true);
+    await supabase.from('profiles').update({ chat_social_enabled: false }).eq('id', user.id);
+    await refreshProfile();
+    setTogglingChat(false);
+  }
+
+  async function handleGateConfirmado() {
+    setGateVisible(false);
+    if (!user) return;
+    setTogglingChat(true);
+    await supabase.from('profiles')
+      .update({ chat_social_enabled: true, chat_social_enabled_at: new Date().toISOString() })
+      .eq('id', user.id);
+    await refreshProfile();
+    setTogglingChat(false);
+  }
 
   // Exigência da Apple para non-consumables — usuário precisa conseguir
   // recuperar uma trilha comprada antes (reinstall, troca de aparelho).
@@ -149,6 +178,12 @@ export default function ConfiguracoesScreen() {
 
   return (
     <ThemedView style={s.fill}>
+
+      <ParentalGate
+        visible={gateVisible}
+        onCancel={() => setGateVisible(false)}
+        onConfirm={handleGateConfirmado}
+      />
 
       {/* Modal de troca de avatar */}
       <Modal
@@ -348,6 +383,38 @@ export default function ConfiguracoesScreen() {
               />
             </View>
           </ThemedView>
+
+          {/* Controle dos pais — só aparece em conta de menor de idade */}
+          {user && profile && menorDeIdade && (
+            <>
+              <ThemedText style={s.sectionLabel}>CONTROLE DOS PAIS</ThemedText>
+              <ThemedView type="backgroundElement" style={s.card}>
+                <View style={s.row}>
+                  <View style={s.rowLeft}>
+                    <ThemedText style={{ fontSize: 22 }}>👨‍👩‍👧</ThemedText>
+                    <View style={{ flex: 1 }}>
+                      <ThemedText type="smallBold">Chat da comunidade</ThemedText>
+                      <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
+                        Desativado por padrão para menores de idade. Um adulto precisa confirmar para ligar.
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <Switch
+                    value={chatSocialLigado}
+                    disabled={togglingChat}
+                    onValueChange={v => (v ? setGateVisible(true) : handleDesligarChatSocial())}
+                    trackColor={{ false: '#3a3a5c', true: C.purple }}
+                    thumbColor="#ffffff"
+                  />
+                </View>
+                {chatSocialLigado && profile.chat_social_enabled_at && (
+                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11, marginTop: Spacing.two }}>
+                    Liberado em {new Date(profile.chat_social_enabled_at).toLocaleDateString('pt-BR')}
+                  </ThemedText>
+                )}
+              </ThemedView>
+            </>
+          )}
 
           {/* Compras (iOS) — só faz sentido com o IAP ligado; enquanto os
               pagamentos reais estão desabilitados no iOS, não há compra a restaurar. */}

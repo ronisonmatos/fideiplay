@@ -25,5 +25,9 @@ export const CORES_CATEGORIA: Record<CategoriaEvento | 'comercial', CorCategoria
   novena:    { borda: 'rgba(153,60,29,0.5)',   fundo: 'rgba(153,60,29,0.12)',  texto: '#F0997B', label: '#993C1D' },
   caravana:  { borda: 'rgba(0,150,136,0.5)',   fundo: 'rgba(0,150,136,0.12)',  texto: '#4DB6AC', label: '#00897B' },
   outro:     { borda: 'rgba(29,158,117,0.35)', fundo: 'rgba(29,158,117,0.08)', texto: '#5DCAA5', label: '#1D9E75' },
-  comercial: { borda: 'rgba(83,74,183,0.4)',   fundo: 'rgba(26,26,46,1)',      texto: '#9B97D4', label: '#EF9F27' },
+  // Tom âmbar (mesma cor do rótulo "ANÚNCIO" em app/ad-reward.tsx) — de propósito
+  // diferente do resto do app (que usa roxo/fundo neutro), pra publicidade nunca
+  // se confundir visualmente com o conteúdo do jogo (Requisitos de formato de
+  // anúncios para famílias, Play Store).
+  comercial: { borda: 'rgba(239,159,39,0.55)', fundo: 'rgba(239,159,39,0.14)', texto: '#EF9F27', label: '#EF9F27' },
 };

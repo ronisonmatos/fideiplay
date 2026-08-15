@@ -3,6 +3,7 @@ import { Animated, Easing, Image, Linking, StyleSheet, TouchableOpacity, View } 
 
 import { ThemedText } from '@/components/themed-text';
 import { CORES_CATEGORIA } from '@/constants/banner-config';
+import { C } from '@/constants/theme';
 import { useBannerAd } from '@/hooks/use-banner-ad';
 import { useTheme } from '@/hooks/use-theme';
 import { registerBannerClique, registerBannerImpressao } from '@/lib/banner-ads';
@@ -11,8 +12,12 @@ import type { BannerAd as BannerAdData } from '@/lib/banner-ads';
 const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
 const EASE_EVENTO = Easing.bezier(0.22, 0.61, 0.36, 1);
-const BORDA_COMERCIAL_REPOUSO = 'rgba(83,74,183,0.4)';
-const BORDA_COMERCIAL_PICO = 'rgba(83,74,183,0.9)';
+// Âmbar (mesmo tom do rótulo "ANÚNCIO" em app/ad-reward.tsx) — antes era roxo,
+// a cor de destaque usada em botões/badges do resto do app inteiro, o que
+// deixava o card comercial visualmente indistinguível do próprio conteúdo do
+// jogo (Requisitos de formato de anúncios para famílias, Play Store).
+const BORDA_COMERCIAL_REPOUSO = 'rgba(239,159,39,0.5)';
+const BORDA_COMERCIAL_PICO = 'rgba(239,159,39,0.95)';
 
 // Flags de módulo (não de componente): persistem entre montagens de <BannerAd/> em
 // telas diferentes, garantindo que a animação de entrada só rode uma vez por sessão
@@ -73,8 +78,10 @@ export function BannerAd() {
 
   const isEvento = ad.tipo === 'evento';
   const cores = isEvento ? (CORES_CATEGORIA[ad.categoria] ?? CORES_CATEGORIA.outro) : CORES_CATEGORIA.comercial;
-  // Anúncio comercial segue o fundo do tema (claro/escuro); só o evento ganha o tom da categoria.
-  const cardBg = isEvento ? cores.fundo : theme.backgroundElement;
+  // Ambos os tipos usam o tom da própria categoria — nunca o fundo neutro do
+  // tema, pra publicidade sempre ficar visualmente distinta dos cards de
+  // conteúdo do app (jogos, trilhas etc.), que usam theme.backgroundElement puro.
+  const cardBg = cores.fundo;
 
   const borderAnim = !isEvento ? {
     color: borderProgress.interpolate({ inputRange: [0, 1], outputRange: [BORDA_COMERCIAL_REPOUSO, BORDA_COMERCIAL_PICO] }),
@@ -160,9 +167,11 @@ function BannerHorizontal({ ad, isEvento, cores, cardBg, borderAnim, theme, onPr
       )}
 
       <View style={styles.info}>
-        <ThemedText style={[styles.label, { color: cores.label }]}>
-          {isEvento ? 'EVENTO' : 'ANÚNCIO'}
-        </ThemedText>
+        <View style={styles.labelBadge}>
+          <ThemedText style={styles.labelBadgeText} numberOfLines={1}>
+            {isEvento ? 'PATROCINADO' : 'ANÚNCIO'}
+          </ThemedText>
+        </View>
         <ThemedText style={[styles.title, { color: theme.text }]} numberOfLines={1}>{ad.titulo}</ThemedText>
         {isEvento && ad.local_evento ? (
           <ThemedText style={[styles.desc, { color: theme.textSecondary }]} numberOfLines={1}>{ad.local_evento}</ThemedText>
@@ -187,7 +196,9 @@ function BannerDataDestaque({ ad, cores, cardBg, theme, dia, mes, onPress }: Lay
       <DateBlock dia={dia} mes={mes} cores={cores} theme={theme} />
 
       <View style={styles.info}>
-        <ThemedText style={[styles.label, { color: cores.label }]}>EVENTO</ThemedText>
+        <View style={styles.labelBadge}>
+          <ThemedText style={styles.labelBadgeText} numberOfLines={1}>PATROCINADO</ThemedText>
+        </View>
         <ThemedText style={[styles.title, { color: theme.text }]} numberOfLines={1}>{ad.titulo}</ThemedText>
         {ad.local_evento ? (
           <ThemedText style={[styles.desc, { color: theme.textSecondary }]} numberOfLines={1}>{ad.local_evento}</ThemedText>
@@ -244,7 +255,18 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   info: { flex: 1, gap: 2 },
-  label: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  // Selo sólido (não só texto colorido) — mesma linguagem visual do badge
+  // "ANÚNCIO" em app/ad-reward.tsx, pra ficar claro que é publicidade/conteúdo
+  // patrocinado mesmo numa olhada rápida.
+  labelBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: C.gold,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginBottom: 1,
+  },
+  labelBadgeText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5, color: '#fff' },
   title: { fontSize: 11, fontWeight: '700' },
   desc: { fontSize: 9 },
   btn: {

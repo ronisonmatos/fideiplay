@@ -21,6 +21,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AvatarImage } from '@/components/avatar-image';
+import { ChatSafetyNotice } from '@/components/chat-safety-notice';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, C, Spacing } from '@/constants/theme';
@@ -31,6 +32,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { askChatAI } from '@/lib/chat-ai';
 import { contemPalavraProibida } from '@/lib/chat-filtro';
 import { playChatSound } from '@/lib/chat-sound';
+import { isMinor } from '@/lib/idade';
 import { sendChatOSNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 
@@ -278,8 +280,21 @@ const AiBubble = memo(function AiBubble({ item, onDelete }: { item: AiItem; onDe
 // ── Tela principal ────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const theme   = useTheme();
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { addChatNotification, markAllRead, muteChat } = useNotifications();
+
+  // Política para Famílias (Play Store) — "Recursos e aplicativos sociais":
+  // menor de idade só participa do chat público depois de (1) um responsável
+  // liberar o recurso em Configurações e (2) confirmar o aviso de segurança.
+  const minor                  = isMinor(profile?.birth_date);
+  const chatBloqueadoPorPais   = minor && profile?.chat_social_enabled !== true;
+  const precisaAvisoSeguranca  = minor && !chatBloqueadoPorPais && !profile?.chat_safety_ack_at;
+
+  const handleAckSafety = useCallback(async () => {
+    if (!user) return;
+    await supabase.from('profiles').update({ chat_safety_ack_at: new Date().toISOString() }).eq('id', user.id);
+    await refreshProfile();
+  }, [user, refreshProfile]);
 
   const {
     mensagens, carregandoMais, temMais,
@@ -603,6 +618,47 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  // ── Bloqueio para menores de idade sem liberação de um responsável ──────────
+  if (chatBloqueadoPorPais) {
+    return (
+      <ThemedView style={s.fill}>
+        <SafeAreaView style={s.fill} edges={['top']}>
+          <View style={[s.header, { borderBottomColor: C.border, borderBottomWidth: 1 }]}>
+            <ThemedText style={s.headerTitle}>💬 Comunidade</ThemedText>
+          </View>
+          <View style={s.centerFlex}>
+            <ThemedText style={{ fontSize: 56, lineHeight: 70 }}>👨‍👩‍👧</ThemedText>
+            <ThemedText type="subtitle" style={[s.center, { fontSize: 18 }]}>Chat bloqueado nesta conta</ThemedText>
+            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
+              Por segurança, o chat da comunidade fica desativado em contas de menores de idade até um
+              responsável liberar o recurso em Configurações.
+            </ThemedText>
+            <TouchableOpacity
+              style={[s.btn, { backgroundColor: C.purple, marginTop: Spacing.four }]}
+              onPress={() => router.push('/configuracoes')}
+              activeOpacity={0.8}>
+              <ThemedText style={s.btnTxt}>IR PARA CONFIGURAÇÕES</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  // ── Aviso de segurança on-line, obrigatório antes do primeiro uso ───────────
+  if (precisaAvisoSeguranca) {
+    return (
+      <ThemedView style={s.fill}>
+        <SafeAreaView style={s.fill} edges={['top']}>
+          <View style={[s.header, { borderBottomColor: C.border, borderBottomWidth: 1 }]}>
+            <ThemedText style={s.headerTitle}>💬 Comunidade</ThemedText>
+          </View>
+        </SafeAreaView>
+        <ChatSafetyNotice visible onAck={handleAckSafety} />
       </ThemedView>
     );
   }

@@ -20,6 +20,9 @@ export interface Profile {
   is_admin:                  boolean;
   birth_date:                string | null;
   accepted_terms_at:         string | null;
+  chat_social_enabled:       boolean | null;
+  chat_social_enabled_at:    string | null;
+  chat_safety_ack_at:        string | null;
   cidade:                    string | null;
   estado:                    string | null;
   latitude:                  number | null;
