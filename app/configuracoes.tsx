@@ -21,7 +21,6 @@ import Constants from 'expo-constants';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AvatarImage } from '@/components/avatar-image';
-import { ParentalGate } from '@/components/parental-gate';
 import { C, Spacing } from '@/constants/theme';
 import { PAGAMENTOS_REAIS_HABILITADOS } from '@/constants/pagamentos';
 import { useAuth } from '@/context/auth-context';
@@ -59,30 +58,24 @@ export default function ConfiguracoesScreen() {
   const [savingAvatar,  setSavingAvatar]  = useState(false);
   const [pickedAvatar,  setPickedAvatar]  = useState<string | null>(null);
   const [restaurando,   setRestaurando]   = useState(false);
-  const [gateVisible,   setGateVisible]   = useState(false);
   const [togglingChat,  setTogglingChat]  = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Controle dos pais (Política para Famílias, Play Store) — o chat da
-  // comunidade nasce desativado em contas de menores de idade; só um adulto,
-  // passando pelo portão parental, pode ligar de volta.
+  // Política para Famílias (Play Store) — "Recursos e aplicativos sociais":
+  // o chat público é indisponível para menores de 18 anos (não há liberação
+  // por portão parental, pois permitir que uma criança fale com desconhecidos
+  // não é aceito). Adultos podem ligar/desligar o recurso para a própria conta.
   const menorDeIdade      = isMinor(profile?.birth_date);
-  const chatSocialLigado  = profile?.chat_social_enabled === true;
+  const chatSocialLigado  = profile?.chat_social_enabled !== false; // padrão: ligado para adultos
 
-  async function handleDesligarChatSocial() {
-    if (!user) return;
-    setTogglingChat(true);
-    await supabase.from('profiles').update({ chat_social_enabled: false }).eq('id', user.id);
-    await refreshProfile();
-    setTogglingChat(false);
-  }
-
-  async function handleGateConfirmado() {
-    setGateVisible(false);
+  async function handleToggleChatSocial(ligar: boolean) {
     if (!user) return;
     setTogglingChat(true);
     await supabase.from('profiles')
-      .update({ chat_social_enabled: true, chat_social_enabled_at: new Date().toISOString() })
+      .update({
+        chat_social_enabled:    ligar,
+        chat_social_enabled_at: ligar ? new Date().toISOString() : null,
+      })
       .eq('id', user.id);
     await refreshProfile();
     setTogglingChat(false);
@@ -178,12 +171,6 @@ export default function ConfiguracoesScreen() {
 
   return (
     <ThemedView style={s.fill}>
-
-      <ParentalGate
-        visible={gateVisible}
-        onCancel={() => setGateVisible(false)}
-        onConfirm={handleGateConfirmado}
-      />
 
       {/* Modal de troca de avatar */}
       <Modal
@@ -384,33 +371,46 @@ export default function ConfiguracoesScreen() {
             </View>
           </ThemedView>
 
-          {/* Controle dos pais — só aparece em conta de menor de idade */}
-          {user && profile && menorDeIdade && (
+          {/* Chat da comunidade (recurso social) — gestão pelo próprio usuário
+              adulto; para menores de 18 é sempre indisponível (Política para
+              Famílias da Play Store). */}
+          {user && profile && (
             <>
-              <ThemedText style={s.sectionLabel}>CONTROLE DOS PAIS</ThemedText>
+              <ThemedText style={s.sectionLabel}>CHAT DA COMUNIDADE</ThemedText>
               <ThemedView type="backgroundElement" style={s.card}>
-                <View style={s.row}>
+                {menorDeIdade ? (
                   <View style={s.rowLeft}>
-                    <ThemedText style={{ fontSize: 22 }}>👨‍👩‍👧</ThemedText>
+                    <ThemedText style={{ fontSize: 22 }}>🔒</ThemedText>
                     <View style={{ flex: 1 }}>
-                      <ThemedText type="smallBold">Chat da comunidade</ThemedText>
-                      <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
-                        Desativado por padrão para menores de idade. Um adulto precisa confirmar para ligar.
+                      <ThemedText type="smallBold">Indisponível nesta conta</ThemedText>
+                      <ThemedText themeColor="textSecondary" style={{ fontSize: 12, lineHeight: 17 }}>
+                        O chat da comunidade é público e permite conversar com desconhecidos, por isso
+                        fica indisponível para menores de 18 anos. Os jogos, trilhas e o Catequista
+                        continuam liberados.
                       </ThemedText>
                     </View>
                   </View>
-                  <Switch
-                    value={chatSocialLigado}
-                    disabled={togglingChat}
-                    onValueChange={v => (v ? setGateVisible(true) : handleDesligarChatSocial())}
-                    trackColor={{ false: '#3a3a5c', true: C.purple }}
-                    thumbColor="#ffffff"
-                  />
-                </View>
-                {chatSocialLigado && profile.chat_social_enabled_at && (
-                  <ThemedText themeColor="textSecondary" style={{ fontSize: 11, marginTop: Spacing.two }}>
-                    Liberado em {new Date(profile.chat_social_enabled_at).toLocaleDateString('pt-BR')}
-                  </ThemedText>
+                ) : (
+                  <View style={s.row}>
+                    <View style={s.rowLeft}>
+                      <ThemedText style={{ fontSize: 22 }}>💬</ThemedText>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText type="smallBold">Participar do chat</ThemedText>
+                        <ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>
+                          {chatSocialLigado
+                            ? 'Ativado — você pode conversar na comunidade'
+                            : 'Desativado — você não vê nem envia mensagens'}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    <Switch
+                      value={chatSocialLigado}
+                      disabled={togglingChat}
+                      onValueChange={handleToggleChatSocial}
+                      trackColor={{ false: '#3a3a5c', true: C.purple }}
+                      thumbColor="#ffffff"
+                    />
+                  </View>
                 )}
               </ThemedView>
             </>

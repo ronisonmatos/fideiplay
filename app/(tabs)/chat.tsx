@@ -284,11 +284,16 @@ export default function ChatScreen() {
   const { addChatNotification, markAllRead, muteChat } = useNotifications();
 
   // Política para Famílias (Play Store) — "Recursos e aplicativos sociais":
-  // menor de idade só participa do chat público depois de (1) um responsável
-  // liberar o recurso em Configurações e (2) confirmar o aviso de segurança.
+  // o chat público permite conversar com desconhecidos, então fica INDISPONÍVEL
+  // para menores de 18 anos (e para contas sem data de nascimento, tratadas como
+  // menores por precaução). Não há liberação por portão parental: "consentimento
+  // de um adulto" não basta para permitir que uma criança fale com estranhos.
+  // Adultos podem desativar o recurso para a própria conta em Configurações e
+  // veem um aviso de segurança obrigatório antes do primeiro uso.
   const minor                  = isMinor(profile?.birth_date);
-  const chatBloqueadoPorPais   = minor && profile?.chat_social_enabled !== true;
-  const precisaAvisoSeguranca  = minor && !chatBloqueadoPorPais && !profile?.chat_safety_ack_at;
+  const chatBloqueadoMenor     = minor;
+  const chatDesativadoPeloUser = !minor && profile?.chat_social_enabled === false;
+  const precisaAvisoSeguranca  = !minor && !chatDesativadoPeloUser && !profile?.chat_safety_ack_at;
 
   const handleAckSafety = useCallback(async () => {
     if (!user) return;
@@ -622,8 +627,8 @@ export default function ChatScreen() {
     );
   }
 
-  // ── Bloqueio para menores de idade sem liberação de um responsável ──────────
-  if (chatBloqueadoPorPais) {
+  // ── Chat público indisponível para menores de 18 (bloqueio rígido) ──────────
+  if (chatBloqueadoMenor) {
     return (
       <ThemedView style={s.fill}>
         <SafeAreaView style={s.fill} edges={['top']}>
@@ -631,11 +636,32 @@ export default function ChatScreen() {
             <ThemedText style={s.headerTitle}>💬 Comunidade</ThemedText>
           </View>
           <View style={s.centerFlex}>
-            <ThemedText style={{ fontSize: 56, lineHeight: 70 }}>👨‍👩‍👧</ThemedText>
-            <ThemedText type="subtitle" style={[s.center, { fontSize: 18 }]}>Chat bloqueado nesta conta</ThemedText>
+            <ThemedText style={{ fontSize: 56, lineHeight: 70 }}>🔒</ThemedText>
+            <ThemedText type="subtitle" style={[s.center, { fontSize: 18 }]}>Disponível apenas para maiores de 18 anos</ThemedText>
+            <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13, lineHeight: 19 }]}>
+              O chat da comunidade é público e permite conversar com pessoas desconhecidas, por isso não
+              fica disponível em contas de menores de idade. Você continua com acesso a todos os jogos,
+              trilhas e ao Catequista (🤖 /ia).
+            </ThemedText>
+          </View>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  // ── Adulto que desativou o chat para a própria conta ────────────────────────
+  if (chatDesativadoPeloUser) {
+    return (
+      <ThemedView style={s.fill}>
+        <SafeAreaView style={s.fill} edges={['top']}>
+          <View style={[s.header, { borderBottomColor: C.border, borderBottomWidth: 1 }]}>
+            <ThemedText style={s.headerTitle}>💬 Comunidade</ThemedText>
+          </View>
+          <View style={s.centerFlex}>
+            <ThemedText style={{ fontSize: 56, lineHeight: 70 }}>🔕</ThemedText>
+            <ThemedText type="subtitle" style={[s.center, { fontSize: 18 }]}>Chat desativado</ThemedText>
             <ThemedText themeColor="textSecondary" style={[s.center, { fontSize: 13 }]}>
-              Por segurança, o chat da comunidade fica desativado em contas de menores de idade até um
-              responsável liberar o recurso em Configurações.
+              Você desativou o chat da comunidade. Reative quando quiser em Configurações.
             </ThemedText>
             <TouchableOpacity
               style={[s.btn, { backgroundColor: C.purple, marginTop: Spacing.four }]}
