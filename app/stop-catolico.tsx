@@ -30,6 +30,7 @@ import { useGamePacks, mergeStopCategories } from '@/hooks/use-game-packs';
 import { useStopCategories } from '@/hooks/use-stop-categories';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
 import { isContestable, submitContest } from '@/lib/stop-contests';
 import { playClickSound } from '@/lib/click-sound';
@@ -225,11 +226,17 @@ export default function StopCatolicoScreen() {
       attempts++;
     }
     if (cats[nextIdx].key === currentKey) return; // nenhuma categoria disponível
+    // Debita ANTES de aplicar a troca — se o débito falhar, não troca de graça.
+    const ok = await spendCoins(user.id, 1, 'stop_trocar_categoria');
+    if (!ok) {
+      Alert.alert('Erro', 'Não foi possível trocar a categoria agora. Tente novamente.');
+      return;
+    }
     const newSlots = [...slots];
     newSlots[slotIdx] = cats[nextIdx].key;
     setSlots(newSlots);
     setCoinSpend(-1);
-    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -1 }).then(() => refreshProfile());
+    refreshProfile();
   }, [user, profile, slots, allCategories, refreshProfile]);
 
   const handleShuffle = useCallback(async () => {
@@ -237,7 +244,11 @@ export default function StopCatolicoScreen() {
       Alert.alert('Moedas insuficientes', 'Você precisa de 5 🪙 para sortear novas categorias.');
       return;
     }
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -5 });
+    const ok = await spendCoins(user.id, 5, 'stop_sortear_categorias');
+    if (!ok) {
+      Alert.alert('Erro', 'Não foi possível sortear agora. Tente novamente.');
+      return;
+    }
     setSlots(pickSixKeys(allCategories));
     setCoinSpend(-5);
     refreshProfile();
@@ -273,9 +284,14 @@ export default function StopCatolicoScreen() {
       return;
     }
 
-    setAnswer(cat.key, word.slice(0, 3));
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -2 });
-    refreshProfile();
+    // Debita ANTES de revelar — se o débito falhar, não dá a dica de graça.
+    const ok = await spendCoins(user.id, 2, 'stop_dica');
+    if (ok) {
+      setAnswer(cat.key, word.slice(0, 3));
+      refreshProfile();
+    } else {
+      Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
+    }
     setLoadingHint(null);
   }, [user, profile, hints, loadingHint, letter, setAnswer, refreshProfile]);
 

@@ -26,6 +26,7 @@ import { BottomTabInset, C, Spacing } from '@/constants/theme';
 import { ECONOMY } from '@/constants/economy';
 import { ALL_LETTERS, ALL_STOP_CATEGORIES, computeAvailableLetters, StopCategory } from '@/constants/stop-categories';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { validateWithBank, validateWithAI, BankResult } from '@/lib/stop-bank';
 import { recordScoreEvent } from '@/lib/score-events';
 import { loadBankHints, getAIHint, HintMap } from '@/lib/stop-hints';
@@ -826,7 +827,11 @@ export default function StopOnlineScreen() {
       Alert.alert('Moedas insuficientes', `Você precisa de ${ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS} 🪙 para sortear novas categorias.`);
       return;
     }
-    await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS });
+    const ok = await spendCoins(user.id, ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS, 'stop_online_sortear_categorias');
+    if (!ok) {
+      Alert.alert('Erro', 'Não foi possível sortear agora. Tente novamente.');
+      return;
+    }
     setSlots(pickSixKeys(allCategoriesRef.current));
     setCoinSpend(-ECONOMY.STOP_TROCAR_TODAS_CATEGORIAS);
     refreshProfile();
@@ -849,11 +854,17 @@ export default function StopOnlineScreen() {
       attempts++;
     }
     if (cats[nextIdx].key === currentKey) return; // nenhuma categoria disponível
+    // Debita ANTES de aplicar a troca — se o débito falhar, não troca de graça.
+    const ok = await spendCoins(user.id, ECONOMY.STOP_TROCAR_CATEGORIA, 'stop_online_trocar_categoria');
+    if (!ok) {
+      Alert.alert('Erro', 'Não foi possível trocar a categoria agora. Tente novamente.');
+      return;
+    }
     const newSlots = [...currentSlots];
     newSlots[slotIdx] = cats[nextIdx].key;
     setSlots(newSlots);
     setCoinSpend(-ECONOMY.STOP_TROCAR_CATEGORIA);
-    supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_TROCAR_CATEGORIA }).then(() => refreshProfile());
+    refreshProfile();
   }, [user, profile, refreshProfile]);
 
   // Dica: revela as 3 primeiras letras da resposta certa (banco de palavras
@@ -881,16 +892,14 @@ export default function StopOnlineScreen() {
       return;
     }
 
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.STOP_DICA_CATEGORIA });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, ECONOMY.STOP_DICA_CATEGORIA, 'stop_online_dica');
+    if (ok) {
       setAnswer(cat.key, word.slice(0, 3));
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
-    } finally {
-      setLoadingHint(null);
     }
+    setLoadingHint(null);
   }, [user, profile, hints, loadingHint, setAnswer, refreshProfile]);
 
   // ── Fetch room lists ───────────────────────────────────────────────────────
