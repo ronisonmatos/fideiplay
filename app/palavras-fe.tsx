@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergePuzzleThemes } from '@/hooks/use-game-packs';
 import { placeWords } from '@/lib/word-grid';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'palavras-fe';
@@ -227,12 +228,11 @@ export default function PalavrasFeScreen() {
     const cells = findWordCells(activePuzzle.grid, target);
     if (!cells || cells.length === 0) return;
     const cell = cells[Math.floor(Math.random() * cells.length)];
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.PALAVRA_FE_REVELAR_LETRA });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, ECONOMY.PALAVRA_FE_REVELAR_LETRA, 'palavras_fe_revelar_letra');
+    if (ok) {
       setHintCell(cell);
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
     }
   }, [user, profile, activePuzzle, foundWords, refreshProfile]);

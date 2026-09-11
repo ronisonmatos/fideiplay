@@ -15,6 +15,7 @@ import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeSanctuaries } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'peregrinacao';
@@ -148,9 +149,8 @@ export default function PeregrinacaoScreen() {
       Alert.alert('Moedas insuficientes', `Você precisa de ${custo} 🪙 para essa dica. Assista um anúncio ou aguarde o bônus de moedas.`);
       return;
     }
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -custo });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, custo, `peregrinacao_dica_${nivel}`);
+    if (ok) {
       if (nivel === 'revelar') {
         setRevealedAnswer(true);
       } else {
@@ -163,7 +163,7 @@ export default function PeregrinacaoScreen() {
         }
       }
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
     }
   }, [user, profile, q, eliminatedOptions, refreshProfile]);

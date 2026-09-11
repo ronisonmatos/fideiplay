@@ -14,6 +14,7 @@ import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeVersiculo } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { GameRewardBanner } from '@/components/game-reward-banner';
 import { playClickSound } from '@/lib/click-sound';
 
@@ -152,12 +153,11 @@ export default function VersiculoMisteriosoScreen() {
       );
       return;
     }
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.SABEDORIA_REVELAR_LETRA });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, ECONOMY.SABEDORIA_REVELAR_LETRA, 'versiculo_revelar_letra');
+    if (ok) {
       setLetraRevelada(frase.reference.trim().charAt(0).toUpperCase());
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
     }
   }, [user, profile, frase, refreshProfile]);
@@ -171,12 +171,11 @@ export default function VersiculoMisteriosoScreen() {
       );
       return;
     }
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.SABEDORIA_REVELAR_PALAVRA });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, ECONOMY.SABEDORIA_REVELAR_PALAVRA, 'versiculo_revelar_palavra');
+    if (ok) {
       setRespostaRevelada(true);
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
     }
   }, [user, profile, frase, refreshProfile]);

@@ -29,6 +29,7 @@ import { useGamePacks, mergeLatimLevels } from '@/hooks/use-game-packs';
 import { useTheme } from '@/hooks/use-theme';
 import { placeWordsAsRows } from '@/lib/word-grid';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'latim-boggle';
@@ -348,13 +349,12 @@ export default function LatimBoggleScreen() {
     if (candidates.length === 0) return;
     const pos = candidates[Math.floor(Math.random() * candidates.length)];
 
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.BOGGLE_REVELAR_LETRA });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, ECONOMY.BOGGLE_REVELAR_LETRA, 'boggle_revelar_letra');
+    if (ok) {
       setRevealedPositions(prev => ({ ...prev, [target.word]: [...(prev[target.word] ?? []), pos] }));
       setRevealsUsed(prev => prev + 1);
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar a dica agora. Tente novamente.');
     }
   }, [user, profile, revealsUsed, revealedPositions, refreshProfile]);

@@ -15,6 +15,7 @@ import { useGameLevels } from '@/context/game-levels-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useGamePacks, mergeLiturgQuestions } from '@/hooks/use-game-packs';
 import { supabase } from '@/lib/supabase';
+import { spendCoins } from '@/lib/coins';
 import { playClickSound } from '@/lib/click-sound';
 
 const GAME_ID = 'desafio-liturgico';
@@ -169,13 +170,12 @@ export default function DesafioLiturgicoScreen() {
       );
       return;
     }
-    try {
-      const { error } = await supabase.rpc('add_coins', { p_user_id: user.id, p_amount: -ECONOMY.DESAFIO_LITURGICO_TEMPO_EXTRA });
-      if (error) throw error;
+    const ok = await spendCoins(user.id, ECONOMY.DESAFIO_LITURGICO_TEMPO_EXTRA, 'desafio_liturgico_tempo_extra');
+    if (ok) {
       setUsouTempoExtra(true);
       setTimeLeft(t => t + 15);
       refreshProfile();
-    } catch {
+    } else {
       Alert.alert('Erro', 'Não foi possível usar essa dica agora. Tente novamente.');
     }
   }, [user, profile, usouTempoExtra, refreshProfile]);
