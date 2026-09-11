@@ -43,3 +43,8 @@ BEGIN
   RETURN coalesce(new_coins, 0);
 END;
 $$;
+
+-- Remove a versão de 2 argumentos criada em profiles-schema.sql / ranking-schema.sql.
+-- Sem isto, as duas assinaturas coexistem e chamadas com 2 args ficam ambíguas no
+-- PostgREST (PGRST203). Mantemos só a de 3 args, que atende chamadas de 2 e 3 args.
+DROP FUNCTION IF EXISTS add_coins(uuid, int);
